@@ -1,19 +1,31 @@
 #!/usr/bin/env bash
 #
-# GSD worktree guard. Registered (see .claude/settings.json) on:
+# gsd-worktree-guard — the GSD worktree guard, invoked as a Claude Code hook
+# via a tiny per-repo shim (scripts/hooks/gsd-worktree-guard.sh) registered on:
 #   - UserPromptExpansion  → catches TYPED /gsd-… slash commands
 #   - PreToolUse (Skill)   → catches model-initiated Skill calls
 #
 # Rules (independent of how the command was invoked):
-#   1. /gsd-phase            → only on the 'develop' branch (the shared claim point).
+#   1. /gsd-phase            → only on the base branch (the shared claim point).
 #   2. per-phase commands    → only inside the matching 'phase-<N>-*' worktree.
-#   3. /gsd-execute-phase    → also requires deps installed (background install done).
+#   3. /gsd-execute-phase    → also requires deps installed (background install
+#                              done) — skipped for repos with no install step.
 #
 # Block = exit 2 (stderr shown). Escape hatch: GSD_SKIP_GUARD=1.
+# Repo settings (base branch, install cmd): .gsd.conf, see gsd-bootstrap-repo.
 set -uo pipefail
 
 [ -n "${GSD_SKIP_GUARD:-}" ] && exit 0
 input=$(cat 2>/dev/null || true)
+
+SELF="$0"
+while [ -L "$SELF" ]; do
+  tgt=$(readlink "$SELF")
+  case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
+done
+GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GSD_PKG/lib/common.sh"
 
 # Command + args from the known payload shapes:
 #   UserPromptExpansion → .command_name / .command_args
@@ -33,14 +45,15 @@ N=$(printf '%s' "$args" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1 || true)
 
 dir="${CLAUDE_PROJECT_DIR:-$PWD}"
 branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+BASE=$(gsd_base "$dir" 2>/dev/null || echo develop)
 
 block() { printf '%s\n' "$@" >&2; exit 2; }
 
-# Rule 1 — /gsd-phase only on develop
+# Rule 1 — /gsd-phase only on the base branch
 if [ "$cmd" = "gsd-phase" ]; then
-  [ "$branch" = "develop" ] && exit 0
-  block "BLOCKED: /gsd-phase must run on 'develop' (main checkout), not '$branch'." \
-        "Claim the phase number on develop first. See CLAUDE.md > GSD planning system."
+  [ "$branch" = "$BASE" ] && exit 0
+  block "BLOCKED: /gsd-phase must run on '$BASE' (main checkout), not '$branch'." \
+        "Claim the phase number on $BASE first. See CLAUDE.md > GSD planning system."
 fi
 
 # Per-phase ("feature work") commands
@@ -49,11 +62,11 @@ case " gsd-discuss-phase gsd-plan-phase gsd-execute-phase gsd-ui-phase gsd-mvp-p
   *) exit 0 ;;   # progress, help, map-codebase, resume-work, … allowed anywhere
 esac
 
-[ "$branch" = "develop" ] && block \
-  "BLOCKED: /$cmd is feature work — run it in the phase worktree, not on develop." \
-  "Create/open it with: scripts/gsd-new-worktree-feature.sh  (then open a session in phase-${N:-<N>}-*). See CLAUDE.md."
+[ "$branch" = "$BASE" ] && block \
+  "BLOCKED: /$cmd is feature work — run it in the phase worktree, not on $BASE." \
+  "Create/open it with: gsd-start -p ${N:-<N>}  (then open a session in phase-${N:-<N>}-*). See CLAUDE.md."
 
-[ -z "$N" ] && exit 0   # no phase number given; 'not develop' already satisfied
+[ -z "$N" ] && exit 0   # no phase number given; 'not the base branch' already satisfied
 
 case "$branch" in
   phase-"$N"-*|phase-"$N") : ;;   # correct worktree
@@ -61,12 +74,12 @@ case "$branch" in
   *)       block "BLOCKED: /$cmd targets phase $N but '$branch' isn't a phase-$N-* worktree. See CLAUDE.md." ;;
 esac
 
-# Rule 3 — execute-phase needs deps installed
-if [ "$cmd" = "gsd-execute-phase" ] && [ ! -d "$dir/node_modules" ]; then
+# Rule 3 — execute-phase needs deps installed (only for repos with an install step)
+if [ "$cmd" = "gsd-execute-phase" ] && [ -n "$(gsd_install_cmd "$dir")" ] && [ ! -d "$dir/node_modules" ]; then
   s=$(cat "$dir/.gsd-install.status" 2>/dev/null || echo running)
   [ "$s" = "ok" ] && exit 0   # install completed (repo may simply have no deps)
-  [ "$s" = "fail" ] && block "BLOCKED: dependency install FAILED — see $dir/.gsd-install.log, then run 'pnpm install'."
-  block "BLOCKED: dependencies still installing (no node_modules yet). Wait, or run 'pnpm install'. Log: $dir/.gsd-install.log"
+  [ "$s" = "fail" ] && block "BLOCKED: dependency install FAILED — see $dir/.gsd-install.log, then install manually."
+  block "BLOCKED: dependencies still installing (no node_modules yet). Wait, or install manually. Log: $dir/.gsd-install.log"
 fi
 
 exit 0

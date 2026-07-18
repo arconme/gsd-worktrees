@@ -47,6 +47,17 @@ set -euo pipefail
 
 die() { printf '✖ %s\n' "$@" >&2; exit 1; }
 
+# ── locate the toolkit package (shared lib + worker commands) ────────────────
+SELF="$0"
+while [ -L "$SELF" ]; do
+  tgt=$(readlink "$SELF")
+  case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
+done
+GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
+[ -f "$GSD_PKG/lib/common.sh" ] || die "gsd-worktrees toolkit lib not found (looked in $GSD_PKG/lib) — reinstall with install.sh"
+# shellcheck source=../lib/common.sh
+. "$GSD_PKG/lib/common.sh"
+
 usage() {
   cat <<'HELP'
 gsd-start — start a GSD feature in ONE step
@@ -242,14 +253,11 @@ else
   MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
 fi
 [ -f "$MAIN/.planning/ROADMAP.md" ] || die "$MAIN has no .planning/ROADMAP.md — initialize GSD first (/gsd-new-project)"
-[ -x "$MAIN/scripts/gsd-new-worktree-feature.sh" ] || die "$MAIN has no scripts/gsd-new-worktree-feature.sh — run gsd-bootstrap-repo first"
-GUARD="$MAIN/scripts/hooks/gsd-worktree-guard.sh"
-[ -f "$GUARD" ] || die "$MAIN has no guard hook — run gsd-bootstrap-repo first"
 [ -n "$ATTACH" ] || command -v gsd-sdk >/dev/null 2>&1 || die "gsd-sdk CLI not found (GSD not installed?)"
 
-# Base branch: same detection as gsd-bootstrap-repo (guard rule 1).
-BASE=$(sed -nE 's/.*\[ "\$branch" = "([^"]+)" \] && exit 0.*/\1/p' "$GUARD" | head -1)
-[ -n "$BASE" ] || die "could not detect the base branch from $GUARD"
+# Base branch: .gsd.conf override, else detection (lib/common.sh).
+BASE=$(gsd_base "$MAIN")
+[ -n "$BASE" ] || die "could not determine the base branch — set 'base = <branch>' in $MAIN/.gsd.conf"
 
 # ── local lock: serialize gsd commands touching this checkout ────────────────
 # Two gsd-start/gsd-finish runs on the SAME machine share the main checkout
@@ -435,7 +443,7 @@ fi
 # the script re-detect it from HEAD (a commit landing in between would win).
 WT_ARGS=(--phase "$N")
 [ -n "$SLUG" ] && WT_ARGS+=("$SLUG")
-WT_OUT=$( cd "$MAIN" && scripts/gsd-new-worktree-feature.sh ${WT_ARGS[@]+"${WT_ARGS[@]}"} )
+WT_OUT=$( cd "$MAIN" && "$GSD_PKG/bin/gsd-wt-new" ${WT_ARGS[@]+"${WT_ARGS[@]}"} )
 printf '%s\n' "$WT_OUT"
 DEST=$(printf '%s\n' "$WT_OUT" | sed -n 's/^✅ worktree ready: \(.*\)   (phase.*/\1/p')
 if [ -z "$DEST" ] || [ ! -d "$DEST" ]; then

@@ -1,31 +1,45 @@
 #!/usr/bin/env bash
 #
-# gsd-finish-worktree-feature.sh — merge a finished phase worktree back into
-# develop, push, and clean up the worktree + branch. One command.
+# gsd-wt-finish — merge a finished phase worktree back into the base branch,
+# push, and clean up the worktree + branch. The worker behind gsd-finish;
+# callable standalone too.
 #
-# Usage:
-#   scripts/gsd-finish-worktree-feature.sh <N | phase-N-slug>
-#   scripts/gsd-finish-worktree-feature.sh 1                       # finds phase-1-*
-#   scripts/gsd-finish-worktree-feature.sh phase-1-customer-onboarding-terms
+# Usage (from inside the target repo):
+#   gsd-wt-finish <N | phase-N-slug> [base]
+#   gsd-wt-finish 1                       # finds phase-1-* (never *-pr)
+#   gsd-wt-finish phase-1-customer-onboarding-terms
 #
 # Safety: refuses if the worktree has uncommitted changes or if the main
-# checkout isn't on develop. A conflicting merge is aborted — develop is left
-# clean and the resolution steps are printed. Parallel runs serialize on
-# .git/gsd-cmd.lock (stale locks from crashed runs are reclaimed).
+# checkout isn't on the base branch. A conflicting merge is aborted — the base
+# branch is left clean and the resolution steps are printed. Parallel runs
+# serialize on .git/gsd-cmd.lock (stale locks from crashed runs are reclaimed).
+#
+# Repo settings (base branch, worktree dir): .gsd.conf, see gsd-bootstrap-repo.
+# The old per-repo copy of this logic (scripts/gsd-finish-worktree-feature.sh)
+# is now a shim that delegates here.
 set -euo pipefail
 
+SELF="$0"
+while [ -L "$SELF" ]; do
+  tgt=$(readlink "$SELF")
+  case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
+done
+GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GSD_PKG/lib/common.sh"
+
 ID="${1:-}"
-BASE="${2:-develop}"
 if [ -z "$ID" ]; then
-  echo "usage: scripts/gsd-finish-worktree-feature.sh <N | phase-N-slug> [base]" >&2; exit 1
+  echo "usage: gsd-wt-finish <N | phase-N-slug> [base]" >&2; exit 1
 fi
 
-MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+MAIN=$(gsd_main .)
 [ -n "$MAIN" ] || { echo "error: not inside a git repository" >&2; exit 1; }
+BASE="${2:-$(gsd_base "$MAIN")}"
 
 # ── serialize on the shared main checkout ────────────────────────────────────
 # Same lock as gsd-start/gsd-finish; parallel finishes would otherwise race on
-# the one develop working tree. Skipped when the caller already holds it
+# the one base-branch working tree. Skipped when the caller already holds it
 # (gsd-finish exports GSD_LOCK_HELD=1).
 LOCKDIR="$MAIN/.git/gsd-cmd.lock"
 if [ "${GSD_LOCK_HELD:-}" != 1 ]; then
@@ -67,10 +81,10 @@ if ! git -C "$MAIN" show-ref --verify --quiet "refs/heads/$BRANCH"; then
   echo "error: branch '$BRANCH' not found" >&2; exit 1
 fi
 # The branch's actual worktree path, from git itself (a worktree can live
-# outside the conventional ../siminds-platform-worktrees/ dir).
+# outside the conventional sibling dir).
 DEST=$(git -C "$MAIN" worktree list --porcelain \
         | awk -v b="branch refs/heads/$BRANCH" '/^worktree /{w=$2} $0==b{print w; exit}')
-[ -n "$DEST" ] || DEST="$(dirname "$MAIN")/siminds-platform-worktrees/$BRANCH"
+[ -n "$DEST" ] || DEST="$(dirname "$MAIN")/$(gsd_wtdir "$MAIN")/$BRANCH"
 
 if [ -d "$DEST" ] && [ -n "$(git -C "$DEST" status --porcelain)" ]; then
   echo "error: $DEST has uncommitted changes — commit them in the worktree first" >&2; exit 1

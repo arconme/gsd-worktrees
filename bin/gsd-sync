@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# gsd-sync — update the gsd-worktrees toolkit and keep templates/ in sync.
+# gsd-sync — update the gsd-worktrees toolkit and verify repo shims.
 #
 # One command for the whole maintenance loop:
 #   1. self-update : pull the toolkit repo (rebase + autostash) and push any
@@ -9,25 +9,23 @@
 #                    you when they're still uncommitted.
 #   2. re-link     : re-run install.sh so commands added by the pull get their
 #                    ~/.local/bin symlinks.
-#   3. templates   : diff templates/ against the reference repo's scripts/ and
-#                    copy changed/new gsd files in, then commit + push.
-#                    The REFERENCE REPO WINS: template-side edits must be
-#                    applied to the reference repo first. A template file with
-#                    UNCOMMITTED local changes is never overwritten — it is
-#                    reported and skipped (both sides changed → your call).
+#   3. shim check  : verify the reference repo's scripts/gsd-*.sh shims match
+#                    the package's shims/ (they're frozen delegators — logic
+#                    lives in the package). Drift means a re-bootstrap is due:
+#                    cd <repo> && gsd-bootstrap-repo.
 #
 # Usage:
 #   gsd-sync [--check] [--src <path>]
 #
 # Options:
 #   --check       dry run: report what would change, change nothing
-#   --src <path>  reference repo for templates
+#   --src <path>  reference repo for the shim check
 #                 (default: $GSD_SRC_REPO, else ~/projects/siminds/code/siminds-platform)
 #   -h, --help    show this help
 #
 # RELATED
 #   install.sh            what step 2 runs (symlink bin/ into ~/.local/bin)
-#   gsd-bootstrap-repo    pushes updated templates INTO a target repo
+#   gsd-bootstrap-repo    installs/refreshes config + shims in a target repo
 set -euo pipefail
 
 die() { printf '✖ %s\n' "$@" >&2; exit 1; }
@@ -101,46 +99,28 @@ else
 fi
 echo ""
 
-# ── step 3: template sync (reference repo → templates/) ──────────────────────
+# ── step 3: shim drift check (package shims/ vs the reference repo) ──────────
+# Repo-side scripts are frozen shims delegating to the toolkit; if the copies
+# in the reference repo differ from the package's shims/, a re-bootstrap is
+# due (gsd-bootstrap-repo overwrites shims idempotently).
 [ -d "$SRCR/scripts" ] || die "reference repo has no scripts/ dir: $SRCR (pass --src <path>)"
-RELS=$( { (cd "$REPO/templates" 2>/dev/null && find scripts -type f \( -name 'gsd-*.sh' -o -name 'gsd-*.conf.example' \) 2>/dev/null || true)
-          (cd "$SRCR" && find scripts -maxdepth 2 -type f \( -name 'gsd-*.sh' -o -name 'gsd-*.conf.example' \) 2>/dev/null || true); } | sort -u )
-
-ok=0; synced=0; skipped=0
-for rel in $RELS; do
-  src="$SRCR/$rel"; tpl="$REPO/templates/$rel"
-  if [ ! -f "$src" ]; then
-    echo "• $rel — only in templates/ (not in the reference repo), left as is"
-    continue
-  fi
-  if [ -f "$tpl" ] && cmp -s "$src" "$tpl"; then
-    ok=$((ok + 1)); continue
-  fi
-  # differs (or new): never overwrite a template with uncommitted local edits
-  if [ -f "$tpl" ] && [ -n "$(git status --porcelain -- "templates/$rel")" ]; then
-    echo "⚠ $rel — differs AND templates/ copy has uncommitted local edits; skipped."
-    echo "  Apply the template-side edit to the reference repo (or discard it), then re-run."
-    skipped=$((skipped + 1)); continue
-  fi
-  if [ "$CHECK" = 1 ]; then
-    [ -f "$tpl" ] && echo "▶ would sync (changed): $rel" || echo "▶ would sync (new): $rel"
+ok=0; drift=0
+while IFS= read -r rel; do
+  [ -n "$rel" ] || continue
+  if [ -f "$SRCR/$rel" ] && cmp -s "$REPO/shims/$rel" "$SRCR/$rel"; then
+    ok=$((ok + 1))
   else
-    mkdir -p "$(dirname "$tpl")"
-    cp "$src" "$tpl"
-    case "$rel" in *.sh) chmod +x "$tpl" ;; esac
-    git add "templates/$rel"
-    echo "✔ synced: $rel"
+    [ -f "$SRCR/$rel" ] && echo "▶ shim drift: $rel (reference repo copy differs from the package shim)" \
+                        || echo "▶ shim missing in reference repo: $rel"
+    drift=$((drift + 1))
   fi
-  synced=$((synced + 1))
-done
-
-if [ "$CHECK" = 0 ] && ! git diff --cached --quiet; then
-  git commit -q -m "sync templates from $(basename "$SRCR")"
-  echo "✔ template sync committed"
-  git push --quiet 2>/dev/null && echo "✔ pushed" || echo "• push failed — push manually when back online"
-fi
+done < <( cd "$REPO/shims" && find scripts -type f -name 'gsd-*' ! -name '*.example' )
 
 echo ""
-echo "templates: $ok up to date · $synced $([ "$CHECK" = 1 ] && echo 'to sync' || echo 'synced') · $skipped skipped"
+if [ "$drift" -gt 0 ]; then
+  echo "shims: $ok up to date · $drift out of date — refresh with:  cd $SRCR && gsd-bootstrap-repo"
+else
+  echo "shims: all $ok up to date in $(basename "$SRCR")"
+fi
 [ -n "$DIRTY" ] && echo "reminder: the toolkit repo still has uncommitted changes (see above)"
 exit 0

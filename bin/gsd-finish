@@ -89,13 +89,21 @@ if [ -n "$REPO" ]; then
 fi
 git rev-parse --show-toplevel >/dev/null 2>&1 \
   || die "not inside a git repo — cd into the repo/worktree or pass --repo <path>"
-MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
-FINISH="$MAIN/scripts/gsd-finish-worktree-feature.sh"
-[ -x "$FINISH" ] || die "$MAIN has no scripts/gsd-finish-worktree-feature.sh — run gsd-bootstrap-repo first"
-GUARD="$MAIN/scripts/hooks/gsd-worktree-guard.sh"
-[ -f "$GUARD" ] || die "$MAIN has no guard hook — run gsd-bootstrap-repo first"
-BASE=$(sed -nE 's/.*\[ "\$branch" = "([^"]+)" \] && exit 0.*/\1/p' "$GUARD" | head -1)
-[ -n "$BASE" ] || die "could not detect the base branch from $GUARD"
+# ── locate the toolkit package (shared lib + worker commands) ────────────────
+SELF="$0"
+while [ -L "$SELF" ]; do
+  tgt=$(readlink "$SELF")
+  case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
+done
+GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
+[ -f "$GSD_PKG/lib/common.sh" ] || die "gsd-worktrees toolkit lib not found (looked in $GSD_PKG/lib) — reinstall with install.sh"
+# shellcheck source=../lib/common.sh
+. "$GSD_PKG/lib/common.sh"
+
+MAIN=$(gsd_main .)
+FINISH="$GSD_PKG/bin/gsd-wt-finish"
+BASE=$(gsd_base "$MAIN")
+[ -n "$BASE" ] || die "could not determine the base branch — set 'base = <branch>' in $MAIN/.gsd.conf"
 
 # ── local lock: serialize gsd commands touching this checkout ────────────────
 # (same lock as gsd-start — protects the shared main checkout from concurrent
@@ -169,9 +177,9 @@ if command -v gsd-clickup >/dev/null 2>&1; then
 fi
 
 # Run from the main checkout so removing the worktree we may be standing in is
-# safe; the repo script does the merge → push → cleanup.
+# safe; the toolkit worker does the merge → push → cleanup.
 cd "$MAIN"
-"$FINISH" "$ID"
+"$FINISH" "$ID" "$BASE"
 
 # ── ClickUp write-back (best-effort): story → "in testing" + merge comment ───
 if [ -n "$CU_ID" ]; then

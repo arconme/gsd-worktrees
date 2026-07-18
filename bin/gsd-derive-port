@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# gsd-derive-port.sh <base> — print <base> plus this worktree's phase number, so
-# a per-app `dev` script can pick a per-worktree port automatically:
+# gsd-derive-port <base> — print <base> plus this worktree's phase number, so
+# a per-app `dev` script can pick a per-worktree port automatically (via the
+# per-repo shim scripts/gsd-derive-port.sh):
 #
 #   "dev": "PORT=$(bash ../../scripts/gsd-derive-port.sh 3000) next dev"
 #
@@ -12,7 +13,7 @@
 # Fractional/insert phases (phase-11.1) use the integer part.
 set -euo pipefail
 
-base="${1:?usage: gsd-derive-port.sh <base-port>}"
+base="${1:?usage: gsd-derive-port <base-port>}"
 case "$base" in ''|*[!0-9]*) echo "gsd-derive-port: base must be an integer: $base" >&2; exit 1 ;; esac
 
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
