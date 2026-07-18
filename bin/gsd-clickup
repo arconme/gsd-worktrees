@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+#
+# gsd-clickup — minimal ClickUp write-back helper for the GSD lifecycle.
+#
+# Used by gsd-start (story → "in progress") and gsd-finish (story → "in
+# testing") to keep a ClickUp story in sync with the phase that implements it.
+# Standalone use is fine too.
+#
+# Auth: a ClickUp personal API token (pk_…), read from (first match wins):
+#   1. $CLICKUP_API_TOKEN already exported in the environment
+#   2. ~/.config/gsd/clickup.env   (sourced; must define CLICKUP_API_TOKEN=…)
+# Create one in ClickUp: avatar → Settings → Apps → API Token.
+#
+# Usage:
+#   gsd-clickup start   <task_id> <text>       phase started: status → "in
+#                                              progress" + post <text> comment
+#   gsd-clickup finish  <task_id> <text>       phase merged: status → "in
+#                                              testing" + post <text> comment
+#   gsd-clickup status  <task_id> <status>     set the task's status
+#   gsd-clickup comment <task_id> <text>       post a comment on the task
+#   gsd-clickup extract <string>               print the ClickUp id embedded in
+#                                              a phase title / branch name
+#                                              (cu_<id>, CU-<id>, …) or nothing
+#   gsd-clickup check                          verify the token works (whoami)
+#
+# The start/finish status names can be overridden in the config file (or env):
+#   GSD_CLICKUP_STATUS_START=…   (default: in progress)
+#   GSD_CLICKUP_STATUS_FINISH=…  (default: in testing)
+#
+# Exit codes: 0 ok · 1 usage/config error · 2 API call failed.
+# Callers in the GSD scripts treat every failure as non-fatal (|| true):
+# ClickUp being down must never block a claim or a merge.
+set -euo pipefail
+
+die() { printf 'gsd-clickup: %s\n' "$*" >&2; exit 1; }
+
+usage() {  # print the header comment block (everything up to the set line)
+  awk 'NR>1 && /^set -euo/{exit} NR>1 {sub(/^# ?/,""); print}' "$0"
+}
+
+CONFIG="${GSD_CLICKUP_CONFIG:-$HOME/.config/gsd/clickup.env}"
+
+load_token() {
+  if [ -z "${CLICKUP_API_TOKEN:-}" ] && [ -f "$CONFIG" ]; then
+    # shellcheck disable=SC1090
+    . "$CONFIG"
+  fi
+  [ -n "${CLICKUP_API_TOKEN:-}" ] \
+    || die "no CLICKUP_API_TOKEN — export it or put CLICKUP_API_TOKEN=pk_… in $CONFIG"
+}
+
+api() {  # api <method> <path> [json-body]; prints response body, fails on HTTP >= 400
+  local method="$1" path="$2" body="${3:-}"
+  local args=(-sS --max-time 15 -X "$method"
+              -H "Authorization: $CLICKUP_API_TOKEN"
+              -H "Content-Type: application/json")
+  [ -n "$body" ] && args+=(-d "$body")
+  local out http
+  out=$(curl "${args[@]}" -w '\n%{http_code}' "https://api.clickup.com/api/v2$path") \
+    || { printf 'gsd-clickup: curl failed (network?)\n' >&2; return 2; }
+  http="${out##*$'\n'}"
+  out="${out%$'\n'*}"
+  if [ "$http" -ge 400 ] 2>/dev/null; then
+    printf 'gsd-clickup: ClickUp API %s %s → HTTP %s: %s\n' "$method" "$path" "$http" "$out" >&2
+    return 2
+  fi
+  printf '%s\n' "$out"
+}
+
+json_escape() {  # minimal JSON string escaper for comment/status payloads
+  printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  -h|--help) usage; exit 0 ;;
+  '') usage >&2; exit 1 ;;
+
+  extract)
+    [ $# -ge 2 ] || die "usage: gsd-clickup extract <string>"
+    # Same convention discuss-phase uses: cu_<id> / CU-<id> (≥6 alnum), else "ClickUp <id>".
+    printf '%s\n' "$2" | grep -oiE 'cu[-_][a-z0-9]{6,}' | head -1 | sed -E 's/^[Cc][Uu][-_]//' \
+      || printf '%s\n' "$2" | grep -oiE 'clickup[[:space:]]+[a-z0-9]{6,}' | head -1 | awk '{print $2}' \
+      || true
+    ;;
+
+  check)
+    load_token
+    api GET /user >/dev/null && echo "✔ ClickUp token OK"
+    ;;
+
+  status)
+    [ $# -ge 3 ] || die "usage: gsd-clickup status <task_id> <status>"
+    load_token
+    api PUT "/task/$2" "{\"status\": $(json_escape "$3")}" >/dev/null \
+      && echo "✔ ClickUp $2 → status '$3'"
+    ;;
+
+  start|finish)
+    [ $# -ge 3 ] || die "usage: gsd-clickup $cmd <task_id> <comment-text>"
+    load_token
+    if [ "$cmd" = start ]; then st="${GSD_CLICKUP_STATUS_START:-in progress}"
+    else                        st="${GSD_CLICKUP_STATUS_FINISH:-in testing}"; fi
+    rc=0
+    # Idempotent: a -p re-attach or repeated finish must not re-set the status
+    # or spam a duplicate comment. Fetch once (with subtasks for the cascade).
+    cur_json=$(api GET "/task/$2?include_subtasks=true") || exit 2
+    cur=$(printf '%s' "$cur_json" | jq -r '.status.status')
+    if [ "$cur" = "$st" ]; then
+      echo "• ClickUp $2 already '$st' — status and comment skipped (idempotent)"
+    else
+      # attempt both independently — a bad status name must not swallow the comment
+      api PUT "/task/$2" "{\"status\": $(json_escape "$st")}" >/dev/null \
+        && echo "✔ ClickUp $2 → status '$st'" || rc=2
+      api POST "/task/$2/comment" "{\"comment_text\": $(json_escape "$3")}" >/dev/null \
+        && echo "✔ ClickUp $2 → comment posted" || rc=2
+    fi
+    # Cascade to open subtasks (UI —/BE —/… children ride along with the story;
+    # never touch closed/complete ones). Prevents subtask-status staleness.
+    for sid in $(printf '%s' "$cur_json" | jq -r --arg st "$st" \
+        '.subtasks[]? | select(.date_closed == null and .status.status != $st and .status.type != "closed" and (.status.status | test("^complete"; "i") | not)) | .id'); do
+      api PUT "/task/$sid" "{\"status\": $(json_escape "$st")}" >/dev/null \
+        && echo "✔ ClickUp $sid (subtask) → status '$st'" || rc=2
+    done
+    # List-role reminder: claimed stories belong on the Engineering board, but
+    # home-list moves are blocked on this ClickUp plan via the public API.
+    if [ "$cmd" = start ] && [ -n "${GSD_CLICKUP_ENG_LIST:-}" ]; then
+      home=$(printf '%s' "$cur_json" | jq -r '.list.id')
+      if [ "$home" != "$GSD_CLICKUP_ENG_LIST" ]; then
+        echo "• story lives in list '$(printf '%s' "$cur_json" | jq -r '.list.name')' — drag it to the Engineering list (API can't move it on this plan)"
+      fi
+    fi
+    exit "$rc"
+    ;;
+
+  comment)
+    [ $# -ge 3 ] || die "usage: gsd-clickup comment <task_id> <text>"
+    load_token
+    api POST "/task/$2/comment" "{\"comment_text\": $(json_escape "$3")}" >/dev/null \
+      && echo "✔ ClickUp $2 → comment posted"
+    ;;
+
+  *) die "unknown command: $cmd (see gsd-clickup --help)" ;;
+esac

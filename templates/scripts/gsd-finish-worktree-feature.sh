@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+#
+# gsd-finish-worktree-feature.sh — merge a finished phase worktree back into
+# develop, push, and clean up the worktree + branch. One command.
+#
+# Usage:
+#   scripts/gsd-finish-worktree-feature.sh <N | phase-N-slug>
+#   scripts/gsd-finish-worktree-feature.sh 1                       # finds phase-1-*
+#   scripts/gsd-finish-worktree-feature.sh phase-1-customer-onboarding-terms
+#
+# Safety: refuses if the worktree has uncommitted changes or if the main
+# checkout isn't on develop. A conflicting merge is aborted — develop is left
+# clean and the resolution steps are printed. Parallel runs serialize on
+# .git/gsd-cmd.lock (stale locks from crashed runs are reclaimed).
+set -euo pipefail
+
+ID="${1:-}"
+BASE="${2:-develop}"
+if [ -z "$ID" ]; then
+  echo "usage: scripts/gsd-finish-worktree-feature.sh <N | phase-N-slug> [base]" >&2; exit 1
+fi
+
+MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+[ -n "$MAIN" ] || { echo "error: not inside a git repository" >&2; exit 1; }
+
+# ── serialize on the shared main checkout ────────────────────────────────────
+# Same lock as gsd-start/gsd-finish; parallel finishes would otherwise race on
+# the one develop working tree. Skipped when the caller already holds it
+# (gsd-finish exports GSD_LOCK_HELD=1).
+LOCKDIR="$MAIN/.git/gsd-cmd.lock"
+if [ "${GSD_LOCK_HELD:-}" != 1 ]; then
+  waited=0
+  until mkdir "$LOCKDIR" 2>/dev/null; do
+    # Reclaim a stale lock left by a crashed run (owner PID gone). mv first so
+    # only one waiter wins the reclaim.
+    lockpid=$(cat "$LOCKDIR/pid" 2>/dev/null || true)
+    if [ -n "$lockpid" ] && ! kill -0 "$lockpid" 2>/dev/null; then
+      if mv "$LOCKDIR" "$LOCKDIR.stale.$$" 2>/dev/null; then
+        rm -rf "$LOCKDIR.stale.$$"
+        echo "▶ reclaimed stale gsd lock (owner PID $lockpid no longer running)"
+      fi
+      continue
+    fi
+    [ "$waited" -eq 0 ] && echo "▶ another gsd command is using this checkout — waiting (lock: $LOCKDIR)…"
+    waited=$((waited + 1))
+    if [ "$waited" -ge 300 ]; then
+      echo "error: gave up waiting after 300s — if no gsd command is running, remove the stale lock: rm -rf $LOCKDIR" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  echo "$$" > "$LOCKDIR/pid"
+  trap 'rm -rf "$LOCKDIR" 2>/dev/null || true' EXIT INT TERM
+fi
+
+# Resolve the branch: a bare number → the phase-<N>-* branch; else use as-is.
+# PR branches (*-pr, from /gsd-pr-branch) are never the feature branch.
+if printf '%s' "$ID" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+  BRANCH=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$ID-*" \
+             | grep -v -- '-pr$' | head -1 || true)
+  [ -n "$BRANCH" ] || { echo "error: no 'phase-$ID-*' branch found" >&2; exit 1; }
+else
+  BRANCH="$ID"
+fi
+
+if ! git -C "$MAIN" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  echo "error: branch '$BRANCH' not found" >&2; exit 1
+fi
+# The branch's actual worktree path, from git itself (a worktree can live
+# outside the conventional ../siminds-platform-worktrees/ dir).
+DEST=$(git -C "$MAIN" worktree list --porcelain \
+        | awk -v b="branch refs/heads/$BRANCH" '/^worktree /{w=$2} $0==b{print w; exit}')
+[ -n "$DEST" ] || DEST="$(dirname "$MAIN")/siminds-platform-worktrees/$BRANCH"
+
+if [ -d "$DEST" ] && [ -n "$(git -C "$DEST" status --porcelain)" ]; then
+  echo "error: $DEST has uncommitted changes — commit them in the worktree first" >&2; exit 1
+fi
+cur=$(git -C "$MAIN" branch --show-current)
+if [ "$cur" != "$BASE" ]; then
+  echo "error: main checkout is on '$cur', not '$BASE' (git -C \"$MAIN\" checkout $BASE), then re-run." >&2
+  exit 1
+fi
+
+HAS_ORIGIN=0
+git -C "$MAIN" remote get-url origin >/dev/null 2>&1 && HAS_ORIGIN=1
+
+if [ "$HAS_ORIGIN" = 1 ]; then
+  echo "▶ syncing local '$BASE' with origin…"
+  git -C "$MAIN" fetch origin "$BASE" --quiet || true
+  git -C "$MAIN" merge --ff-only "origin/$BASE" 2>/dev/null || \
+    echo "  (local '$BASE' not fast-forwardable to origin — continuing with local state)"
+fi
+
+echo "▶ merging '$BRANCH' into '$BASE'…"
+if ! git -C "$MAIN" merge --no-ff "$BRANCH" -m "Merge $BRANCH into $BASE"; then
+  conflicts=$(git -C "$MAIN" diff --name-only --diff-filter=U | tr '\n' ' ')
+  git -C "$MAIN" merge --abort 2>/dev/null || true
+  echo "✗ merge conflict with '$BASE' — aborted, '$BASE' left clean. Conflicts: ${conflicts:-?}" >&2
+  echo "  Resolve in the worktree: git -C $DEST merge $BASE, fix conflicts, commit, then re-run finish." >&2
+  exit 1
+fi
+
+if [ "$HAS_ORIGIN" = 1 ]; then
+  echo "▶ pushing '$BASE'…"
+  pushed=0
+  for _try in 1 2 3; do
+    if git -C "$MAIN" push origin "$BASE" --quiet; then pushed=1; break; fi
+    echo "  push rejected (parallel session moved '$BASE') — merging origin/$BASE and retrying…"
+    if ! git -C "$MAIN" pull --no-rebase --no-edit origin "$BASE"; then
+      conflicts=$(git -C "$MAIN" diff --name-only --diff-filter=U | tr '\n' ' ')
+      git -C "$MAIN" merge --abort 2>/dev/null || true
+      echo "✗ conflict syncing with origin/$BASE — aborted, '$BASE' left clean. Conflicts: ${conflicts:-?}" >&2
+      echo "  Resolve manually: git -C $MAIN pull --no-rebase origin $BASE, fix, commit, push — then re-run finish to clean up." >&2
+      exit 1
+    fi
+  done
+  if [ "$pushed" != 1 ]; then
+    echo "✗ could not push '$BASE' after 3 attempts — push manually, then re-run to clean up." >&2
+    exit 1
+  fi
+else
+  echo "• no 'origin' remote — skipping push"
+fi
+
+echo "▶ removing worktree + branch…"
+if [ -d "$DEST" ]; then
+  git -C "$MAIN" worktree remove "$DEST"
+else
+  echo "• worktree already removed — cleaning up the branch only"
+  git -C "$MAIN" worktree prune
+fi
+git -C "$MAIN" branch -d "$BRANCH"
+
+echo "✅ '$BRANCH' merged into '$BASE', pushed, and cleaned up."

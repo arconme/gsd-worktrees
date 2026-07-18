@@ -1,0 +1,17 @@
+# gsd-dev.conf — dev servers to boot together via scripts/gsd-dev-worktree.sh
+# (`pnpm dev:wt`). Copy this file to scripts/gsd-dev.conf and edit.
+#
+# The KEY step for per-worktree ports is NOT here: make each app's own `dev`
+# script derive its port so plain `pnpm dev` is worktree-aware. Use the shared
+# helper scripts/gsd-derive-port.sh, e.g. in a package.json:
+#
+#   "dev": "PORT=$(bash ../../scripts/gsd-derive-port.sh 3000) next dev"
+#   "dev": "PORT=$(bash ../../scripts/gsd-derive-port.sh 5000) nest start --watch"
+#
+# It prints <base> + this worktree's phase number (phase-8 -> base+8; non-phase
+# branches -> base). With that in place, plain `pnpm dev` already picks a
+# per-worktree port — this launcher just boots them all in one terminal.
+#
+# One line per service:  name | command
+# api  | pnpm --filter @acme/api dev
+# web  | pnpm --filter @acme/web dev

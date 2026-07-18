@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#
+# gsd-derive-port.sh <base> — print <base> plus this worktree's phase number, so
+# a per-app `dev` script can pick a per-worktree port automatically:
+#
+#   "dev": "PORT=$(bash ../../scripts/gsd-derive-port.sh 3000) next dev"
+#
+# GSD names worktrees `phase-<N>-<slug>` and N is unique across concurrent
+# worktrees, so N is a collision-free offset (phase-8 -> base+8). Non-phase
+# branches (a base branch, ad-hoc) and non-git contexts (a CI build tarball)
+# resolve to N=0 -> the bare base, so nothing outside a worktree changes.
+# Fractional/insert phases (phase-11.1) use the integer part.
+set -euo pipefail
+
+base="${1:?usage: gsd-derive-port.sh <base-port>}"
+case "$base" in ''|*[!0-9]*) echo "gsd-derive-port: base must be an integer: $base" >&2; exit 1 ;; esac
+
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+n="$(printf '%s' "$branch" | sed -n 's/^phase-\([0-9]\{1,\}\).*/\1/p')"
+echo "$((base + ${n:-0}))"

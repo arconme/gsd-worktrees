@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+#
+# gsd-init — take a repo with NO GSD to "ready for gsd-start" in one command:
+# installs the worktree workflow (gsd-bootstrap-repo), then prints (or, with
+# --agent/--launch, opens) the right initialization skill (/gsd-new-project or
+# /gsd-ingest-docs — auto-picked by whether planning docs already exist).
+#
+# Agent-agnostic: the session is opened with whatever CLI --agent names (claude,
+# gemini, …); both take the launch prompt as a positional arg. Default is
+# no-launch — the 'cd … && <agent> …' command is printed for you to run.
+set -euo pipefail
+
+die() { printf '✖ %s\n' "$@" >&2; exit 1; }
+
+usage() {
+  cat <<'HELP'
+gsd-init — set up GSD in a repo that doesn't have it yet
+
+Runs gsd-bootstrap-repo (worktree scripts, guard hook, settings, CLAUDE.md
+section, gitignore/gitattributes) and then prints (or, with --agent/--launch,
+opens) the session on the right initialization skill:
+
+  /gsd-new-project    when the repo has no planning docs (fresh interview)
+  /gsd-ingest-docs    when ADRs/PRDs/SPECs are detected (bootstrap from them)
+
+The initialization itself stays interactive — that conversation is where the
+project context comes from; gsd-init removes every step around it.
+
+Safe to re-run: if the repo is already initialized (.planning/ROADMAP.md
+exists), the workflow files are still repaired/synced from the source, but the
+planning state is never touched — you're just pointed back to gsd-start.
+
+USAGE
+  gsd-init [options]          # run from INSIDE the target repo
+
+OPTIONS
+  --new            force /gsd-new-project (skip docs detection)
+  --ingest         force /gsd-ingest-docs
+  --src <path>     source repo for the bootstrap (default: gsd-bootstrap-repo's)
+  --base <branch>  base branch override (passed to gsd-bootstrap-repo)
+  --no-commit      don't commit the bootstrap files (default: commit)
+  --agent <cmd>    agent CLI to open the session with (claude, gemini, …);
+                   naming one implies --launch. (default: claude)
+  --launch         open the session with the default agent (default is NO
+                   launch — the 'cd … && <agent> …' command is printed instead)
+  --no-launch      force print-only, overriding --agent/--launch
+  -h, --help       show this help
+
+EXAMPLES
+  cd ~/projects/acme/webshop && gsd-init
+      Bootstrap + commit, then print the 'cd … && claude …' init command.
+
+  cd ~/projects/acme/webshop && gsd-init --launch
+      Same, but open the Claude session on the detected init skill right away.
+
+  gsd-init --ingest --agent gemini
+      Force ingest mode and open the session with the gemini CLI.
+
+  gsd-init --base main
+      Bootstrap against 'main', print the init command to run later.
+
+AFTER INITIALIZATION
+  gsd-start "<description>"   begin each feature (claim + worktree + session)
+  gsd-finish                  land it (merge back, push, clean up)
+
+RELATED
+  gsd-bootstrap-repo   just the file installation (what gsd-init wraps)
+  gsd-start, gsd-finish
+HELP
+}
+
+MODE=""          # "" = auto-detect | new | ingest
+BOOT_ARGS=()
+COMMIT=1
+AGENT="claude"
+LAUNCH=0
+FORCE_NOLAUNCH=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --new)    MODE=new;    shift ;;
+    --ingest) MODE=ingest; shift ;;
+    --src)  [ $# -ge 2 ] || die "--src needs a value";  BOOT_ARGS+=(--src "$2");  shift 2 ;;
+    --base) [ $# -ge 2 ] || die "--base needs a value"; BOOT_ARGS+=(--base "$2"); shift 2 ;;
+    --no-commit) COMMIT=0; shift ;;
+    --agent) [ $# -ge 2 ] || die "--agent needs a value (e.g. claude, gemini)"; AGENT="$2"; LAUNCH=1; shift 2 ;;
+    --launch)    LAUNCH=1; shift ;;
+    --no-launch) FORCE_NOLAUNCH=1; shift ;;
+    *) die "unknown arg: $1 (see gsd-init --help)" ;;
+  esac
+done
+# --no-launch always wins, whatever order it appeared in.
+[ "$FORCE_NOLAUNCH" = 1 ] && LAUNCH=0
+DEST="$(git rev-parse --show-toplevel 2>/dev/null)" \
+  || die "run this from inside the target git repo"
+command -v gsd-bootstrap-repo >/dev/null 2>&1 || die "gsd-bootstrap-repo not found on PATH"
+
+# ── already initialized? (still repair/sync the workflow files below) ────────
+ALREADY=0
+[ -f "$DEST/.planning/ROADMAP.md" ] && ALREADY=1
+
+# ── step 1: install the workflow files (idempotent — also repairs/syncs) ─────
+[ "$COMMIT" = 1 ] && BOOT_ARGS+=(--commit)
+echo "▶ installing the GSD worktree workflow (gsd-bootstrap-repo)…"
+echo ""
+gsd-bootstrap-repo ${BOOT_ARGS[@]+"${BOOT_ARGS[@]}"}
+echo ""
+
+if [ "$ALREADY" = 1 ]; then
+  echo "• $DEST already has GSD planning state (.planning/ROADMAP.md) —"
+  echo "  workflow files were repaired/synced, planning state left untouched."
+  echo "  Start features with:  gsd-start \"<description>\""
+  exit 0
+fi
+
+# ── step 2: pick the initialization skill ────────────────────────────────────
+if [ -z "$MODE" ]; then
+  DOCS=$(find "$DEST" -maxdepth 3 \
+           \( -path '*/node_modules' -o -path '*/.git' -o -name '.planning' \) -prune -o \
+           -type f \( -iname '*adr*.md' -o -iname '*prd*.md' -o -iname '*rfc*.md' \
+                      -o -iname 'spec*.md' -o -iname 'requirements*.md' \
+                      -o -iname 'architecture*.md' -o -iname 'design*.md' \) -print \
+           2>/dev/null | head -8 || true)
+  if [ -n "$DOCS" ]; then
+    MODE=ingest
+    echo "▶ found existing planning docs — will initialize by ingesting them:"
+    printf '%s\n' "$DOCS" | sed "s|^$DEST/|    |"
+    echo "  (use 'gsd-init --new' instead if these shouldn't seed the plan)"
+  else
+    MODE=new
+    echo "▶ no planning docs found — will initialize with the project interview"
+  fi
+fi
+case "$MODE" in
+  new)    CMD="/gsd-new-project" ;;
+  ingest) CMD="/gsd-ingest-docs" ;;
+esac
+
+# ── step 3: open the session (the initialization itself is interactive) ──────
+# Both claude and gemini take the launch prompt as a positional arg, so a single
+# `<agent> "<prompt>"` shape works for either; --agent selects which.
+if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$AGENT" >/dev/null 2>&1; then
+  echo ""
+  echo "▶ opening $AGENT session in $DEST ($CMD)…"
+  cd "$DEST"
+  exec "$AGENT" "$CMD"
+else
+  echo ""
+  if [ "$LAUNCH" = 1 ] && ! command -v "$AGENT" >/dev/null 2>&1; then
+    echo "• '$AGENT' not found on PATH — not launching."
+  fi
+  echo "Next:  cd $DEST && $AGENT \"$CMD\""
+  echo "Then per feature:  gsd-start \"<description>\"  →  work  →  gsd-finish"
+fi

@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+#
+# gsd-new-worktree-feature.sh — create the worktree for a GSD phase in ONE step.
+#
+# Naming convention: branch + worktree dir = phase-<N>-<slug>, where <N> is the
+# phase number. This binds a phase to exactly one worktree, which the guard hook
+# (scripts/hooks/gsd-worktree-guard.sh) uses to keep per-phase commands in the
+# right place.
+#
+# Usage:
+#   scripts/gsd-new-worktree-feature.sh [slug] [--phase <N>] [--no-install|--install]
+#
+#   - <N>  is auto-detected: the phase added by the latest /gsd:phase commit,
+#          else the highest-numbered phase in .planning/ROADMAP.md.
+#          Pass --phase <N> to target an already-claimed phase explicitly
+#          (e.g. via gsd-start -p <N>); it must exist in ROADMAP.md.
+#   - <slug> defaults to a slugified phase title; pass one to override.
+#   - install defaults to BACKGROUND (logs to <worktree>/.gsd-install.log,
+#     status in <worktree>/.gsd-install.status). --install runs it in the
+#     foreground; --no-install skips it.
+#   - Idempotent per phase: if a phase-<N>-* branch already exists, its
+#     worktree is reused (re-attached if it was removed) instead of failing.
+#
+# Run from the main checkout on develop (right after claiming the phase).
+# This is what the /gsd:phase PostToolUse hook calls automatically.
+set -euo pipefail
+
+INSTALL_MODE=background   # background | foreground | none
+SLUG=""
+PHASE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --no-install)  INSTALL_MODE=none; shift ;;
+    --install)     INSTALL_MODE=foreground; shift ;;
+    --background)  INSTALL_MODE=background; shift ;;
+    --phase)       [ $# -ge 2 ] || { echo "error: --phase needs a value" >&2; exit 1; }
+                   PHASE="$2"; shift 2 ;;
+    -*)            echo "unknown flag: $1" >&2; exit 1 ;;
+    *)             SLUG="$1"; shift ;;
+  esac
+done
+
+# First entry of `git worktree list` is the main checkout (source of the config).
+MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+[ -n "$MAIN" ] || { echo "error: not inside a git repository" >&2; exit 1; }
+ROADMAP="$MAIN/.planning/ROADMAP.md"
+[ -f "$ROADMAP" ] || { echo "error: $ROADMAP not found (is GSD initialized?)" >&2; exit 1; }
+
+# Phase number: --phase wins; else prefer the one added in the latest commit
+# (the /gsd:phase claim), else the highest-numbered phase in ROADMAP.md.
+if [ -n "$PHASE" ]; then
+  N="$PHASE"
+  N_RE=$(printf '%s' "$N" | sed 's/\./\\./g')
+  grep -qE "^### Phase $N_RE:" "$ROADMAP" \
+    || { echo "error: phase $N not found in $ROADMAP" >&2; exit 1; }
+else
+  N=$(git -C "$MAIN" show HEAD -- .planning/ROADMAP.md 2>/dev/null \
+        | grep -E '^\+### Phase [0-9]+(\.[0-9]+)?:' | tail -1 \
+        | sed -E 's/^\+### Phase ([0-9]+(\.[0-9]+)?):.*/\1/' || true)
+  if [ -z "${N:-}" ]; then
+    N=$(grep -E '^### Phase [0-9]+(\.[0-9]+)?:' "$ROADMAP" \
+          | sed -E 's/^### Phase ([0-9]+(\.[0-9]+)?):.*/\1/' \
+          | sort -t. -k1,1n -k2,2n | tail -1 || true)
+  fi
+  [ -n "${N:-}" ] || { echo "error: no phase found in ROADMAP.md — run /gsd:phase first" >&2; exit 1; }
+fi
+
+# Slug: from arg, else slugify the phase title.
+if [ -z "$SLUG" ]; then
+  N_RE=$(printf '%s' "$N" | sed 's/\./\\./g')
+  TITLE=$(grep -E "^### Phase $N_RE:" "$ROADMAP" | head -1 | sed -E "s/^### Phase $N_RE:[[:space:]]*//" || true)
+  SLUG=$(printf '%s' "${TITLE:-}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+  [ -n "$SLUG" ] || SLUG="feature"
+fi
+
+NAME="phase-$N-$SLUG"
+
+# Idempotent per phase: reuse any existing phase-<N>-* branch (whatever its
+# slug), and its worktree if still attached. PR branches (*-pr, from
+# /gsd-pr-branch) are NOT the feature branch — never attach to those.
+EXISTING=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$N-*" \
+             | grep -v -- '-pr$' | head -1 || true)
+if [ -n "$EXISTING" ]; then
+  NAME="$EXISTING"
+  WT=$(git -C "$MAIN" worktree list --porcelain \
+        | awk -v b="branch refs/heads/$NAME" '/^worktree /{w=$2} $0==b{print w; exit}')
+  if [ -n "$WT" ]; then
+    echo "• branch '$NAME' already has a worktree — reusing it."
+    echo ""
+    echo "✅ worktree ready: $WT   (phase $N)"
+    exit 0
+  fi
+fi
+DEST="$(dirname "$MAIN")/siminds-platform-worktrees/$NAME"
+if [ -e "$DEST" ]; then
+  echo "error: $DEST already exists but is not a registered worktree — remove it or run 'git worktree prune'" >&2
+  exit 1
+fi
+
+if [ -n "$EXISTING" ]; then
+  echo "▶ re-attaching worktree for existing branch '$NAME': $DEST"
+  git -C "$MAIN" worktree add "$DEST" "$NAME"
+else
+  echo "▶ creating worktree: $DEST   (branch '$NAME' off develop)"
+  git -C "$MAIN" worktree add "$DEST" -b "$NAME" develop
+fi
+
+echo "▶ copying gitignored local config…"
+while IFS= read -r rel; do
+  [ -z "$rel" ] && continue
+  mkdir -p "$DEST/$(dirname "$rel")"
+  cp "$MAIN/$rel" "$DEST/$rel" && echo "  copied $rel"
+done < <( cd "$MAIN" && git ls-files --others --ignored --exclude-standard \
+            -- ':(glob)**/.env.local' '.env.local' '.mcp.json' 2>/dev/null )
+
+case "$INSTALL_MODE" in
+  background)
+    ( cd "$DEST" && rm -f .gsd-install.status \
+      && nohup bash -c 'if pnpm install >.gsd-install.log 2>&1; then echo ok >.gsd-install.status; else echo fail >.gsd-install.status; fi' </dev/null >/dev/null 2>&1 & )
+    echo "▶ pnpm install running in background → $DEST/.gsd-install.log (status: .gsd-install.status)" ;;
+  foreground)
+    echo "▶ installing dependencies (pnpm install)…"; ( cd "$DEST" && pnpm install ) ;;
+  none)
+    echo "▶ skipped pnpm install (--no-install)" ;;
+esac
+
+echo ""
+echo "✅ worktree ready: $DEST   (phase $N)"
+echo "Open a Claude session there, then:"
+echo "    /gsd:discuss-phase $N → /gsd:plan-phase $N → /gsd:execute-phase $N"
+echo "Finish:  scripts/gsd-finish-worktree-feature.sh $N"

@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+#
+# gsd-finish — finish a GSD phase from anywhere: merge the phase worktree back
+# into the base branch, push, and remove the worktree + branch.
+#
+# Companion to gsd-start. Delegates the merge/cleanup to the repo's own
+# scripts/gsd-finish-worktree-feature.sh (single source of truth, synced by
+# gsd-bootstrap-repo), but adds what a shared command can:
+#   - no argument needed when run from inside a phase worktree (phase is
+#     inferred from the current branch)
+#   - auto-switches the main checkout back to the base branch when it was left
+#     parked on another branch (only if it is clean)
+#   - safe to run from inside the worktree being removed (runs from the main
+#     checkout, prints where to cd afterwards)
+#
+# Usage:
+#   gsd-finish                      # from inside a phase-N-* worktree
+#   gsd-finish <N | phase-N-slug>   # from anywhere in the repo
+#   gsd-finish <N> --repo <path>    # from outside the repo
+set -euo pipefail
+
+die() { printf '✖ %s\n' "$@" >&2; exit 1; }
+
+usage() {
+  cat <<'HELP'
+gsd-finish — finish a GSD phase: merge back, push, clean up
+
+Merges the phase worktree's branch into the base branch, pushes, and removes
+the worktree + branch. Companion to gsd-start; delegates the merge/cleanup to
+the repo's scripts/gsd-finish-worktree-feature.sh.
+
+USAGE
+  gsd-finish [<N> | phase-<N>-<slug>] [options]
+
+  With no phase argument, run it from INSIDE the phase worktree — the phase is
+  inferred from the current branch.
+
+OPTIONS
+  --repo <path>   any checkout of the target repo (default: derived from the
+                  current directory)
+  -h, --help      show this help
+
+EXAMPLES
+  gsd-finish
+      From inside ../<repo>-worktrees/phase-7-invoice-fix: merges phase 7,
+      pushes, removes the worktree and branch.
+
+  gsd-finish 7
+      Same, from anywhere inside the repo or its worktrees.
+
+  gsd-finish phase-7-invoice-fix
+      Same, naming the branch explicitly.
+
+  gsd-finish 7 --repo ~/projects/acme/webshop
+      Finish a phase of another repo without cd-ing into it first.
+
+BEHAVIOR
+  - If the main checkout was left on another branch, it is switched back to
+    the base branch automatically (only when it has no uncommitted changes).
+  - Safe to run from inside the worktree being removed; afterwards cd to the
+    main checkout (the command prints the path).
+  - Refuses if the worktree has uncommitted changes — commit them first.
+  - ROADMAP.md/STATE.md merge conflicts resolve automatically (merge=union).
+  - ClickUp: when the branch name or ROADMAP phase title carries cu_<id>, the
+    story is moved to "in testing" with a merge comment (best-effort, via
+    gsd-clickup — needs a token in ~/.config/gsd/clickup.env).
+
+RELATED
+  gsd-start             start a phase (claim + worktree + session) in one step
+  gsd-init              set up GSD in a repo that doesn't have it yet
+  gsd-bootstrap-repo    just the file installation (what gsd-init wraps)
+HELP
+}
+
+ID=""
+REPO=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --repo) [ $# -ge 2 ] || die "--repo needs a value"; REPO="$2"; shift 2 ;;
+    -*) die "unknown flag: $1 (see gsd-finish --help)" ;;
+    *)  [ -z "$ID" ] || die "unexpected argument: $1 (see gsd-finish --help)"; ID="$1"; shift ;;
+  esac
+done
+
+# ── locate the main checkout ─────────────────────────────────────────────────
+if [ -n "$REPO" ]; then
+  cd "$REPO" 2>/dev/null || die "--repo path not found: $REPO"
+fi
+git rev-parse --show-toplevel >/dev/null 2>&1 \
+  || die "not inside a git repo — cd into the repo/worktree or pass --repo <path>"
+MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+FINISH="$MAIN/scripts/gsd-finish-worktree-feature.sh"
+[ -x "$FINISH" ] || die "$MAIN has no scripts/gsd-finish-worktree-feature.sh — run gsd-bootstrap-repo first"
+GUARD="$MAIN/scripts/hooks/gsd-worktree-guard.sh"
+[ -f "$GUARD" ] || die "$MAIN has no guard hook — run gsd-bootstrap-repo first"
+BASE=$(sed -nE 's/.*\[ "\$branch" = "([^"]+)" \] && exit 0.*/\1/p' "$GUARD" | head -1)
+[ -n "$BASE" ] || die "could not detect the base branch from $GUARD"
+
+# ── local lock: serialize gsd commands touching this checkout ────────────────
+# (same lock as gsd-start — protects the shared main checkout from concurrent
+# gsd commands in other terminals on this machine)
+LOCKDIR="$MAIN/.git/gsd-cmd.lock"
+release_lock() { rm -rf "$LOCKDIR" 2>/dev/null || true; }
+acquire_lock() {
+  local waited=0 lockpid
+  until mkdir "$LOCKDIR" 2>/dev/null; do
+    # Reclaim a stale lock left by a crashed run (owner PID gone). mv first so
+    # only one waiter wins the reclaim.
+    lockpid=$(cat "$LOCKDIR/pid" 2>/dev/null || true)
+    if [ -n "$lockpid" ] && ! kill -0 "$lockpid" 2>/dev/null; then
+      if mv "$LOCKDIR" "$LOCKDIR.stale.$$" 2>/dev/null; then
+        rm -rf "$LOCKDIR.stale.$$"
+        echo "▶ reclaimed stale gsd lock (owner PID $lockpid no longer running)"
+      fi
+      continue
+    fi
+    [ "$waited" -eq 0 ] && echo "▶ another gsd command is using this checkout — waiting (lock: $LOCKDIR)…"
+    waited=$((waited + 1))
+    [ "$waited" -ge 300 ] && die "gave up waiting after 300s — if no gsd command is running, remove the stale lock: rm -rf $LOCKDIR"
+    sleep 1
+  done
+  echo "$$" > "$LOCKDIR/pid"
+  trap release_lock EXIT INT TERM
+  # Tell delegated repo scripts the lock is already held (re-entrancy guard —
+  # gsd-finish-worktree-feature.sh takes the same lock when run standalone).
+  export GSD_LOCK_HELD=1
+}
+acquire_lock
+
+# ── infer the phase from the current worktree when no argument given ─────────
+if [ -z "$ID" ]; then
+  br=$(git branch --show-current 2>/dev/null || true)
+  case "$br" in
+    phase-*) ID="$br" ;;
+    *) die "no phase given and current branch '$br' is not a phase-* worktree" \
+           'usage: gsd-finish [N | phase-N-slug] [--repo <path>]' ;;
+  esac
+fi
+
+# ── main checkout must be on the base branch (auto-switch when clean) ────────
+cur=$(git -C "$MAIN" branch --show-current)
+if [ "$cur" != "$BASE" ]; then
+  [ -z "$(git -C "$MAIN" status --porcelain)" ] \
+    || die "main checkout is on '$cur' with uncommitted changes — clean it up, then re-run"
+  echo "▶ main checkout was on '$cur' — switching to '$BASE'…"
+  git -C "$MAIN" checkout -q "$BASE"
+fi
+
+# ── resolve the ClickUp story BEFORE the branch is deleted ───────────────────
+# Convention: the story id rides in the branch name (phase-N-slug-cu_<id>) or,
+# failing that, in the phase's ROADMAP.md title. Captured here, acted on after
+# the merge succeeds. Best-effort throughout — never blocks the finish.
+CU_ID=""
+PHASE_N=""
+if command -v gsd-clickup >/dev/null 2>&1; then
+  case "$ID" in
+    phase-*) BR="$ID"; PHASE_N=$(printf '%s' "$ID" | sed -E 's/^phase-([0-9]+(\.[0-9]+)?)-.*/\1/') ;;
+    *)       PHASE_N="$ID"
+             BR=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$ID-*" \
+                    | grep -v -- '-pr$' | head -1 || true) ;;
+  esac
+  CU_ID=$(gsd-clickup extract "${BR:-}" 2>/dev/null || true)
+  if [ -z "$CU_ID" ] && [ -n "$PHASE_N" ] && [ -f "$MAIN/.planning/ROADMAP.md" ]; then
+    N_RE=$(printf '%s' "$PHASE_N" | sed 's/\./\\./g')
+    TITLE=$(grep -E "^### Phase $N_RE:" "$MAIN/.planning/ROADMAP.md" | head -1 || true)
+    CU_ID=$(gsd-clickup extract "${TITLE:-}" 2>/dev/null || true)
+  fi
+fi
+
+# Run from the main checkout so removing the worktree we may be standing in is
+# safe; the repo script does the merge → push → cleanup.
+cd "$MAIN"
+"$FINISH" "$ID"
+
+# ── ClickUp write-back (best-effort): story → "in testing" + merge comment ───
+if [ -n "$CU_ID" ]; then
+  SHA=$(git -C "$MAIN" rev-parse --short "$BASE" 2>/dev/null || echo "?")
+  gsd-clickup finish "$CU_ID" \
+    "✅ GSD phase ${PHASE_N:-?} merged to $BASE — commit $SHA in $(basename "$MAIN"). Ready for testing." \
+    || echo "• ClickUp story $CU_ID not updated (non-fatal) — check gsd-clickup check / your token"
+fi
+
+echo ""
+echo "If your shell was inside the removed worktree:  cd $MAIN"

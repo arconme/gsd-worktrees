@@ -1,0 +1,486 @@
+#!/usr/bin/env bash
+#
+# gsd-start — start a GSD feature in ONE step: claim the phase, sync the claim,
+# create the worktree, and print (or, with --agent/--launch, open) the session.
+#
+# Replaces the manual sequence:
+#   /gsd-phase "<desc>"  →  git push  →  scripts/gsd-new-worktree-feature.sh
+#   →  cd worktree  →  <agent> /gsd-discuss-phase N
+#
+# Agent-agnostic: the session is opened with whatever CLI --agent names (claude,
+# gemini, …); both take the launch prompt as a positional arg. Default is
+# no-launch — the 'cd … && <agent> …' command is printed for you to run.
+#
+# The claim uses `gsd-sdk query phase.add` — the same deterministic CLI the
+# /gsd-phase skill delegates to — so no LLM call is needed and the ROADMAP
+# entry format is identical. Safe for parallel use: the claim is pulled-then-
+# pushed with a rebase-and-retry loop, so two sessions claiming at once get
+# distinct phase numbers.
+#
+# Usage (from anywhere inside a GSD-fitted repo or its worktrees):
+#   gsd-start "<phase description>" [--slug <slug>] [--repo <path>]
+#             [--agent <cmd>] [--launch] [--no-push]
+#   gsd-start --insert <N> "<phase description>" [--slug <slug>] [--repo <path>]
+#             [--agent <cmd>] [--launch] [--no-push]
+#   gsd-start -p <N> [--slug <slug>] [--repo <path>] [--agent <cmd>] [--launch]
+#
+# Options:
+#   -p, --phase <N>  attach to ALREADY-CLAIMED phase N instead of claiming a
+#                    new one (no ROADMAP commit/push; reuses the phase's
+#                    worktree if it exists — safe to rerun after a failure)
+#   --insert <N>   claim a FRACTIONAL phase after phase N (11 → 11.1, then
+#   --after <N>    11.2, …) via gsd-sdk phase.insert, instead of the next
+#                  integer. Requires a description. (alias: --after)
+#   --cu <id>      ClickUp task id driving this phase (with or without the
+#                  cu_ prefix). Appends cu_<id> to the phase title/slug so
+#                  discuss-phase snapshots the story, and moves the story to
+#                  "in progress" (best-effort, via gsd-clickup).
+#   --slug <slug>  worktree/branch slug (default: slugified description)
+#   --repo <path>  main checkout of the target repo (default: derived from cwd)
+#   --agent <cmd>  agent CLI to open the session with (claude, gemini, …);
+#                  naming one implies --launch. (default: claude)
+#   --launch       open the session in the worktree with the default agent
+#                  (default is NO launch — the command is printed instead)
+#   --no-launch    force print-only, even if --agent/--launch was given
+#   --no-push      skip pull/push (single-machine / no-remote workflows)
+set -euo pipefail
+
+die() { printf '✖ %s\n' "$@" >&2; exit 1; }
+
+usage() {
+  cat <<'HELP'
+gsd-start — start a GSD feature in ONE step
+
+Claims the next phase, publishes the claim, creates the phase worktree, and
+prints (or, with --agent/--launch, opens) the session on /gsd-discuss-phase <N>.
+Replaces the manual sequence:
+  /gsd-phase "<desc>" → git push → scripts/gsd-new-worktree-feature.sh
+  → cd <worktree> → <agent> "/gsd-discuss-phase N"
+
+Agent-agnostic: --agent picks the CLI (claude, gemini, …). Default is no-launch
+— the 'cd … && <agent> …' one-liner is printed for you to run.
+
+USAGE
+  gsd-start "<phase description>" [options]     claim a NEW phase (default)
+  gsd-start --insert <N> "<desc>" [options]     claim a FRACTIONAL phase after N
+  gsd-start -p <N> [options]                    attach to an EXISTING phase
+
+OPTIONS
+  -p, --phase <N> attach to already-claimed phase N: skip the claim/push,
+                  create (or reuse) its worktree, open the session there.
+                  Use after a failed run, or when the phase was claimed
+                  separately (/gsd-phase) — avoids duplicate ROADMAP entries.
+                  The description is taken from ROADMAP.md and may be omitted.
+  --insert <N>    claim a decimal phase inserted after phase N instead of the
+  --after <N>     next integer: 11 → 11.1, a second insert → 11.2, and so on
+                  (delegates to gsd-sdk phase.insert). Needs a description;
+                  cannot be combined with -p. (alias: --after)
+  --cu <id>       ClickUp task id driving this phase (accepts 869e33cv4,
+                  cu_869e33cv4, or a task URL). The id is appended to the
+                  phase title and slug (convention: cu_<id>) so
+                  /gsd-discuss-phase snapshots the story, and the story is
+                  moved to "in progress" with a comment (best-effort — needs
+                  gsd-clickup + a token in ~/.config/gsd/clickup.env).
+                  Without --cu, an id already embedded in the description
+                  (… cu_<id>) is picked up the same way.
+  --slug <slug>   worktree/branch slug → phase-<N>-<slug>
+                  (default: slugified phase description)
+  --repo <path>   main checkout of the target repo
+                  (default: derived from the current directory)
+  --agent <cmd>   agent CLI to open the session with — claude, gemini, or any
+                  binary that takes the prompt as a positional arg. Naming an
+                  agent implies --launch. (default: claude)
+  --launch        open the session with the default agent (default is NO
+                  launch — the 'cd … && <agent> …' command is printed instead)
+  --no-launch     force print-only, overriding --agent/--launch
+  --no-push       skip pull/push (no-remote or offline workflows)
+  -h, --help      show this help
+
+EXAMPLES
+  gsd-start "customer terms rework"
+      Claim the phase, push, create ../<repo>-worktrees/phase-<N>-customer-
+      terms-rework, and open Claude there.
+
+  gsd-start --insert 11 "hotfix reset-email copy"
+      Claim phase 11.1 (the next free decimal after phase 11), push, create
+      ../<repo>-worktrees/phase-11.1-hotfix-reset-email-copy, open Claude.
+
+  gsd-start --after 11 "second hotfix"
+      Run after the previous example: phase 11.1 already exists, so this
+      claims phase 11.2 (the decimal auto-increments). --after == --insert.
+
+  gsd-start --insert 11 "urgent db backfill" --slug db-backfill
+      Insert phase 11.x after phase 11 but force the branch/worktree slug →
+      phase-11.x-db-backfill (default would be slugified from the description).
+
+  gsd-start -p 11.1
+      Re-attach to the already-inserted phase 11.1 (e.g. after a failed run):
+      no new claim, reuse/re-create its phase-11.1-* worktree. Idempotent.
+
+  gsd-start -p 7
+      Phase 7 is already in ROADMAP.md: don't claim anything — create or
+      reuse its phase-7-* worktree and open Claude there. Idempotent.
+
+  gsd-start "fix invoice rounding" --slug invoice-fix
+      Same, but the branch/worktree is phase-<N>-invoice-fix.
+
+  gsd-start "reporting exports"
+      Prepare everything, print the 'cd … && claude …' command to run later
+      (no launch is the default).
+
+  gsd-start "reporting exports" --launch
+      Same, but open the Claude session in the worktree right away.
+
+  gsd-start "reporting exports" --agent gemini
+      Prepare everything and open the session with the gemini CLI instead of
+      claude (naming an agent implies --launch).
+
+  gsd-start "reporting exports" --agent gemini --no-launch
+      Print 'cd … && gemini "/gsd-discuss-phase N"' for you to run — pick the
+      agent for the printed command without opening it.
+
+  gsd-start "hotfix parsing" --repo ~/projects/acme/webshop
+      Start a phase in another repo without cd-ing into it first.
+
+PARALLEL SESSIONS
+  Safe to run from several terminals at once:
+  - a local lock (.git/gsd-cmd.lock) serializes gsd commands that touch the
+    same checkout on this machine (concurrent runs wait, max 300s; stale
+    locks left by crashed runs are reclaimed automatically);
+  - the claim is pulled first and pushed with rebase-and-retry; if another
+    session claimed the same phase number simultaneously, this one
+    automatically renumbers and continues.
+
+NOTES
+  - The claim is deterministic — gsd-sdk query phase.add (next integer) or,
+    with --insert/--after, gsd-sdk query phase.insert (next decimal after N),
+    the same CLIs the /gsd-phase skill uses; no LLM call is made.
+  - --insert needs a description and cannot be combined with -p/--phase. The
+    anchor phase N must already exist in ROADMAP.md (else it errors, claiming
+    nothing). You don't pick the exact decimal — it auto-assigns the next free
+    N.x. Everything downstream (worktree, guard, discuss/plan/execute) accepts
+    decimal phase numbers.
+  - Requires a GSD-fitted repo (gsd-bootstrap-repo) with initialized
+    .planning/ (/gsd-new-project or /gsd-ingest-docs).
+  - The main checkout must be on the base branch with no uncommitted
+    .planning/ changes.
+
+RELATED
+  gsd-finish            finish the phase (merge back, push, clean up)
+  gsd-init              set up GSD in a repo that doesn't have it yet
+  gsd-bootstrap-repo    just the file installation (what gsd-init wraps)
+HELP
+}
+
+DESC=""
+REPO=""
+SLUG=""
+CU=""
+ATTACH=""
+INSERT=""
+AGENT="claude"
+LAUNCH=0
+FORCE_NOLAUNCH=0
+PUSH=1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    -p|--phase) [ $# -ge 2 ] || die "--phase needs a value"; ATTACH="$2"; shift 2 ;;
+    --insert|--after) [ $# -ge 2 ] || die "$1 needs a value"; INSERT="$2"; shift 2 ;;
+    --repo)  [ $# -ge 2 ] || die "--repo needs a value";  REPO="$2"; shift 2 ;;
+    --slug)  [ $# -ge 2 ] || die "--slug needs a value";  SLUG="$2"; shift 2 ;;
+    --cu)    [ $# -ge 2 ] || die "--cu needs a value (ClickUp task id)"; CU="$2"; shift 2 ;;
+    --agent) [ $# -ge 2 ] || die "--agent needs a value (e.g. claude, gemini)"; AGENT="$2"; LAUNCH=1; shift 2 ;;
+    --launch)    LAUNCH=1; shift ;;
+    --no-launch) FORCE_NOLAUNCH=1; shift ;;
+    --no-push)   PUSH=0;   shift ;;
+    -*) die "unknown flag: $1 (see gsd-start --help)" ;;
+    *)  DESC="${DESC:+$DESC }$1"; shift ;;
+  esac
+done
+# --no-launch always wins, whatever order it appeared in.
+[ "$FORCE_NOLAUNCH" = 1 ] && LAUNCH=0
+if [ -n "$ATTACH" ] && [ -n "$INSERT" ]; then
+  die "--insert and -p/--phase are mutually exclusive (insert claims a NEW phase; -p attaches to an existing one)"
+fi
+if [ -z "$DESC" ] && [ -z "$ATTACH" ]; then
+  [ -n "$INSERT" ] && die "--insert needs a phase description (e.g. gsd-start --insert 11 \"hotfix …\")"
+  usage >&2; exit 1
+fi
+if [ -n "$ATTACH" ]; then
+  printf '%s' "$ATTACH" | grep -qE '^[0-9]+(\.[0-9]+)?$' \
+    || die "--phase must be a phase number (e.g. 7 or 7.1), got: $ATTACH"
+fi
+if [ -n "$INSERT" ]; then
+  printf '%s' "$INSERT" | grep -qE '^[0-9]+(\.[0-9]+)?$' \
+    || die "--insert must be the phase number to insert after (e.g. 11), got: $INSERT"
+fi
+
+# ── normalize --cu and fold it into the phase title/slug convention ──────────
+if [ -n "$CU" ]; then
+  CU="${CU##*/}"                                    # accept a full task URL
+  CU=$(printf '%s' "$CU" | sed -E 's/^[Cc][Uu][-_]//')  # accept cu_/CU- prefix
+  printf '%s' "$CU" | grep -qE '^[A-Za-z0-9]{6,}$' \
+    || die "--cu doesn't look like a ClickUp task id: $CU"
+  # Claim modes carry the id in the description → ROADMAP phase title, which is
+  # what /gsd-discuss-phase's story snapshot and later gsd-finish key off.
+  if [ -n "$DESC" ] && ! printf '%s' "$DESC" | grep -qiE "cu[-_]$CU"; then
+    DESC="$DESC cu_$CU"
+  fi
+  if [ -n "$SLUG" ] && ! printf '%s' "$SLUG" | grep -qiE "cu[-_]$CU"; then
+    SLUG="$SLUG-cu_$CU"
+  fi
+fi
+
+# ── locate the main checkout ─────────────────────────────────────────────────
+if [ -n "$REPO" ]; then
+  MAIN="$(cd "$REPO" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)" \
+    || die "--repo is not a git checkout: $REPO"
+else
+  git rev-parse --show-toplevel >/dev/null 2>&1 \
+    || die "not inside a git repo — cd into the target repo or pass --repo <path>"
+  MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+fi
+[ -f "$MAIN/.planning/ROADMAP.md" ] || die "$MAIN has no .planning/ROADMAP.md — initialize GSD first (/gsd-new-project)"
+[ -x "$MAIN/scripts/gsd-new-worktree-feature.sh" ] || die "$MAIN has no scripts/gsd-new-worktree-feature.sh — run gsd-bootstrap-repo first"
+GUARD="$MAIN/scripts/hooks/gsd-worktree-guard.sh"
+[ -f "$GUARD" ] || die "$MAIN has no guard hook — run gsd-bootstrap-repo first"
+[ -n "$ATTACH" ] || command -v gsd-sdk >/dev/null 2>&1 || die "gsd-sdk CLI not found (GSD not installed?)"
+
+# Base branch: same detection as gsd-bootstrap-repo (guard rule 1).
+BASE=$(sed -nE 's/.*\[ "\$branch" = "([^"]+)" \] && exit 0.*/\1/p' "$GUARD" | head -1)
+[ -n "$BASE" ] || die "could not detect the base branch from $GUARD"
+
+# ── local lock: serialize gsd commands touching this checkout ────────────────
+# Two gsd-start/gsd-finish runs on the SAME machine share the main checkout
+# (index, HEAD, ROADMAP) — the push-retry protects against other machines, this
+# lock protects against other terminals here.
+LOCKDIR="$MAIN/.git/gsd-cmd.lock"
+release_lock() { rm -rf "$LOCKDIR" 2>/dev/null || true; }
+acquire_lock() {
+  local waited=0 lockpid
+  until mkdir "$LOCKDIR" 2>/dev/null; do
+    # Reclaim a stale lock left by a crashed run (owner PID gone). mv first so
+    # only one waiter wins the reclaim.
+    lockpid=$(cat "$LOCKDIR/pid" 2>/dev/null || true)
+    if [ -n "$lockpid" ] && ! kill -0 "$lockpid" 2>/dev/null; then
+      if mv "$LOCKDIR" "$LOCKDIR.stale.$$" 2>/dev/null; then
+        rm -rf "$LOCKDIR.stale.$$"
+        echo "▶ reclaimed stale gsd lock (owner PID $lockpid no longer running)"
+      fi
+      continue
+    fi
+    [ "$waited" -eq 0 ] && echo "▶ another gsd command is using this checkout — waiting (lock: $LOCKDIR)…"
+    waited=$((waited + 1))
+    [ "$waited" -ge 300 ] && die "gave up waiting after 300s — if no gsd command is running, remove the stale lock: rm -rf $LOCKDIR"
+    sleep 1
+  done
+  echo "$$" > "$LOCKDIR/pid"
+  trap release_lock EXIT INT TERM
+}
+acquire_lock
+
+# ── preconditions (claim mode only — attach mode never commits on $BASE) ─────
+if [ -z "$ATTACH" ]; then
+  cur=$(git -C "$MAIN" branch --show-current)
+  [ "$cur" = "$BASE" ] || die "main checkout is on '$cur', not '$BASE' — checkout $BASE first (claims serialize through $BASE)"
+  [ -z "$(git -C "$MAIN" status --porcelain -- .planning)" ] \
+    || die "main checkout has uncommitted .planning/ changes — commit or stash them first (the claim commit must be clean)"
+
+  HAS_ORIGIN=0
+  git -C "$MAIN" remote get-url origin >/dev/null 2>&1 && HAS_ORIGIN=1
+  if [ "$PUSH" = 1 ] && [ "$HAS_ORIGIN" = 1 ]; then
+    echo "▶ syncing '$BASE' with origin (picking up other sessions' claims)…"
+    git -C "$MAIN" fetch origin "$BASE" --quiet
+    git -C "$MAIN" merge --ff-only "origin/$BASE" --quiet \
+      || die "local '$BASE' has diverged from origin — reconcile it first"
+  fi
+fi
+
+# ── claim the phase (deterministic, no LLM) ──────────────────────────────────
+claim() {  # claims the next phase number and commits; sets $N
+  gsd-sdk query phase.add "$DESC" --project-dir "$MAIN" >/dev/null \
+    || die "gsd-sdk query phase.add failed"
+  # Source of truth for what was claimed: the heading just added to ROADMAP.md.
+  N=$(git -C "$MAIN" diff -- .planning/ROADMAP.md \
+        | grep -E '^\+### Phase [0-9]+(\.[0-9]+)?:' | tail -1 \
+        | sed -E 's/^\+### Phase ([0-9]+(\.[0-9]+)?):.*/\1/')
+  [ -n "$N" ] || die "claim did not add a '### Phase N:' heading to ROADMAP.md — inspect $MAIN/.planning/ROADMAP.md"
+
+  # STATE.md roadmap-evolution note (same note the /gsd-phase skill writes).
+  local state="$MAIN/.planning/STATE.md"
+  if [ -f "$state" ]; then
+    if grep -q '### Roadmap Evolution' "$state"; then
+      N="$N" DESC="$DESC" perl -0pi -e \
+        's/(### Roadmap Evolution\n\n(?:- .*\n)*)/$1- Phase $ENV{N} added: $ENV{DESC}\n/' "$state"
+    else
+      printf '\n### Roadmap Evolution\n\n- Phase %s added: %s\n' "$N" "$DESC" >> "$state"
+    fi
+  fi
+  git -C "$MAIN" add .planning
+  git -C "$MAIN" commit -q -m "docs(gsd): claim phase $N — $DESC"
+}
+
+insert_phase() {  # inserts a decimal phase after $INSERT and commits; sets $N (and $SLUG if unset)
+  local out
+  out=$(gsd-sdk query phase.insert "$INSERT" "$DESC" --project-dir "$MAIN") \
+    || die "gsd-sdk query phase.insert failed — does phase $INSERT exist in ROADMAP.md?"
+  # Source of truth for what was claimed: the phase_number from the JSON result.
+  N=$(printf '%s\n' "$out" | sed -nE 's/^[[:space:]]*"phase_number"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1)
+  [ -n "$N" ] || die "phase.insert did not return a phase_number — inspect $MAIN/.planning/ROADMAP.md"
+  # Reuse the slug the SDK derived (avoids the '(INSERTED)' suffix leaking into the worktree name).
+  if [ -z "$SLUG" ]; then
+    SLUG=$(printf '%s\n' "$out" | sed -nE 's/^[[:space:]]*"slug"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1)
+  fi
+
+  # STATE.md roadmap-evolution note (mirrors the /gsd-phase --insert skill).
+  local state="$MAIN/.planning/STATE.md"
+  if [ -f "$state" ]; then
+    if grep -q '### Roadmap Evolution' "$state"; then
+      N="$N" INS="$INSERT" DESC="$DESC" perl -0pi -e \
+        's/(### Roadmap Evolution\n\n(?:- .*\n)*)/$1- Phase $ENV{N} inserted after Phase $ENV{INS}: $ENV{DESC}\n/' "$state"
+    else
+      printf '\n### Roadmap Evolution\n\n- Phase %s inserted after Phase %s: %s\n' "$N" "$INSERT" "$DESC" >> "$state"
+    fi
+  fi
+  git -C "$MAIN" add .planning
+  git -C "$MAIN" commit -q -m "docs(gsd): insert phase $N (after $INSERT) — $DESC"
+}
+
+do_claim() {  # dispatch: fractional insert when --insert given, else next-integer claim
+  if [ -n "$INSERT" ]; then insert_phase; else claim; fi
+}
+
+unclaim() {  # undo the local claim/insert commit after losing a same-number race
+  local subj; subj=$(git -C "$MAIN" log -1 --format=%s)
+  case "$subj" in
+    "docs(gsd): claim phase $N — $DESC") : ;;
+    "docs(gsd): insert phase $N (after $INSERT) — $DESC") : ;;
+    *) die "expected the claim commit at HEAD but found: $subj — resolve manually in $MAIN" ;;
+  esac
+  git -C "$MAIN" reset -q --hard HEAD~1
+  # phase.add/phase.insert also made a phase dir — drop the stale one (empty after the reset).
+  # Integer claims pad the dir (07-slug); decimal inserts do not (11.1-slug) — cover both patterns.
+  local padded; padded=$(printf '%02d' "${N%%.*}" 2>/dev/null || echo "$N")
+  find "$MAIN/.planning/phases" -maxdepth 1 -type d \( -name "${padded}-*" -o -name "${N}-*" \) -empty -exec rmdir {} + 2>/dev/null || true
+}
+
+if [ -n "$ATTACH" ]; then
+  # ── attach mode: the phase is already claimed — just verify it exists ──────
+  N="$ATTACH"
+  N_RE=$(printf '%s' "$N" | sed 's/\./\\./g')
+  TITLE=$(grep -E "^### Phase $N_RE:" "$MAIN/.planning/ROADMAP.md" | head -1 \
+            | sed -E "s/^### Phase $N_RE:[[:space:]]*//" || true)
+  [ -n "$TITLE" ] || die "phase $N not found in .planning/ROADMAP.md — omit -p/--phase to claim a new phase"
+  echo "▶ attaching to existing phase $N: $TITLE"
+else
+  # Refuse to claim a duplicate: if a phase already carries this exact
+  # description, the user almost certainly wants to attach, not re-claim.
+  # (Skipped for --insert: inserting a decimal beside a same-named phase is
+  # an explicit, intentional act — e.g. a hotfix under an existing feature.)
+  if [ -z "$INSERT" ]; then
+    desc_lc=$(printf '%s' "$DESC" | tr '[:upper:]' '[:lower:]')
+    dup_n=$(grep -E '^### Phase [0-9]+(\.[0-9]+)?:' "$MAIN/.planning/ROADMAP.md" \
+      | while IFS= read -r line; do
+          t=$(printf '%s' "${line#*: }" | tr '[:upper:]' '[:lower:]' \
+                | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+          if [ "$t" = "$desc_lc" ]; then
+            printf '%s\n' "$line" | sed -E 's/^### Phase ([0-9]+(\.[0-9]+)?):.*/\1/'
+            break
+          fi
+        done)
+    [ -z "${dup_n:-}" ] \
+      || die "phase $dup_n already has this exact description — attach to it instead: gsd-start -p $dup_n"
+  fi
+
+  if [ -n "$INSERT" ]; then
+    echo "▶ inserting phase after $INSERT: $DESC"
+    do_claim
+    echo "✔ phase $N inserted after phase $INSERT (committed on $BASE)"
+  else
+    echo "▶ claiming phase: $DESC"
+    do_claim
+    echo "✔ phase $N claimed (committed on $BASE)"
+  fi
+
+  # ── publish the claim (auto-renumber on races with parallel sessions) ──────
+  if [ "$PUSH" = 1 ] && [ "$HAS_ORIGIN" = 1 ]; then
+    ok=0
+    for _try in 1 2 3 4; do
+      if git -C "$MAIN" push origin "$BASE" --quiet 2>/dev/null; then ok=1; break; fi
+      echo "  push rejected (parallel session got there first) — rebasing…"
+      git -C "$MAIN" pull --rebase origin "$BASE" --quiet \
+        || { git -C "$MAIN" rebase --abort 2>/dev/null || true
+             die "rebase conflict while syncing the claim — resolve in $MAIN, then push manually"; }
+      N_RE=$(printf '%s' "$N" | sed 's/\./\\./g')
+      dups=$(grep -cE "^### Phase $N_RE:" "$MAIN/.planning/ROADMAP.md" || true)
+      if [ "${dups:-1}" -gt 1 ]; then
+        echo "  phase $N was claimed by the other session too — renumbering…"
+        unclaim
+        do_claim
+        echo "✔ re-claimed as phase $N"
+      fi
+    done
+    [ "$ok" = 1 ] || die "could not push the claim after 4 attempts — push '$BASE' manually"
+    echo "✔ claim pushed to origin/$BASE"
+  elif [ "$HAS_ORIGIN" = 0 ]; then
+    echo "• no 'origin' remote — claim stays local"
+  else
+    echo "• --no-push: remember to push '$BASE' so other sessions see the claim"
+  fi
+fi
+
+# ── create the worktree ──────────────────────────────────────────────────────
+# Always pin the worktree to the exact phase we claimed/attached — never let
+# the script re-detect it from HEAD (a commit landing in between would win).
+WT_ARGS=(--phase "$N")
+[ -n "$SLUG" ] && WT_ARGS+=("$SLUG")
+WT_OUT=$( cd "$MAIN" && scripts/gsd-new-worktree-feature.sh ${WT_ARGS[@]+"${WT_ARGS[@]}"} )
+printf '%s\n' "$WT_OUT"
+DEST=$(printf '%s\n' "$WT_OUT" | sed -n 's/^✅ worktree ready: \(.*\)   (phase.*/\1/p')
+if [ -z "$DEST" ] || [ ! -d "$DEST" ]; then
+  BRANCH=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$N-*" | head -1)
+  DEST=$(git -C "$MAIN" worktree list --porcelain | awk -v b="$BRANCH" '/^worktree /{w=$2} $0=="branch refs/heads/"b{print w; exit}')
+fi
+[ -n "$DEST" ] && [ -d "$DEST" ] || die "could not locate the new worktree for phase $N"
+
+# ── ClickUp write-back (best-effort — never blocks the phase) ────────────────
+# When the phase is driven by a ClickUp story (--cu, or cu_<id> embedded in the
+# description / ROADMAP title / worktree name), move it to "in progress" and
+# leave a trace comment. Any failure (no gsd-clickup, no token, API down) only
+# prints a note.
+CU_ID="$CU"
+if command -v gsd-clickup >/dev/null 2>&1; then
+  if [ -z "$CU_ID" ]; then
+    for src in "$DESC" "${TITLE:-}" "$(basename "$DEST")"; do
+      [ -n "$src" ] || continue
+      CU_ID=$(gsd-clickup extract "$src" 2>/dev/null || true)
+      [ -n "$CU_ID" ] && break
+    done
+  fi
+  if [ -n "$CU_ID" ]; then
+    gsd-clickup start "$CU_ID" \
+      "🚧 GSD phase $N started — branch \`$(basename "$DEST")\` in $(basename "$MAIN")." \
+      || echo "• ClickUp story $CU_ID not updated (non-fatal) — check gsd-clickup check / your token"
+  fi
+elif [ -n "$CU_ID" ]; then
+  echo "• --cu given but gsd-clickup is not on PATH — story $CU_ID not updated"
+fi
+
+# ── open the session ─────────────────────────────────────────────────────────
+# Both claude and gemini take the launch prompt as a positional arg, so a single
+# `<agent> "<prompt>"` shape works for either; --agent selects which.
+PROMPT="/gsd-discuss-phase $N"
+if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$AGENT" >/dev/null 2>&1; then
+  echo ""
+  echo "▶ opening $AGENT session in $DEST ($PROMPT)…"
+  cd "$DEST"
+  release_lock   # exec replaces the process — the EXIT trap would never fire
+  exec "$AGENT" "$PROMPT"
+else
+  echo ""
+  if [ "$LAUNCH" = 1 ] && ! command -v "$AGENT" >/dev/null 2>&1; then
+    echo "• '$AGENT' not found on PATH — not launching."
+  fi
+  echo "Next:  cd $DEST && $AGENT \"$PROMPT\""
+fi
