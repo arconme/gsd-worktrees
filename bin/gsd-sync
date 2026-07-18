@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+#
+# gsd-sync — update the gsd-worktrees toolkit and keep templates/ in sync.
+#
+# One command for the whole maintenance loop:
+#   1. self-update : pull the toolkit repo (rebase + autostash) and push any
+#                    local commits. Edits made through the ~/.local/bin
+#                    symlinks land in the repo working tree — gsd-sync reminds
+#                    you when they're still uncommitted.
+#   2. re-link     : re-run install.sh so commands added by the pull get their
+#                    ~/.local/bin symlinks.
+#   3. templates   : diff templates/ against the reference repo's scripts/ and
+#                    copy changed/new gsd files in, then commit + push.
+#                    The REFERENCE REPO WINS: template-side edits must be
+#                    applied to the reference repo first. A template file with
+#                    UNCOMMITTED local changes is never overwritten — it is
+#                    reported and skipped (both sides changed → your call).
+#
+# Usage:
+#   gsd-sync [--check] [--src <path>]
+#
+# Options:
+#   --check       dry run: report what would change, change nothing
+#   --src <path>  reference repo for templates
+#                 (default: $GSD_SRC_REPO, else ~/projects/siminds/code/siminds-platform)
+#   -h, --help    show this help
+#
+# RELATED
+#   install.sh            what step 2 runs (symlink bin/ into ~/.local/bin)
+#   gsd-bootstrap-repo    pushes updated templates INTO a target repo
+set -euo pipefail
+
+die() { printf '✖ %s\n' "$@" >&2; exit 1; }
+
+usage() {  # print the header comment block (everything up to the set line)
+  awk 'NR>1 && /^set -euo/{exit} NR>1 {sub(/^# ?/,""); print}' "$0"
+}
+
+CHECK=0
+SRCR="${GSD_SRC_REPO:-$HOME/projects/siminds/code/siminds-platform}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --check|-n) CHECK=1; shift ;;
+    --src) [ $# -ge 2 ] || die "--src needs a value"; SRCR="$2"; shift 2 ;;
+    *) die "unknown argument: $1 (see gsd-sync --help)" ;;
+  esac
+done
+
+# ── locate the toolkit repo by resolving our own symlink ─────────────────────
+SELF="$0"
+while [ -L "$SELF" ]; do
+  tgt=$(readlink "$SELF")
+  case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
+done
+REPO="$(cd "$(dirname "$SELF")/.." && pwd)"
+[ -d "$REPO/bin" ] && [ -f "$REPO/install.sh" ] \
+  || die "could not locate the gsd-worktrees repo from $0 (resolved to $REPO)"
+cd "$REPO"
+
+echo "toolkit repo : $REPO"
+echo "reference    : $SRCR"
+[ "$CHECK" = 1 ] && echo "mode         : CHECK (dry run — nothing will change)"
+echo ""
+
+# ── step 1: self-update ──────────────────────────────────────────────────────
+DIRTY=$(git status --porcelain)
+if [ -n "$DIRTY" ]; then
+  echo "• toolkit repo has uncommitted changes (commit them so they're versioned):"
+  git status --short | sed 's/^/    /'
+fi
+if git remote get-url origin >/dev/null 2>&1; then
+  if [ "$CHECK" = 1 ]; then
+    git fetch origin --quiet 2>/dev/null || echo "• fetch failed (offline?) — skipping remote check"
+    if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+      behind=$(git rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')
+      ahead=$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo '?')
+      echo "▶ would pull $behind commit(s), push $ahead commit(s)"
+    fi
+  else
+    if git pull --rebase --autostash --quiet 2>/dev/null; then
+      echo "✔ toolkit up to date with origin"
+    else
+      echo "• pull failed (offline, or rebase conflict) — continuing with local state"
+    fi
+    if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1 \
+       && [ "$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)" -gt 0 ]; then
+      git push --quiet 2>/dev/null && echo "✔ local commits pushed" \
+        || echo "• push failed — push manually when back online"
+    fi
+  fi
+else
+  echo "• no 'origin' remote — self-update skipped"
+fi
+
+# ── step 2: re-link (picks up commands added by the pull) ────────────────────
+if [ "$CHECK" = 1 ]; then
+  echo "▶ would re-run install.sh"
+else
+  ./install.sh | sed 's/^/  /'
+fi
+echo ""
+
+# ── step 3: template sync (reference repo → templates/) ──────────────────────
+[ -d "$SRCR/scripts" ] || die "reference repo has no scripts/ dir: $SRCR (pass --src <path>)"
+RELS=$( { (cd "$REPO/templates" 2>/dev/null && find scripts -type f \( -name 'gsd-*.sh' -o -name 'gsd-*.conf.example' \) 2>/dev/null || true)
+          (cd "$SRCR" && find scripts -maxdepth 2 -type f \( -name 'gsd-*.sh' -o -name 'gsd-*.conf.example' \) 2>/dev/null || true); } | sort -u )
+
+ok=0; synced=0; skipped=0
+for rel in $RELS; do
+  src="$SRCR/$rel"; tpl="$REPO/templates/$rel"
+  if [ ! -f "$src" ]; then
+    echo "• $rel — only in templates/ (not in the reference repo), left as is"
+    continue
+  fi
+  if [ -f "$tpl" ] && cmp -s "$src" "$tpl"; then
+    ok=$((ok + 1)); continue
+  fi
+  # differs (or new): never overwrite a template with uncommitted local edits
+  if [ -f "$tpl" ] && [ -n "$(git status --porcelain -- "templates/$rel")" ]; then
+    echo "⚠ $rel — differs AND templates/ copy has uncommitted local edits; skipped."
+    echo "  Apply the template-side edit to the reference repo (or discard it), then re-run."
+    skipped=$((skipped + 1)); continue
+  fi
+  if [ "$CHECK" = 1 ]; then
+    [ -f "$tpl" ] && echo "▶ would sync (changed): $rel" || echo "▶ would sync (new): $rel"
+  else
+    mkdir -p "$(dirname "$tpl")"
+    cp "$src" "$tpl"
+    case "$rel" in *.sh) chmod +x "$tpl" ;; esac
+    git add "templates/$rel"
+    echo "✔ synced: $rel"
+  fi
+  synced=$((synced + 1))
+done
+
+if [ "$CHECK" = 0 ] && ! git diff --cached --quiet; then
+  git commit -q -m "sync templates from $(basename "$SRCR")"
+  echo "✔ template sync committed"
+  git push --quiet 2>/dev/null && echo "✔ pushed" || echo "• push failed — push manually when back online"
+fi
+
+echo ""
+echo "templates: $ok up to date · $synced $([ "$CHECK" = 1 ] && echo 'to sync' || echo 'synced') · $skipped skipped"
+[ -n "$DIRTY" ] && echo "reminder: the toolkit repo still has uncommitted changes (see above)"
+exit 0

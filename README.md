@@ -23,6 +23,7 @@ its right place.
 | `gsd-init` | Take a repo with no GSD to "ready for gsd-start": bootstrap + open the right init skill (`/gsd-new-project` or `/gsd-ingest-docs`). |
 | `gsd-bootstrap-repo` | Install/sync the per-repo scripts, guard hook, hook registration, CLAUDE.md section, gitignore/gitattributes into a target repo. |
 | `gsd-clickup` | Minimal ClickUp write-back helper (status + comment + subtask cascade); token in `~/.config/gsd/clickup.env`. |
+| `gsd-sync` | Toolkit maintenance in one command: pull + push this repo, re-link `bin/`, and sync `templates/` from the reference repo (drift-aware; never overwrites uncommitted template edits). `--check` for a dry run. |
 
 **`templates/` — per-repo scripts** (what `gsd-bootstrap-repo` installs into each
 repo, adapting base branch / worktree dir / package manager):
@@ -41,6 +42,10 @@ cd gsd-worktrees && ./install.sh          # symlinks into ~/.local/bin
 
 Symlink mode means `git pull` updates the live commands, and edits to the live
 commands land here ready to commit. Use `./install.sh --copy` for detached copies.
+
+**Staying up to date:** run `gsd-sync` — it pulls this repo, pushes your local
+commits, re-links any new commands, and syncs `templates/` from the reference
+repo (see below). `gsd-sync --check` previews without changing anything.
 
 ## The loop per feature
 
@@ -70,10 +75,10 @@ Every command self-documents: `gsd-start --help`, `gsd-finish --help`, ….
 
 ## Current state / roadmap
 
-- `bin/` is canonical **here**. `templates/` currently mirrors the reference
-  installation in `arconme/siminds-platform` (`scripts/`); when the repo scripts
-  change there, re-copy them into `templates/` (or bootstrap with
-  `--src <that repo>`). 
+- `bin/` is canonical **here**. `templates/` mirrors the reference installation
+  in `arconme/siminds-platform` (`scripts/`); when the repo scripts change
+  there, `gsd-sync` copies them into `templates/` and commits (the reference
+  repo wins — it refuses to overwrite uncommitted template-side edits).
 - **Step two (planned):** replace `gsd-bootstrap-repo`'s perl-rewrite adaptation
   with per-repo config (`git config gsd.base` / `.gsd.conf`), making installed
   scripts byte-identical everywhere and `templates/` the single source of truth.
