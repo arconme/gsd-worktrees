@@ -40,6 +40,11 @@ All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
   keep working on every checkout. They never change, so there is nothing to
   sync. The port shim fails soft (bare base port) and the guard shim fails open
   on machines without the toolkit; the rest fail with an install pointer.
+- **`scripts/gsd-premerge-check.sh`** (optional, repo-authored — not a shim) —
+  pre-merge hook `gsd-wt-finish` runs as `<script> <branch> <base>` after the
+  origin sync, before the merge; nonzero aborts the finish with nothing merged.
+  The home for repo-specific validations (e.g. TypeORM migration-timestamp
+  collision checks). Path override: `premerge =` in `.gsd.conf`; `none` disables.
 
 ## Install
 

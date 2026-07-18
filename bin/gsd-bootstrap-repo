@@ -128,6 +128,8 @@ if [ ! -f "$CONF" ]; then
 base = $BASE
 wtdir = $WT_DIR
 install = $PM
+# premerge = scripts/gsd-premerge-check.sh   # pre-merge hook run by gsd-finish
+#                                            # (default path; 'none' disables)
 CONF_EOF
   echo "✔ .gsd.conf (created)"
 elif [ "$BASE_EXPLICIT" = 1 ]; then

@@ -14,6 +14,13 @@
 # branch is left clean and the resolution steps are printed. Parallel runs
 # serialize on .git/gsd-cmd.lock (stale locks from crashed runs are reclaimed).
 #
+# Pre-merge check hook: if the repo has an executable pre-merge script
+# (default scripts/gsd-premerge-check.sh, override with `premerge = <path>` in
+# .gsd.conf, 'none' disables), it runs from the main checkout AFTER the origin
+# sync and BEFORE the merge, as `<script> <branch> <base>`. Nonzero exit
+# aborts the finish with nothing merged — the place for repo-specific
+# validations like migration-timestamp collision checks.
+#
 # Repo settings (base branch, worktree dir): .gsd.conf, see gsd-bootstrap-repo.
 # The old per-repo copy of this logic (scripts/gsd-finish-worktree-feature.sh)
 # is now a shim that delegates here.
@@ -103,6 +110,20 @@ if [ "$HAS_ORIGIN" = 1 ]; then
   git -C "$MAIN" fetch origin "$BASE" --quiet || true
   git -C "$MAIN" merge --ff-only "origin/$BASE" 2>/dev/null || \
     echo "  (local '$BASE' not fast-forwardable to origin — continuing with local state)"
+fi
+
+# ── pre-merge check hook (repo-specific validations) ─────────────────────────
+# Runs after the sync so it sees the freshest $BASE; nonzero exit aborts with
+# nothing merged. No-op in repos without the script.
+PREMERGE=$(gsd_conf_get "$MAIN" premerge)
+PREMERGE="${PREMERGE:-scripts/gsd-premerge-check.sh}"
+case "$PREMERGE" in /*) PREMERGE_PATH="$PREMERGE" ;; *) PREMERGE_PATH="$MAIN/$PREMERGE" ;; esac
+if [ "$PREMERGE" != none ] && [ -x "$PREMERGE_PATH" ]; then
+  echo "▶ pre-merge check ($PREMERGE)…"
+  if ! ( cd "$MAIN" && "$PREMERGE_PATH" "$BRANCH" "$BASE" ); then
+    echo "✗ pre-merge check failed — nothing was merged. Fix in the worktree, commit, re-run finish." >&2
+    exit 1
+  fi
 fi
 
 echo "▶ merging '$BRANCH' into '$BASE'…"
