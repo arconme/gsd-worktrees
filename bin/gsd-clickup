@@ -23,9 +23,13 @@
 #                                              (cu_<id>, CU-<id>, …) or nothing
 #   gsd-clickup check                          verify the token works (whoami)
 #
-# The start/finish status names can be overridden in the config file (or env):
-#   GSD_CLICKUP_STATUS_START=…   (default: in progress)
-#   GSD_CLICKUP_STATUS_FINISH=…  (default: in testing)
+# start/finish resolve the target status against the task's own list: candidate
+# names are matched case-insensitively ignoring spaces/hyphens/underscores, so
+# "in testing" finds "In-Testing", "InTesting", etc. Candidates tried in order:
+#   start:  $GSD_CLICKUP_STATUS_START,  "in progress", "in development"
+#   finish: $GSD_CLICKUP_STATUS_FINISH, "in testing",  "in review"
+# The first candidate that exists in the list wins; its exact ClickUp spelling
+# is what gets written, so lists with differently-named statuses all work.
 #
 # Exit codes: 0 ok · 1 usage/config error · 2 API call failed.
 # Callers in the GSD scripts treat every failure as non-fatal (|| true):
@@ -71,6 +75,36 @@ json_escape() {  # minimal JSON string escaper for comment/status payloads
   printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
 }
 
+norm() {  # normalize a status name for comparison: lowercase, alnum only
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'
+}
+
+# resolve_status <list_id> <candidate>… — print the exact spelling of the first
+# candidate that exists among the list's statuses (matched via norm). Statuses
+# are per-list in ClickUp, so the same intent ("in testing") can be spelled
+# "In-Testing" in one list and "InTesting" in another. Falls back to the first
+# candidate verbatim (with a warning) if the list can't be fetched or nothing
+# matches — the subsequent PUT then fails visibly, same as before.
+resolve_status() {
+  local list_id="$1"; shift
+  local list_json names cand name
+  if ! list_json=$(api GET "/list/$list_id"); then
+    printf 'gsd-clickup: cannot fetch list %s statuses — trying "%s" verbatim\n' "$list_id" "$1" >&2
+    printf '%s\n' "$1"; return 0
+  fi
+  names=$(printf '%s' "$list_json" | jq -r '.statuses[].status')
+  for cand in "$@"; do
+    while IFS= read -r name; do
+      if [ "$(norm "$name")" = "$(norm "$cand")" ]; then
+        printf '%s\n' "$name"; return 0
+      fi
+    done <<< "$names"
+  done
+  printf 'gsd-clickup: no candidate (%s) matches list %s statuses [%s] — trying "%s" verbatim\n' \
+    "$*" "$list_id" "$(printf '%s' "$names" | paste -sd ',' -)" "$1" >&2
+  printf '%s\n' "$1"
+}
+
 cmd="${1:-}"
 case "$cmd" in
   -h|--help) usage; exit 0 ;;
@@ -99,14 +133,21 @@ case "$cmd" in
   start|finish)
     [ $# -ge 3 ] || die "usage: gsd-clickup $cmd <task_id> <comment-text>"
     load_token
-    if [ "$cmd" = start ]; then st="${GSD_CLICKUP_STATUS_START:-in progress}"
-    else                        st="${GSD_CLICKUP_STATUS_FINISH:-in testing}"; fi
+    cands=()
+    if [ "$cmd" = start ]; then
+      if [ -n "${GSD_CLICKUP_STATUS_START:-}" ]; then cands+=("$GSD_CLICKUP_STATUS_START"); fi
+      cands+=("in progress" "in development")
+    else
+      if [ -n "${GSD_CLICKUP_STATUS_FINISH:-}" ]; then cands+=("$GSD_CLICKUP_STATUS_FINISH"); fi
+      cands+=("in testing" "in review")
+    fi
     rc=0
     # Idempotent: a -p re-attach or repeated finish must not re-set the status
     # or spam a duplicate comment. Fetch once (with subtasks for the cascade).
     cur_json=$(api GET "/task/$2?include_subtasks=true") || exit 2
     cur=$(printf '%s' "$cur_json" | jq -r '.status.status')
-    if [ "$cur" = "$st" ]; then
+    st=$(resolve_status "$(printf '%s' "$cur_json" | jq -r '.list.id')" "${cands[@]}")
+    if [ "$(norm "$cur")" = "$(norm "$st")" ]; then
       echo "• ClickUp $2 already '$st' — status and comment skipped (idempotent)"
     else
       # attempt both independently — a bad status name must not swallow the comment
@@ -118,7 +159,8 @@ case "$cmd" in
     # Cascade to open subtasks (UI —/BE —/… children ride along with the story;
     # never touch closed/complete ones). Prevents subtask-status staleness.
     for sid in $(printf '%s' "$cur_json" | jq -r --arg st "$st" \
-        '.subtasks[]? | select(.date_closed == null and .status.status != $st and .status.type != "closed" and (.status.status | test("^complete"; "i") | not)) | .id'); do
+        'def n: ascii_downcase | gsub("[^a-z0-9]"; "");
+         .subtasks[]? | select(.date_closed == null and (.status.status | n) != ($st | n) and .status.type != "closed" and (.status.status | test("^complete"; "i") | not)) | .id'); do
       api PUT "/task/$sid" "{\"status\": $(json_escape "$st")}" >/dev/null \
         && echo "✔ ClickUp $sid (subtask) → status '$st'" || rc=2
     done

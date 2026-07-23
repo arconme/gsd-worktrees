@@ -62,7 +62,8 @@ BEHAVIOR
   - Refuses if the worktree has uncommitted changes — commit them first.
   - ROADMAP.md/STATE.md merge conflicts resolve automatically (merge=union).
   - ClickUp: when the branch name or ROADMAP phase title carries cu_<id>, the
-    story is moved to "in testing" with a merge comment (best-effort, via
+    story is moved to its list's testing/review status with a merge comment
+    (status name resolved against the list's own statuses; best-effort, via
     gsd-clickup — needs a token in ~/.config/gsd/clickup.env).
 
 RELATED
