@@ -260,33 +260,9 @@ BASE=$(gsd_base "$MAIN")
 [ -n "$BASE" ] || die "could not determine the base branch — set 'base = <branch>' in $MAIN/.gsd.conf"
 
 # ── local lock: serialize gsd commands touching this checkout ────────────────
-# Two gsd-start/gsd-finish runs on the SAME machine share the main checkout
-# (index, HEAD, ROADMAP) — the push-retry protects against other machines, this
-# lock protects against other terminals here.
-LOCKDIR="$MAIN/.git/gsd-cmd.lock"
-release_lock() { rm -rf "$LOCKDIR" 2>/dev/null || true; }
-acquire_lock() {
-  local waited=0 lockpid
-  until mkdir "$LOCKDIR" 2>/dev/null; do
-    # Reclaim a stale lock left by a crashed run (owner PID gone). mv first so
-    # only one waiter wins the reclaim.
-    lockpid=$(cat "$LOCKDIR/pid" 2>/dev/null || true)
-    if [ -n "$lockpid" ] && ! kill -0 "$lockpid" 2>/dev/null; then
-      if mv "$LOCKDIR" "$LOCKDIR.stale.$$" 2>/dev/null; then
-        rm -rf "$LOCKDIR.stale.$$"
-        echo "▶ reclaimed stale gsd lock (owner PID $lockpid no longer running)"
-      fi
-      continue
-    fi
-    [ "$waited" -eq 0 ] && echo "▶ another gsd command is using this checkout — waiting (lock: $LOCKDIR)…"
-    waited=$((waited + 1))
-    [ "$waited" -ge 300 ] && die "gave up waiting after 300s — if no gsd command is running, remove the stale lock: rm -rf $LOCKDIR"
-    sleep 1
-  done
-  echo "$$" > "$LOCKDIR/pid"
-  trap release_lock EXIT INT TERM
-}
-acquire_lock
+# The push-retry protects against other machines; this lock protects against
+# other terminals here. Logic: gsd_acquire_lock, lib/common.sh.
+gsd_acquire_lock "$MAIN"
 
 # ── preconditions (claim mode only — attach mode never commits on $BASE) ─────
 if [ -z "$ATTACH" ]; then
@@ -487,7 +463,7 @@ if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$AGENT" >/dev/null 2
   echo ""
   echo "▶ opening $AGENT session in $DEST ($PROMPT)…"
   cd "$DEST"
-  release_lock   # exec replaces the process — the EXIT trap would never fire
+  gsd_release_lock   # exec replaces the process — the EXIT trap would never fire
   exec "$AGENT" "$PROMPT"
 else
   echo ""

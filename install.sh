@@ -15,9 +15,9 @@
 set -euo pipefail
 
 BIN_DIR="${GSD_BIN_DIR:-$HOME/.local/bin}"
-MODE=link
+MODE="link"
 case "${1:-}" in
-  --copy) MODE=copy ;;
+  --copy) MODE="copy" ;;
   '') ;;
   *) echo "usage: ./install.sh [--copy]" >&2; exit 1 ;;
 esac

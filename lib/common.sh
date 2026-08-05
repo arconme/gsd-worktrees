@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # lib/common.sh — shared helpers for the gsd-worktrees commands. Sourced, not run.
 #
 # Per-repo settings come from an OPTIONAL committed `.gsd.conf` at the repo
@@ -133,6 +134,41 @@ gsd-planning-repair || true
       echo "✔ $GSD_HOOK_LABEL (created)"
     fi
   ;; esac
+}
+
+gsd_release_lock() { rm -rf "${GSD_LOCKDIR:-}" 2>/dev/null || true; }
+
+gsd_acquire_lock() {  # $1=MAIN checkout — serialize gsd commands on this checkout
+  # Two gsd commands on the SAME machine share the main checkout (index, HEAD,
+  # ROADMAP); this lock serializes them. Sets GSD_LOCKDIR and installs a
+  # release trap. Re-entrant: a no-op when the caller already holds the lock
+  # (gsd-finish exports GSD_LOCK_HELD=1 before delegating to gsd-wt-finish).
+  # NOT exported here: gsd-start execs an agent session after releasing, and an
+  # inherited GSD_LOCK_HELD=1 would disable locking for that whole session.
+  [ "${GSD_LOCK_HELD:-}" = 1 ] && return 0
+  GSD_LOCKDIR="$1/.git/gsd-cmd.lock"
+  local waited=0 lockpid
+  until mkdir "$GSD_LOCKDIR" 2>/dev/null; do
+    # Reclaim a stale lock left by a crashed run (owner PID gone). mv first so
+    # only one waiter wins the reclaim.
+    lockpid=$(cat "$GSD_LOCKDIR/pid" 2>/dev/null || true)
+    if [ -n "$lockpid" ] && ! kill -0 "$lockpid" 2>/dev/null; then
+      if mv "$GSD_LOCKDIR" "$GSD_LOCKDIR.stale.$$" 2>/dev/null; then
+        rm -rf "$GSD_LOCKDIR.stale.$$"
+        echo "▶ reclaimed stale gsd lock (owner PID $lockpid no longer running)"
+      fi
+      continue
+    fi
+    [ "$waited" -eq 0 ] && echo "▶ another gsd command is using this checkout — waiting (lock: $GSD_LOCKDIR)…"
+    waited=$((waited + 1))
+    if [ "$waited" -ge 300 ]; then
+      echo "✖ gave up waiting after 300s — if no gsd command is running, remove the stale lock: rm -rf $GSD_LOCKDIR" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  echo "$$" > "$GSD_LOCKDIR/pid"
+  trap gsd_release_lock EXIT INT TERM
 }
 
 gsd_install_cmd() {  # $1=repo root → worktree bootstrap command ('' = skip)

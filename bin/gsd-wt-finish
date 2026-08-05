@@ -55,32 +55,8 @@ BASE="${2:-$(gsd_base "$MAIN")}"
 # ── serialize on the shared main checkout ────────────────────────────────────
 # Same lock as gsd-start/gsd-finish; parallel finishes would otherwise race on
 # the one base-branch working tree. Skipped when the caller already holds it
-# (gsd-finish exports GSD_LOCK_HELD=1).
-LOCKDIR="$MAIN/.git/gsd-cmd.lock"
-if [ "${GSD_LOCK_HELD:-}" != 1 ]; then
-  waited=0
-  until mkdir "$LOCKDIR" 2>/dev/null; do
-    # Reclaim a stale lock left by a crashed run (owner PID gone). mv first so
-    # only one waiter wins the reclaim.
-    lockpid=$(cat "$LOCKDIR/pid" 2>/dev/null || true)
-    if [ -n "$lockpid" ] && ! kill -0 "$lockpid" 2>/dev/null; then
-      if mv "$LOCKDIR" "$LOCKDIR.stale.$$" 2>/dev/null; then
-        rm -rf "$LOCKDIR.stale.$$"
-        echo "▶ reclaimed stale gsd lock (owner PID $lockpid no longer running)"
-      fi
-      continue
-    fi
-    [ "$waited" -eq 0 ] && echo "▶ another gsd command is using this checkout — waiting (lock: $LOCKDIR)…"
-    waited=$((waited + 1))
-    if [ "$waited" -ge 300 ]; then
-      echo "error: gave up waiting after 300s — if no gsd command is running, remove the stale lock: rm -rf $LOCKDIR" >&2
-      exit 1
-    fi
-    sleep 1
-  done
-  echo "$$" > "$LOCKDIR/pid"
-  trap 'rm -rf "$LOCKDIR" 2>/dev/null || true' EXIT INT TERM
-fi
+# (gsd-finish exports GSD_LOCK_HELD=1). Logic: gsd_acquire_lock, lib/common.sh.
+gsd_acquire_lock "$MAIN"
 
 # Resolve the branch: a bare number → the phase-<N>-* branch; else use as-is.
 # PR branches (*-pr, from /gsd-pr-branch) are never the feature branch.
