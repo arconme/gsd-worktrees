@@ -147,17 +147,13 @@ fi
 # ── shims (frozen delegators — safe to overwrite on every run) ───────────────
 mkdir -p "$DEST/scripts/hooks" "$DEST/.claude"
 for rel in scripts/gsd-new-worktree-feature.sh scripts/gsd-finish-worktree-feature.sh \
-           scripts/gsd-derive-port.sh scripts/gsd-dev-worktree.sh \
+           scripts/gsd-derive-port.sh \
            scripts/gsd-planning-repair.sh \
            scripts/hooks/gsd-worktree-guard.sh; do
   cp "$PKG/shims/$rel" "$DEST/$rel"
   chmod +x "$DEST/$rel"
   echo "✔ $rel (shim)"
 done
-if [ ! -f "$DEST/scripts/gsd-dev.conf.example" ] && [ ! -f "$DEST/scripts/gsd-dev.conf" ]; then
-  cp "$PKG/shims/scripts/gsd-dev.conf.example" "$DEST/scripts/gsd-dev.conf.example"
-  echo "✔ scripts/gsd-dev.conf.example (copy to gsd-dev.conf + list this repo's dev servers)"
-fi
 
 # ── .gitignore: worktree install artifacts ───────────────────────────────────
 for pat in .gsd-install.status .gsd-install.log; do
@@ -301,7 +297,7 @@ fi
 # ── self-check ───────────────────────────────────────────────────────────────
 OK=1
 for f in scripts/gsd-new-worktree-feature.sh scripts/gsd-finish-worktree-feature.sh \
-         scripts/gsd-derive-port.sh scripts/gsd-dev-worktree.sh \
+         scripts/gsd-derive-port.sh \
          scripts/gsd-planning-repair.sh scripts/hooks/gsd-worktree-guard.sh; do
   bash -n "$DEST/$f" || { echo "✖ self-check failed: $f has a syntax error" >&2; OK=0; }
 done
@@ -315,11 +311,10 @@ echo "✔ self-check (shims parse, settings valid)"
 if [ "$COMMIT" = 1 ]; then
   git -C "$DEST" add .gsd.conf scripts/gsd-new-worktree-feature.sh \
     scripts/gsd-finish-worktree-feature.sh scripts/gsd-derive-port.sh \
-    scripts/gsd-dev-worktree.sh scripts/gsd-planning-repair.sh \
+    scripts/gsd-planning-repair.sh \
     scripts/hooks/gsd-worktree-guard.sh \
     .claude/settings.json .gitignore .gitattributes CLAUDE.md
   [ -f "$DEST/.husky/post-merge" ] && git -C "$DEST" add .husky/post-merge
-  [ -f "$DEST/scripts/gsd-dev.conf.example" ] && git -C "$DEST" add scripts/gsd-dev.conf.example
   if git -C "$DEST" diff --cached --quiet; then
     echo "• nothing new to commit"
   else
@@ -340,8 +335,7 @@ Next steps (in the target repo):
   2. (optional) Per-worktree dev ports: wire scripts/gsd-derive-port.sh into each
      app's own \`dev\` script, e.g.
        "dev": "PORT=\$(bash ../../scripts/gsd-derive-port.sh 3000) <your dev cmd>"
-     Then list the servers in scripts/gsd-dev.conf (see .example) and boot them
-     together with scripts/gsd-dev-worktree.sh.
+     Each worktree then gets its own port and they never collide.
 EOS
 if [ "$COMMIT" != 1 ]; then
   cat <<EOS

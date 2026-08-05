@@ -29,7 +29,7 @@ its right place.
 | `gsd-planning-merge` | The git merge driver behind `merge=gsd-planning`: union both sides, then collapse every single-value line back to one value so the contradiction never lands. Registered per clone by `gsd-bootstrap-repo`, re-asserted by `gsd-finish`. |
 | `gsd-doctor` | Read-only health check of a repo's GSD setup: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene. Diagnoses only — every finding names the command that fixes it. No `--fix`, by design. |
 | `gsd-worktree-guard` | The guard: blocks `/gsd-phase` off the base branch, per-phase commands outside their `phase-<N>-*` worktree, and execute-phase before deps land. Invoked via the repo's hook shim. |
-| `gsd-derive-port` / `gsd-dev` | Per-worktree dev ports (base + phase N) and the boot-everything launcher driven by the repo's `scripts/gsd-dev.conf`. |
+| `gsd-derive-port` | Per-worktree dev ports (base + phase N), so parallel worktrees never collide on a port. |
 
 ## Per-repo footprint
 
