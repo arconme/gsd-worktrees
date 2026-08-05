@@ -163,62 +163,11 @@ for pat in .gsd-install.status .gsd-install.log; do
 done
 echo "✔ .gitignore (.gsd-install.log/.status)"
 
-# ── .gitattributes: auto-resolve parallel-session merges of shared GSD state ─
-# merge=gsd-planning, NOT merge=union. Union is right for append-only content
-# and wrong for every line that is a single source of truth: it keeps BOTH
-# sides, so a phase branch flipping a line develop also changed leaves the
-# roadmap claiming the phase is at once complete and not started. The
-# gsd-planning driver unions first and then reconciles those lines back to one
-# value. Repos bootstrapped before this are migrated off merge=union in place.
-ATTRS="$DEST/.gitattributes"
-if [ -f "$ATTRS" ] && grep -qE '^\.planning/(ROADMAP|STATE)\.md[[:space:]]+merge=union[[:space:]]*$' "$ATTRS"; then
-  perl -pi -e 's{^(\.planning/(?:ROADMAP|STATE)\.md\s+merge=)union\s*$}{$1gsd-planning\n}' "$ATTRS"
-  echo "✔ .gitattributes (migrated .planning merge=union → merge=gsd-planning)"
-fi
-for line in '.planning/ROADMAP.md merge=gsd-planning' '.planning/STATE.md merge=gsd-planning'; do
-  grep -qxF "$line" "$ATTRS" 2>/dev/null || echo "$line" >> "$ATTRS"
-done
-echo "✔ .gitattributes (merge=gsd-planning for .planning/ROADMAP.md + STATE.md)"
-
-# ── merge driver + post-merge hook (per clone — git config is not versioned) ──
-gsd_register_merge_driver "$DEST"
-if git -C "$DEST" config --get merge.gsd-planning.driver >/dev/null 2>&1; then
-  echo "✔ merge driver registered (merge.gsd-planning → gsd-planning-merge)"
-else
-  echo "⚠ could not register the merge driver — gsd-finish re-asserts it on every run"
-fi
-
-# The driver covers merges; the hook covers a plain `git pull` on the base
-# branch by someone who never runs gsd-finish. Husky owns post-merge when it is
-# installed (core.hooksPath points into .husky/_, which husky regenerates), so
-# write the versioned .husky/post-merge there instead of the raw git hook.
-HOOK_BODY='#!/usr/bin/env sh
-# Installed by gsd-bootstrap-repo (gsd-worktrees toolkit).
-# .planning/ROADMAP.md and STATE.md merge with a union-then-reconcile driver.
-# A pull whose driver was missing, or a merge done by another tool, can still
-# leave both sides of a single-value line behind — reconcile them here.
-command -v gsd-planning-repair >/dev/null 2>&1 || exit 0
-[ -d .planning ] || exit 0
-gsd-planning-repair || true
-'
-if [ -d "$DEST/.husky" ]; then
-  HOOK_DEST="$DEST/.husky/post-merge"
-  HOOK_LABEL=".husky/post-merge"
-else
-  HOOK_DEST="$(git -C "$DEST" rev-parse --path-format=absolute --git-path hooks)/post-merge"
-  HOOK_LABEL="$(git -C "$DEST" rev-parse --git-path hooks)/post-merge (not versioned)"
-fi
-mkdir -p "$(dirname "$HOOK_DEST")"
-if [ -e "$HOOK_DEST" ] && ! grep -q 'gsd-planning-repair' "$HOOK_DEST"; then
-  printf '\n%s\n' "$HOOK_BODY" | sed '1d' >> "$HOOK_DEST"
-  echo "✔ $HOOK_LABEL (gsd reconcile appended to the existing hook)"
-elif [ -e "$HOOK_DEST" ]; then
-  echo "• $HOOK_LABEL already reconciles .planning — left untouched"
-else
-  printf '%s' "$HOOK_BODY" > "$HOOK_DEST"
-  chmod +x "$HOOK_DEST"
-  echo "✔ $HOOK_LABEL (created)"
-fi
+# ── .planning merge safety ───────────────────────────────────────────────────
+# What "installed" means lives in gsd_planning_status (lib/common.sh) and is
+# shared with gsd-doctor, so the writer and the checker cannot drift apart.
+# Migrates repos off the old merge=union in place.
+gsd_planning_apply "$DEST"
 
 # ── register the guard hook in .claude/settings.json ─────────────────────────
 HOOK_CMD='$CLAUDE_PROJECT_DIR/scripts/hooks/gsd-worktree-guard.sh'

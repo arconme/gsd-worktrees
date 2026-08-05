@@ -123,30 +123,26 @@ else
   pass "shims present and current"
 fi
 
-ATTRS="$MAIN/.gitattributes"
-if grep -qE '^\.planning/(ROADMAP|STATE)\.md[[:space:]]+merge=union' "$ATTRS" 2>/dev/null; then
-  fail ".gitattributes still on merge=union (keeps BOTH sides)" "cd $MAIN && gsd-init"
-elif [ "$(grep -cE '^\.planning/(ROADMAP|STATE)\.md[[:space:]]+merge=gsd-planning' "$ATTRS" 2>/dev/null)" = 2 ]; then
-  pass ".gitattributes: merge=gsd-planning on ROADMAP.md + STATE.md"
-else
-  fail ".gitattributes missing the .planning merge rules" "cd $MAIN && gsd-init"
-fi
-
-if [ "$(git -C "$MAIN" config --get merge.gsd-planning.driver 2>/dev/null)" = "gsd-planning-merge %O %A %B %P" ]; then
-  pass "merge driver registered in git config"
-else
+# The three merge-safety items, from the same predicate gsd-bootstrap-repo
+# applies — one source of truth for what "installed" means.
+gsd_planning_status "$MAIN"
+case " $GSD_PLANNING_MISSING " in
+  *" attributes "*)
+    [ "$GSD_ATTRS_STATE" = union ] \
+      && fail ".gitattributes still on merge=union (keeps BOTH sides)" "cd $MAIN && gsd-init" \
+      || fail ".gitattributes missing the .planning merge rules" "cd $MAIN && gsd-init" ;;
+  *) pass ".gitattributes: merge=gsd-planning on ROADMAP.md + STATE.md" ;;
+esac
+case " $GSD_PLANNING_MISSING " in
   # Not versioned, so a fresh clone always lacks it. gsd-finish re-asserts it,
   # so this is a finding rather than an emergency.
-  fail "merge driver not registered (per-clone; git config is not versioned)" "cd $MAIN && gsd-init"
-fi
-
-if [ -d "$MAIN/.husky" ]; then HOOK="$MAIN/.husky/post-merge"; else
-  HOOK="$(git -C "$MAIN" rev-parse --path-format=absolute --git-path hooks 2>/dev/null)/post-merge"; fi
-if grep -q 'gsd-planning-repair' "$HOOK" 2>/dev/null; then
-  pass "post-merge hook reconciles .planning after a plain git pull"
-else
-  fail "no post-merge hook — a plain 'git pull' is unguarded" "cd $MAIN && gsd-init"
-fi
+  *" driver "*) fail "merge driver not registered (per-clone; git config is not versioned)" "cd $MAIN && gsd-init" ;;
+  *) pass "merge driver registered in git config" ;;
+esac
+case " $GSD_PLANNING_MISSING " in
+  *" hook "*) fail "no post-merge hook — a plain 'git pull' is unguarded" "cd $MAIN && gsd-init" ;;
+  *) pass "post-merge hook reconciles .planning after a plain git pull" ;;
+esac
 
 if grep -q 'gsd-worktree-guard' "$MAIN/.claude/settings.json" 2>/dev/null; then
   pass "guard hook registered in .claude/settings.json"

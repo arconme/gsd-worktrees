@@ -169,11 +169,13 @@ today's behaviour, never worse.
 tests/test-planning-reconcile.sh
 ```
 
-101 assertions over the two real corruptions from `medyour-platform`
+107 assertions over the two real corruptions from `medyour-platform`
 (`tests/fixtures/`), an end-to-end `git merge` through the driver, the same
 merge without the driver, a full `gsd-wt-finish` run, the three collateral-
 deletion regressions, and `gsd-doctor` — including that it leaves the working
-tree, git config and every file byte-identical.
+tree, git config and every file byte-identical, and that `gsd-doctor` and
+`gsd-bootstrap-repo` agree on what "installed" means (both go through
+`gsd_planning_status`).
 
 CI runs the suite on Linux and macOS (`.github/workflows/tests.yml`).
 

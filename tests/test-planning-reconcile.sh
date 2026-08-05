@@ -463,5 +463,38 @@ is "driver finding clears"        "$(grep -c 'merge driver not registered' <<<"$
 is "hook finding clears"          "$(grep -c 'no post-merge hook' <<<"$out")" 0
 is "planning reports coherent"    "$(grep -c '.planning is coherent' <<<"$out")" 1
 
+# ── 10. one predicate for "installed" ────────────────────────────────────────
+# gsd-bootstrap-repo writes the merge safety and gsd-doctor reports on it. When
+# those were two implementations they could disagree — doctor calling a repo
+# clean that bootstrap would still change. Both now go through
+# gsd_planning_status, and this asserts the contract directly.
+section "gsd_planning_status is the single source of truth"
+# shellcheck source=../lib/common.sh
+. "$PKG/lib/common.sh"
+
+PRED="$WORK/predicate"
+mkdir -p "$PRED"
+git init -q -b main "$PRED"
+git -C "$PRED" config user.email t@example.com
+git -C "$PRED" config user.name test
+printf '.planning/ROADMAP.md merge=union\n.planning/STATE.md merge=union\n' > "$PRED/.gitattributes"
+
+gsd_planning_status "$PRED"
+is "a legacy repo reports all three missing" \
+   "$(echo "$GSD_PLANNING_MISSING" | tr ' ' '\n' | sort | tr '\n' ' ')" "attributes driver hook "
+is "and flags the attributes as merge=union" "$GSD_ATTRS_STATE" union
+
+PATH="$PKG/bin:$PATH" gsd_planning_apply "$PRED" >/dev/null 2>&1
+gsd_planning_status "$PRED"
+is "after apply, nothing is missing" "$GSD_PLANNING_MISSING" ""
+is "attributes now read as ok"       "$GSD_ATTRS_STATE" ok
+
+# Applying twice must be a no-op, or the hook body would be appended repeatedly.
+PATH="$PKG/bin:$PATH" gsd_planning_apply "$PRED" >/dev/null 2>&1
+is "apply is idempotent (hook not duplicated)" \
+   "$(grep -c 'gsd-planning-repair || true' "$PRED/.git/hooks/post-merge")" 1
+is "apply is idempotent (attributes not duplicated)" \
+   "$(grep -c 'merge=gsd-planning' "$PRED/.gitattributes")" 2
+
 printf '\n%s\n' "── $PASS passed, $FAIL failed ──"
 [ "$FAIL" -eq 0 ]

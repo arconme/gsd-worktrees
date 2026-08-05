@@ -46,6 +46,94 @@ gsd_register_merge_driver() {  # $1=repo root — register the .planning merge d
     "GSD planning files: union, then reconcile single-value lines"
 }
 
+gsd__add_missing() { GSD_PLANNING_MISSING="${GSD_PLANNING_MISSING:+$GSD_PLANNING_MISSING }$1"; }
+
+gsd_planning_hook() {  # $1=repo root → sets GSD_HOOK_PATH + GSD_HOOK_LABEL
+  # Husky owns post-merge where it is installed (core.hooksPath points into
+  # .husky/_, which husky regenerates), and there the hook is a VERSIONED file.
+  # Everywhere else it is .git/hooks and per clone.
+  if [ -d "$1/.husky" ]; then
+    GSD_HOOK_PATH="$1/.husky/post-merge"
+    GSD_HOOK_LABEL=".husky/post-merge"
+  else
+    GSD_HOOK_PATH="$(git -C "$1" rev-parse --path-format=absolute --git-path hooks)/post-merge"
+    GSD_HOOK_LABEL="$(git -C "$1" rev-parse --git-path hooks)/post-merge (not versioned)"
+  fi
+}
+
+gsd_planning_status() {  # $1=repo root → GSD_PLANNING_MISSING + GSD_ATTRS_STATE
+  # The single source of truth for "is this repo's .planning merge safety
+  # installed". gsd-bootstrap-repo applies what this reports missing and
+  # gsd-doctor reports it — one predicate, so the two can never disagree about
+  # what counts as installed. Three items; the repair SHIM is not one of them,
+  # it rides along with the ordinary shims.
+  local repo="$1" attrs="$1/.gitattributes"
+  GSD_PLANNING_MISSING=""
+
+  if grep -qE '^\.planning/(ROADMAP|STATE)\.md[[:space:]]+merge=union[[:space:]]*$' "$attrs" 2>/dev/null; then
+    GSD_ATTRS_STATE=union            # the dangerous one: keeps BOTH sides
+  elif [ "$(grep -cE '^\.planning/(ROADMAP|STATE)\.md[[:space:]]+merge=gsd-planning[[:space:]]*$' "$attrs" 2>/dev/null)" = 2 ]; then
+    GSD_ATTRS_STATE=ok
+  else
+    GSD_ATTRS_STATE=absent
+  fi
+  [ "$GSD_ATTRS_STATE" = ok ] || gsd__add_missing attributes
+
+  [ "$(git -C "$repo" config --get merge.gsd-planning.driver 2>/dev/null)" \
+      = "gsd-planning-merge %O %A %B %P" ] || gsd__add_missing driver
+
+  gsd_planning_hook "$repo"
+  grep -q 'gsd-planning-repair' "$GSD_HOOK_PATH" 2>/dev/null || gsd__add_missing hook
+}
+
+gsd_planning_apply() {  # $1=repo root — install whatever gsd_planning_status reports missing
+  local repo="$1" attrs="$1/.gitattributes" line
+  gsd_planning_status "$repo"
+
+  case " $GSD_PLANNING_MISSING " in *" attributes "*)
+    if [ "$GSD_ATTRS_STATE" = union ]; then
+      perl -pi -e 's{^(\.planning/(?:ROADMAP|STATE)\.md\s+merge=)union\s*$}{$1gsd-planning\n}' "$attrs"
+      echo "✔ .gitattributes (migrated .planning merge=union → merge=gsd-planning)"
+    fi
+    for line in '.planning/ROADMAP.md merge=gsd-planning' '.planning/STATE.md merge=gsd-planning'; do
+      grep -qxF "$line" "$attrs" 2>/dev/null || echo "$line" >> "$attrs"
+    done
+    echo "✔ .gitattributes (merge=gsd-planning for .planning/ROADMAP.md + STATE.md)"
+  ;; esac
+
+  case " $GSD_PLANNING_MISSING " in *" driver "*)
+    if gsd_register_merge_driver "$repo" \
+       && [ -n "$(git -C "$repo" config --get merge.gsd-planning.driver 2>/dev/null)" ]; then
+      echo "✔ merge driver registered (merge.gsd-planning → gsd-planning-merge)"
+    else
+      echo "⚠ could not register the merge driver — gsd-finish re-asserts it on every run"
+    fi
+  ;; esac
+
+  case " $GSD_PLANNING_MISSING " in *" hook "*)
+    # The driver covers merges; the hook covers a plain `git pull` on the base
+    # branch by someone who never runs gsd-finish.
+    local body='#!/usr/bin/env sh
+# Installed by gsd-bootstrap-repo (gsd-worktrees toolkit).
+# .planning/ROADMAP.md and STATE.md merge with a union-then-reconcile driver.
+# A pull whose driver was missing, or a merge done by another tool, can still
+# leave both sides of a single-value line behind — reconcile them here.
+command -v gsd-planning-repair >/dev/null 2>&1 || exit 0
+[ -d .planning ] || exit 0
+gsd-planning-repair || true
+'
+    mkdir -p "$(dirname "$GSD_HOOK_PATH")"
+    if [ -e "$GSD_HOOK_PATH" ]; then
+      printf '\n%s\n' "$body" | sed '1d' >> "$GSD_HOOK_PATH"
+      echo "✔ $GSD_HOOK_LABEL (gsd reconcile appended to the existing hook)"
+    else
+      printf '%s' "$body" > "$GSD_HOOK_PATH"
+      chmod +x "$GSD_HOOK_PATH"
+      echo "✔ $GSD_HOOK_LABEL (created)"
+    fi
+  ;; esac
+}
+
 gsd_install_cmd() {  # $1=repo root → worktree bootstrap command ('' = skip)
   local v; v=$(gsd_conf_get "$1" install)
   if [ -n "$v" ]; then

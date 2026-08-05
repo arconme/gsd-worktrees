@@ -106,9 +106,27 @@ echo ""
 gsd-bootstrap-repo ${BOOT_ARGS[@]+"${BOOT_ARGS[@]}"}
 echo ""
 
+# Everything installed above is a TRACKED file except two, so `git diff` is the
+# review — no --check flag needed, and no dry-run that could drift from what
+# actually happens. Name the two git cannot show you.
+review_notice() {
+  echo "Review the tracked changes with:  git -C $DEST diff"
+  echo "Also set, and NOT visible to git diff (per clone, not versioned):"
+  echo "  • git config merge.gsd-planning.driver"
+  if [ -d "$DEST/.husky" ]; then
+    echo "  • .husky/post-merge   (versioned — this one IS in the diff)"
+  else
+    echo "  • $(git -C "$DEST" rev-parse --git-path hooks)/post-merge"
+  fi
+}
+
 if [ "$ALREADY" = 1 ]; then
   echo "• $DEST already has GSD planning state (.planning/ROADMAP.md) —"
   echo "  workflow files were repaired/synced, planning state left untouched."
+  echo ""
+  review_notice
+  echo ""
+  echo "  Health check:  gsd-doctor"
   echo "  Start features with:  gsd-start \"<description>\""
   exit 0
 fi
