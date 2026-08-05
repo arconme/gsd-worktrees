@@ -98,7 +98,7 @@ fi
 # The branch's actual worktree path, from git itself (a worktree can live
 # outside the conventional sibling dir).
 DEST=$(git -C "$MAIN" worktree list --porcelain \
-        | awk -v b="branch refs/heads/$BRANCH" '/^worktree /{w=$2} $0==b{print w; exit}')
+        | awk -v b="branch refs/heads/$BRANCH" '/^worktree /{w=substr($0,10)} $0==b{print w; exit}')
 [ -n "$DEST" ] || DEST="$(dirname "$MAIN")/$(gsd_wtdir "$MAIN")/$BRANCH"
 
 if [ -d "$DEST" ] && [ -n "$(git -C "$DEST" status --porcelain)" ]; then
@@ -119,6 +119,9 @@ gsd_register_merge_driver "$MAIN"
 
 repair_planning() {  # $1 = a phrase naming the merge that just happened
   [ -d "$MAIN/.planning" ] || return 0
+  # No ROADMAP.md → nothing to reconcile. The repair tool exits 2 on this, and
+  # letting that reach the --check below would read as "corrupt — not pushing".
+  [ -f "$MAIN/.planning/ROADMAP.md" ] || return 0
   if ! command -v gsd-planning-repair >/dev/null 2>&1; then
     echo "⚠ gsd-planning-repair not on PATH — skipping the .planning reconcile (re-run install.sh)" >&2
     return 0

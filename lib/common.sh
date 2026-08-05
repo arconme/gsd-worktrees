@@ -9,7 +9,8 @@
 #   install = pnpm install       # worktree bootstrap cmd; 'none' disables (detect: by lockfile)
 
 gsd_main() {  # $1=any path inside the repo → the MAIN checkout (first worktree entry)
-  git -C "${1:-.}" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2; exit}'
+  # substr, not $2: a checkout path with a space in it would be cut at the space
+  git -C "${1:-.}" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print substr($0,10); exit}'
 }
 
 gsd_conf_get() {  # $1=repo root  $2=key → value ('' when unset)

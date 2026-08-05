@@ -80,6 +80,9 @@ if git remote get-url origin >/dev/null 2>&1; then
     if git pull --rebase --autostash --quiet 2>/dev/null; then
       echo "✔ toolkit up to date with origin"
     else
+      # A conflicted rebase must not stay in progress — every later git command
+      # in the toolkit repo would misbehave. Abort restores the autostash too.
+      git rebase --abort 2>/dev/null || true
       echo "• pull failed (offline, or rebase conflict) — continuing with local state"
     fi
     if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1 \

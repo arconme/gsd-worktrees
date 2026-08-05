@@ -250,7 +250,7 @@ if [ -n "$REPO" ]; then
 else
   git rev-parse --show-toplevel >/dev/null 2>&1 \
     || die "not inside a git repo — cd into the target repo or pass --repo <path>"
-  MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+  MAIN=$(gsd_main .)
 fi
 [ -f "$MAIN/.planning/ROADMAP.md" ] || die "$MAIN has no .planning/ROADMAP.md — initialize GSD first (/gsd-new-project)"
 [ -n "$ATTACH" ] || command -v gsd-sdk >/dev/null 2>&1 || die "gsd-sdk CLI not found (GSD not installed?)"
@@ -310,9 +310,11 @@ claim() {  # claims the next phase number and commits; sets $N
   gsd-sdk query phase.add "$DESC" --project-dir "$MAIN" >/dev/null \
     || die "gsd-sdk query phase.add failed"
   # Source of truth for what was claimed: the heading just added to ROADMAP.md.
+  # `|| true`: grep exits 1 when nothing matched, and with pipefail that would
+  # kill the script HERE, before the die below can explain what went wrong.
   N=$(git -C "$MAIN" diff -- .planning/ROADMAP.md \
         | grep -E '^\+### Phase [0-9]+(\.[0-9]+)?:' | tail -1 \
-        | sed -E 's/^\+### Phase ([0-9]+(\.[0-9]+)?):.*/\1/')
+        | sed -E 's/^\+### Phase ([0-9]+(\.[0-9]+)?):.*/\1/' || true)
   [ -n "$N" ] || die "claim did not add a '### Phase N:' heading to ROADMAP.md — inspect $MAIN/.planning/ROADMAP.md"
 
   # STATE.md roadmap-evolution note (same note the /gsd-phase skill writes).
@@ -388,6 +390,8 @@ else
   # an explicit, intentional act — e.g. a hotfix under an existing feature.)
   if [ -z "$INSERT" ]; then
     desc_lc=$(printf '%s' "$DESC" | tr '[:upper:]' '[:lower:]')
+    # `|| true`: on a roadmap with NO phases yet, grep exits 1 and pipefail
+    # would silently kill the script — the very first claim of a project.
     dup_n=$(grep -E '^### Phase [0-9]+(\.[0-9]+)?:' "$MAIN/.planning/ROADMAP.md" \
       | while IFS= read -r line; do
           t=$(printf '%s' "${line#*: }" | tr '[:upper:]' '[:lower:]' \
@@ -396,7 +400,7 @@ else
             printf '%s\n' "$line" | sed -E 's/^### Phase ([0-9]+(\.[0-9]+)?):.*/\1/'
             break
           fi
-        done)
+        done || true)
     [ -z "${dup_n:-}" ] \
       || die "phase $dup_n already has this exact description — attach to it instead: gsd-start -p $dup_n"
   fi
@@ -448,7 +452,7 @@ printf '%s\n' "$WT_OUT"
 DEST=$(printf '%s\n' "$WT_OUT" | sed -n 's/^✅ worktree ready: \(.*\)   (phase.*/\1/p')
 if [ -z "$DEST" ] || [ ! -d "$DEST" ]; then
   BRANCH=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$N-*" | head -1)
-  DEST=$(git -C "$MAIN" worktree list --porcelain | awk -v b="$BRANCH" '/^worktree /{w=$2} $0=="branch refs/heads/"b{print w; exit}')
+  DEST=$(git -C "$MAIN" worktree list --porcelain | awk -v b="$BRANCH" '/^worktree /{w=substr($0,10)} $0=="branch refs/heads/"b{print w; exit}')
 fi
 [ -n "$DEST" ] && [ -d "$DEST" ] || die "could not locate the new worktree for phase $N"
 

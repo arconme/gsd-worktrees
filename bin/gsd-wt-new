@@ -97,7 +97,7 @@ EXISTING=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/p
 if [ -n "$EXISTING" ]; then
   NAME="$EXISTING"
   WT=$(git -C "$MAIN" worktree list --porcelain \
-        | awk -v b="branch refs/heads/$NAME" '/^worktree /{w=$2} $0==b{print w; exit}')
+        | awk -v b="branch refs/heads/$NAME" '/^worktree /{w=substr($0,10)} $0==b{print w; exit}')
   if [ -n "$WT" ]; then
     echo "• branch '$NAME' already has a worktree — reusing it."
     echo ""
@@ -135,6 +135,10 @@ case "$INSTALL_MODE" in
   foreground)
     echo "▶ installing dependencies ($INSTALL_CMD)…"; ( cd "$DEST" && $INSTALL_CMD ) ;;
   none)
+    # Record the skip: without this the guard cannot tell "skipped" apart from
+    # "still installing" (both look like a missing status file) and would block
+    # /gsd-execute-phase forever with a misleading message.
+    echo skipped > "$DEST/.gsd-install.status"
     echo "▶ skipped dependency install" ;;
 esac
 

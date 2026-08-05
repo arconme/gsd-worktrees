@@ -84,7 +84,7 @@ ROADMAP="$MAIN/.planning/ROADMAP.md"
 # phase-* branches and which of them are attached as worktrees
 BRANCHES=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' 'refs/heads/phase-*' || true)
 WTMAP=$(git -C "$MAIN" worktree list --porcelain \
-          | awk '/^worktree /{w=$2} /^branch /{b=$2; sub("refs/heads/","",b); print b "\t" w}')
+          | awk '/^worktree /{w=substr($0,10)} /^branch /{b=substr($0,8); sub("refs/heads/","",b); print b "\t" w}')
 TERMCOLS=$( tput cols 2>/dev/null || echo 120 )
 PHASESROOT="$MAIN/.planning/phases"
 

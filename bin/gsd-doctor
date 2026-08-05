@@ -60,7 +60,7 @@ MAIN="$(gsd_main "$REPO")"
 [ -n "$MAIN" ] || die "not a git repository: $REPO"
 
 FINDINGS=0
-FIXES=""        # the distinct commands to run, in the order first needed
+FIXES=""        # the distinct commands to run, ONE PER LINE, in the order first needed
 pass() { [ "$QUIET" = 1 ] || printf '  \033[32m✔\033[0m %s\n' "$1"; }
 note() { [ "$QUIET" = 1 ] || printf '  • %s\n' "$1"; }
 fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)
@@ -68,7 +68,9 @@ fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)
   printf '  \033[31m✖\033[0m %s \033[2m→ %s\033[0m\n' "$1" "$2"
   # Collect for the summary. Repeating a long `cd … && …` on every line pushes
   # the command off the right edge and reads as noise; the summary says it once.
-  case " $FIXES " in *" $2 "*) ;; *) FIXES="${FIXES:+$FIXES }$2" ;; esac
+  # Newline-separated: fixes are commands WITH spaces ('rm -rf …'), so a
+  # space-joined list would shred them at print time.
+  printf '%s\n' "$FIXES" | grep -qxF -- "$2" || FIXES="${FIXES:+$FIXES$'\n'}$2"
 }
 section() { [ "$QUIET" = 1 ] || printf '\n\033[1m%s\033[0m\n' "$1"; }
 
@@ -258,7 +260,7 @@ if [ "$FINDINGS" -eq 0 ]; then
 fi
 printf '\033[31m%d finding(s).\033[0m Run:\n\n' "$FINDINGS"
 [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$MAIN" ] || printf '  cd %s\n' "$MAIN"
-for fix in $FIXES; do printf '  %s\n' "$fix"; done
+printf '%s\n' "$FIXES" | while IFS= read -r fix; do printf '  %s\n' "$fix"; done
 echo ""
 echo "(then re-run gsd-doctor to confirm)"
 exit 1

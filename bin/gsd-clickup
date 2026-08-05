@@ -132,6 +132,8 @@ case "$cmd" in
 
   start|finish)
     [ $# -ge 3 ] || die "usage: gsd-clickup $cmd <task_id> <comment-text>"
+    command -v jq >/dev/null 2>&1 \
+      || die "jq is required for '$cmd' (status resolution) — install it, e.g. brew install jq"
     load_token
     cands=()
     if [ "$cmd" = start ]; then

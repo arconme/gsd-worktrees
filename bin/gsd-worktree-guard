@@ -79,6 +79,7 @@ if [ "$cmd" = "gsd-execute-phase" ] && [ -n "$(gsd_install_cmd "$dir")" ] && [ !
   s=$(cat "$dir/.gsd-install.status" 2>/dev/null || echo running)
   [ "$s" = "ok" ] && exit 0   # install completed (repo may simply have no deps)
   [ "$s" = "fail" ] && block "BLOCKED: dependency install FAILED — see $dir/.gsd-install.log, then install manually."
+  [ "$s" = "skipped" ] && block "BLOCKED: the dependency install was skipped (--no-install) and node_modules is missing — run '$(gsd_install_cmd "$dir")' in the worktree first."
   block "BLOCKED: dependencies still installing (no node_modules yet). Wait, or install manually. Log: $dir/.gsd-install.log"
 fi
 

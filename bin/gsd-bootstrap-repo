@@ -135,7 +135,9 @@ install = $PM
 CONF_EOF
   echo "✔ .gsd.conf (created)"
 elif [ "$BASE_EXPLICIT" = 1 ]; then
-  perl -pi -e "s/^\\s*base\\s*=.*/base = $BASE/" "$CONF"
+  # The branch name goes in via %ENV, not interpolated into the perl code — a
+  # name with a '/' (release/2024) would otherwise break the s/// delimiters.
+  BASE="$BASE" perl -pi -e 's/^\s*base\s*=.*/base = $ENV{BASE}/' "$CONF"
   grep -qE '^\s*base\s*=' "$CONF" || printf 'base = %s\n' "$BASE" >> "$CONF"
   echo "✔ .gsd.conf (base updated to '$BASE')"
 else

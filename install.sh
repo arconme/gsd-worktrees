@@ -48,6 +48,15 @@ for f in "$REPO"/bin/*; do
   echo "✔ $name → $dest"
 done
 
+# Prune links left behind by commands DELETED from bin/ — a dangling symlink
+# would otherwise sit on PATH forever as a broken command.
+for dest in "$BIN_DIR"/*; do
+  [ -L "$dest" ] || continue
+  case "$(readlink "$dest")" in
+    "$REPO"/bin/*) [ -e "$dest" ] || { rm -f "$dest"; echo "✂ $(basename "$dest") removed (deleted from the toolkit)"; } ;;
+  esac
+done
+
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "⚠ $BIN_DIR is not on your PATH — add it to your shell profile" ;;
