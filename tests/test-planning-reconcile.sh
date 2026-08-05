@@ -418,5 +418,50 @@ is "--commit succeeds with no STATE.md" "$?" 0
 is "the repair was committed"           "$(git -C "$NOSTATE" status --porcelain -- .planning | wc -l | tr -d ' ')" 0
 is "the duplicate was collapsed"        "$(grep -c '^- \[.\] \*\*Phase 1:' "$NOSTATE/.planning/ROADMAP.md")" 1
 
+# ── 9. gsd-doctor ────────────────────────────────────────────────────────────
+# It diagnoses and never fixes. The read-only guarantee is the whole reason it
+# is safe to run on a repo you are mid-feature in, so it is asserted, not
+# assumed. (Toolkit-level findings are ignored here: they reflect the state of
+# the checkout the tests run from, not the repo under inspection.)
+section "gsd-doctor"
+
+DOC="$WORK/doctor"
+mkdir -p "$DOC/.planning/phases/01-a" "$DOC/scripts"
+git init -q -b develop "$DOC"
+git -C "$DOC" config user.email t@example.com
+git -C "$DOC" config user.name test
+printf '.planning/ROADMAP.md merge=union\n.planning/STATE.md merge=union\n' > "$DOC/.gitattributes"
+cp "$FIX/phase-11-merge/ROADMAP.md" "$FIX/phase-11-merge/STATE.md" "$DOC/.planning/"
+git -C "$DOC" add -A && git -C "$DOC" commit -qm init
+
+out="$(PATH="$PKG/bin:$PATH" gsd-doctor --repo "$DOC" 2>&1)"
+is "reports merge=union"          "$(grep -c 'still on merge=union' <<<"$out")" 1
+is "reports the missing driver"   "$(grep -c 'merge driver not registered' <<<"$out")" 1
+is "reports the missing hook"     "$(grep -c 'no post-merge hook' <<<"$out")" 1
+is "reports missing shims"        "$(grep -c 'shims: .* missing' <<<"$out")" 1
+is "reports the planning damage"  "$(grep -c 'contradicts itself' <<<"$out")" 1
+is "names gsd-init as the fix"    "$([ "$(grep -c 'gsd-init' <<<"$out")" -ge 4 ] && echo yes)" yes
+is "names the repair as the fix"  "$(grep -c 'gsd-planning-repair' <<<"$out")" 1
+
+# THE guarantee: a diagnosis must not change the thing it diagnoses.
+before_tree="$(git -C "$DOC" status --porcelain)"
+before_cfg="$(git -C "$DOC" config --local --list | sort)"
+before_files="$(find "$DOC" -type f -not -path '*/.git/*' | sort | xargs shasum 2>/dev/null | shasum)"
+PATH="$PKG/bin:$PATH" gsd-doctor --repo "$DOC" >/dev/null 2>&1
+is "working tree untouched"  "$(git -C "$DOC" status --porcelain)" "$before_tree"
+is "git config untouched"    "$(git -C "$DOC" config --local --list | sort)" "$before_cfg"
+is "no file contents changed" "$(find "$DOC" -type f -not -path '*/.git/*' | sort | xargs shasum 2>/dev/null | shasum)" "$before_files"
+is "no --fix flag exists" \
+   "$(PATH="$PKG/bin:$PATH" gsd-doctor --fix --repo "$DOC" 2>&1 | grep -c 'unknown argument')" 1
+
+# Once the repo is fitted, the repo-setup findings clear.
+PATH="$PKG/bin:$PATH" gsd-planning-repair --repo "$DOC" >/dev/null 2>&1
+( cd "$DOC" && PATH="$PKG/bin:$PATH" gsd-bootstrap-repo ) >/dev/null 2>&1
+out="$(PATH="$PKG/bin:$PATH" gsd-doctor --repo "$DOC" 2>&1)"
+is "merge=union finding clears"   "$(grep -c 'still on merge=union' <<<"$out")" 0
+is "driver finding clears"        "$(grep -c 'merge driver not registered' <<<"$out")" 0
+is "hook finding clears"          "$(grep -c 'no post-merge hook' <<<"$out")" 0
+is "planning reports coherent"    "$(grep -c '.planning is coherent' <<<"$out")" 1
+
 printf '\n%s\n' "── $PASS passed, $FAIL failed ──"
 [ "$FAIL" -eq 0 ]

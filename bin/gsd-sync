@@ -12,7 +12,7 @@
 #   3. shim check  : verify the reference repo's scripts/gsd-*.sh shims match
 #                    the package's shims/ (they're frozen delegators — logic
 #                    lives in the package). Drift means a re-bootstrap is due:
-#                    cd <repo> && gsd-bootstrap-repo.
+#                    cd <repo> && gsd-init.
 #
 # Usage:
 #   gsd-sync [--check] [--src <path>]
@@ -25,7 +25,8 @@
 #
 # RELATED
 #   install.sh            what step 2 runs (symlink bin/ into ~/.local/bin)
-#   gsd-bootstrap-repo    installs/refreshes config + shims in a target repo
+#   gsd-init              re-run in a repo to refresh its config + shims
+#   gsd-doctor            read-only health check of a repo's GSD setup
 set -euo pipefail
 
 die() { printf '✖ %s\n' "$@" >&2; exit 1; }
@@ -102,7 +103,7 @@ echo ""
 # ── step 3: shim drift check (package shims/ vs the reference repo) ──────────
 # Repo-side scripts are frozen shims delegating to the toolkit; if the copies
 # in the reference repo differ from the package's shims/, a re-bootstrap is
-# due (gsd-bootstrap-repo overwrites shims idempotently).
+# due — gsd-init re-runs the bootstrap, which overwrites shims idempotently.
 [ -d "$SRCR/scripts" ] || die "reference repo has no scripts/ dir: $SRCR (pass --src <path>)"
 ok=0; drift=0
 while IFS= read -r rel; do
@@ -118,7 +119,7 @@ done < <( cd "$REPO/shims" && find scripts -type f -name 'gsd-*' ! -name '*.exam
 
 echo ""
 if [ "$drift" -gt 0 ]; then
-  echo "shims: $ok up to date · $drift out of date — refresh with:  cd $SRCR && gsd-bootstrap-repo"
+  echo "shims: $ok up to date · $drift out of date — refresh with:  cd $SRCR && gsd-init"
 else
   echo "shims: all $ok up to date in $(basename "$SRCR")"
 fi

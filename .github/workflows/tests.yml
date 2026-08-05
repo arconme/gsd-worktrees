@@ -1,0 +1,31 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  reconcile:
+    # The reconciler is the one piece here that can silently destroy data, so it
+    # is the piece that gets a gate. Both runners: the shims and hooks use
+    # git plumbing whose behaviour differs between the BSD and GNU userlands.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: versions
+        run: |
+          bash --version | head -1
+          git --version
+          python3 --version
+      - name: syntax
+        run: |
+          for f in bin/* lib/common.sh shims/scripts/*.sh tests/*.sh; do
+            bash -n "$f" || exit 1
+          done
+          python3 -c "import ast, pathlib; ast.parse(pathlib.Path('lib/gsd_planning.py').read_text())"
+      - name: planning reconcile suite
+        run: tests/test-planning-reconcile.sh

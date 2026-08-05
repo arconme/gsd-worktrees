@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+#
+# gsd-doctor — read-only health check of a repo's GSD setup.
+#
+# Diagnoses; never fixes. Every finding names the command that fixes it, and you
+# run that yourself. There is deliberately no --fix: a command that writes
+# broadly is exactly what this toolkit does not want — the writes belong to
+# gsd-init (repo setup) and gsd-planning-repair (planning state), which are
+# scoped and reviewable. Being read-only is also what makes it safe to run
+# anywhere, any time, including on a repo you are mid-feature in.
+#
+# Nothing here writes: no fetch, no config, no files. Comparisons against origin
+# therefore use the refs from your last fetch and are marked as such.
+#
+# Usage:
+#   gsd-doctor [--repo <path>] [--quiet]
+#
+# Options:
+#   --repo <path>  repo to inspect (default: the checkout containing cwd)
+#   --quiet        print findings only, not the checks that passed
+#   -h, --help     show this help
+#
+# Exit status: 0 when everything checks out, 1 when there is a finding.
+#
+# RELATED
+#   gsd-init             fixes repo-setup findings (re-run: it is idempotent)
+#   gsd-planning-repair  fixes planning-state findings
+#   gsd-sync             fixes toolkit findings
+set -uo pipefail
+
+die() { printf '✖ %s\n' "$@" >&2; exit 1; }
+
+usage() { awk 'NR>1 && /^set -uo/{exit} NR>1 {sub(/^# ?/,""); print}' "$0"; }
+
+SELF="$0"
+while [ -L "$SELF" ]; do
+  tgt=$(readlink "$SELF")
+  case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
+done
+GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GSD_PKG/lib/common.sh"
+
+REPO=""
+QUIET=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --repo) [ $# -ge 2 ] || die "--repo needs a value"; REPO="$2"; shift 2 ;;
+    --quiet|-q) QUIET=1; shift ;;
+    *) die "unknown argument: $1 (see gsd-doctor --help)" ;;
+  esac
+done
+
+if [ -z "$REPO" ]; then
+  REPO="$(git rev-parse --show-toplevel 2>/dev/null)" \
+    || die "not inside a git repository — pass --repo <path>"
+fi
+MAIN="$(gsd_main "$REPO")"
+[ -n "$MAIN" ] || die "not a git repository: $REPO"
+
+FINDINGS=0
+pass() { [ "$QUIET" = 1 ] || printf '  \033[32m✔\033[0m %s\n' "$1"; }
+note() { [ "$QUIET" = 1 ] || printf '  • %s\n' "$1"; }
+fail() {  # $1=what is wrong  $2=the command that fixes it
+  FINDINGS=$((FINDINGS + 1))
+  printf '  \033[31m✖\033[0m %-52s \033[2m→ %s\033[0m\n' "$1" "$2"
+}
+section() { [ "$QUIET" = 1 ] || printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+printf '\033[1mgsd-doctor\033[0m — %s\n%s\n' "$(basename "$MAIN")" "$MAIN"
+
+# ── toolkit ──────────────────────────────────────────────────────────────────
+section "toolkit"
+
+resolved=""
+if live="$(command -v gsd-finish 2>/dev/null)"; then
+  while [ -L "$live" ]; do
+    t=$(readlink "$live")
+    case "$t" in /*) live="$t" ;; *) live="$(dirname "$live")/$t" ;; esac
+  done
+  resolved="$(cd "$(dirname "$live")/.." 2>/dev/null && pwd)"
+fi
+if [ -z "$resolved" ]; then
+  fail "gsd commands are not on PATH" "cd $GSD_PKG && ./install.sh"
+elif [ "$resolved" != "$GSD_PKG" ]; then
+  fail "PATH commands come from $resolved, not this package" "cd $GSD_PKG && ./install.sh"
+else
+  pass "PATH commands resolve to $GSD_PKG"
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  pass "python3 $(python3 --version 2>&1 | awk '{print $2}') (the planning repair needs it)"
+else
+  fail "python3 missing — planning merges fall back to plain union" "install python3"
+fi
+
+if [ -n "$(git -C "$GSD_PKG" status --porcelain 2>/dev/null)" ]; then
+  fail "toolkit has uncommitted changes" "cd $GSD_PKG && git status"
+fi
+if git -C "$GSD_PKG" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+  ahead=$(git -C "$GSD_PKG" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
+  [ "$ahead" -gt 0 ] && fail "toolkit has $ahead unpushed commit(s)" "gsd-sync"
+fi
+
+# ── repo setup (fixed by re-running gsd-init) ────────────────────────────────
+section "repo setup"
+
+[ -f "$MAIN/.gsd.conf" ] \
+  && pass ".gsd.conf (base $(gsd_base "$MAIN"), worktrees $(gsd_wtdir "$MAIN"))" \
+  || note "no .gsd.conf — settings are auto-detected (base $(gsd_base "$MAIN"))"
+
+drift=0
+missing=0
+while IFS= read -r rel; do
+  [ -n "$rel" ] || continue
+  if [ ! -f "$MAIN/$rel" ]; then missing=$((missing + 1))
+  elif ! cmp -s "$GSD_PKG/shims/$rel" "$MAIN/$rel"; then drift=$((drift + 1)); fi
+done < <( cd "$GSD_PKG/shims" && find scripts -type f -name 'gsd-*' ! -name '*.example' 2>/dev/null )
+if [ "$missing" -gt 0 ] || [ "$drift" -gt 0 ]; then
+  fail "shims: $missing missing, $drift out of date" "cd $MAIN && gsd-init"
+else
+  pass "shims present and current"
+fi
+
+ATTRS="$MAIN/.gitattributes"
+if grep -qE '^\.planning/(ROADMAP|STATE)\.md[[:space:]]+merge=union' "$ATTRS" 2>/dev/null; then
+  fail ".gitattributes still on merge=union (keeps BOTH sides)" "cd $MAIN && gsd-init"
+elif [ "$(grep -cE '^\.planning/(ROADMAP|STATE)\.md[[:space:]]+merge=gsd-planning' "$ATTRS" 2>/dev/null)" = 2 ]; then
+  pass ".gitattributes: merge=gsd-planning on ROADMAP.md + STATE.md"
+else
+  fail ".gitattributes missing the .planning merge rules" "cd $MAIN && gsd-init"
+fi
+
+if [ "$(git -C "$MAIN" config --get merge.gsd-planning.driver 2>/dev/null)" = "gsd-planning-merge %O %A %B %P" ]; then
+  pass "merge driver registered in git config"
+else
+  # Not versioned, so a fresh clone always lacks it. gsd-finish re-asserts it,
+  # so this is a finding rather than an emergency.
+  fail "merge driver not registered (per-clone; git config is not versioned)" "cd $MAIN && gsd-init"
+fi
+
+if [ -d "$MAIN/.husky" ]; then HOOK="$MAIN/.husky/post-merge"; else
+  HOOK="$(git -C "$MAIN" rev-parse --path-format=absolute --git-path hooks 2>/dev/null)/post-merge"; fi
+if grep -q 'gsd-planning-repair' "$HOOK" 2>/dev/null; then
+  pass "post-merge hook reconciles .planning after a plain git pull"
+else
+  fail "no post-merge hook — a plain 'git pull' is unguarded" "cd $MAIN && gsd-init"
+fi
+
+if grep -q 'gsd-worktree-guard' "$MAIN/.claude/settings.json" 2>/dev/null; then
+  pass "guard hook registered in .claude/settings.json"
+else
+  note "guard hook not registered (Claude Code only; harmless under other agents)"
+fi
+
+# ── planning state (fixed by gsd-planning-repair) ────────────────────────────
+section "planning state"
+
+if [ ! -d "$MAIN/.planning" ]; then
+  note "no .planning/ — this repo has no GSD planning state yet"
+elif ! command -v gsd-planning-repair >/dev/null 2>&1; then
+  fail "gsd-planning-repair not on PATH — cannot check .planning" "cd $GSD_PKG && ./install.sh"
+else
+  out="$(gsd-planning-repair --repo "$MAIN" --check 2>&1)"; rc=$?
+  case "$rc" in
+    0) pass ".planning is coherent"
+       printf '%s\n' "$out" | grep -E '^  - ' | while IFS= read -r l; do note "${l#  - }"; done ;;
+    1) fail ".planning contradicts itself (union-merge damage)" "cd $MAIN && gsd-planning-repair"
+       printf '%s\n' "$out" | grep -E '^  • ' | sed 's/^  •/      ·/' ;;
+    *) note ".planning has no ROADMAP.md — nothing to check" ;;
+  esac
+fi
+
+# ── worktree hygiene ─────────────────────────────────────────────────────────
+section "worktrees"
+
+LOCK="$MAIN/.git/gsd-cmd.lock"
+if [ -d "$LOCK" ]; then
+  pid="$(cat "$LOCK/pid" 2>/dev/null)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    note "a gsd command is running right now (pid $pid)"
+  else
+    fail "stale command lock from a crashed run (pid ${pid:-?})" "rm -rf $LOCK"
+  fi
+fi
+
+gone=0
+live_branches=""
+while IFS= read -r line; do
+  case "$line" in
+    "worktree "*) wt="${line#worktree }"; [ -d "$wt" ] || gone=$((gone + 1)) ;;
+    "branch "*)   live_branches="$live_branches ${line#branch refs/heads/}" ;;
+  esac
+done < <(git -C "$MAIN" worktree list --porcelain 2>/dev/null)
+[ "$gone" -gt 0 ] \
+  && fail "$gone worktree(s) recorded but missing on disk" "git -C $MAIN worktree prune" \
+  || pass "no stale worktree records"
+
+orphans=""
+while IFS= read -r br; do
+  [ -n "$br" ] || continue
+  case " $live_branches " in *" $br "*) continue ;; esac
+  orphans="$orphans $br"
+done < <(git -C "$MAIN" for-each-ref --format='%(refname:short)' 'refs/heads/phase-*' 2>/dev/null)
+if [ -n "$orphans" ]; then
+  fail "phase branch(es) with no worktree:$orphans" "gsd-finish <N>, or git branch -d"
+else
+  pass "every phase branch has its worktree"
+fi
+
+BASE="$(gsd_base "$MAIN")"
+cur="$(git -C "$MAIN" branch --show-current 2>/dev/null)"
+[ "$cur" = "$BASE" ] \
+  && pass "main checkout is on '$BASE'" \
+  || fail "main checkout is on '$cur', not '$BASE' (gsd-finish will refuse)" "git -C $MAIN checkout $BASE"
+
+if git -C "$MAIN" show-ref --verify --quiet "refs/remotes/origin/$BASE"; then
+  behind=$(git -C "$MAIN" rev-list --count "$BASE..origin/$BASE" 2>/dev/null || echo 0)
+  [ "${behind:-0}" -gt 0 ] \
+    && note "'$BASE' is $behind commit(s) behind origin as of your last fetch (no fetch is done here)"
+fi
+
+# ── verdict ──────────────────────────────────────────────────────────────────
+echo ""
+if [ "$FINDINGS" -eq 0 ]; then
+  printf '\033[32m✔ no findings\033[0m\n'
+  exit 0
+fi
+printf '\033[31m%d finding(s)\033[0m — each line above names the command that fixes it.\n' "$FINDINGS"
+exit 1

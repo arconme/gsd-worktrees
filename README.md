@@ -27,6 +27,7 @@ its right place.
 | `gsd-wt-new` / `gsd-wt-finish` | The worktree workers behind `gsd-start`/`gsd-finish` (create with config-copy + background install; merge back locked and conflict-safe). Callable standalone. |
 | `gsd-planning-repair` | Reconcile `.planning/ROADMAP.md` + `STATE.md` after a union merge and recompute their progress counters from the roadmap and the plan files on disk. `--check` is the CI guard (exit 1 on union-merge damage); `--commit` lands the repair. Run automatically by `gsd-finish` and the `post-merge` hook. |
 | `gsd-planning-merge` | The git merge driver behind `merge=gsd-planning`: union both sides, then collapse every single-value line back to one value so the contradiction never lands. Registered per clone by `gsd-bootstrap-repo`, re-asserted by `gsd-finish`. |
+| `gsd-doctor` | Read-only health check of a repo's GSD setup: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene. Diagnoses only — every finding names the command that fixes it. No `--fix`, by design. |
 | `gsd-worktree-guard` | The guard: blocks `/gsd-phase` off the base branch, per-phase commands outside their `phase-<N>-*` worktree, and execute-phase before deps land. Invoked via the repo's hook shim. |
 | `gsd-derive-port` / `gsd-dev` | Per-worktree dev ports (base + phase N) and the boot-everything launcher driven by the repo's `scripts/gsd-dev.conf`. |
 
@@ -157,7 +158,7 @@ early hand-written attempt at this destroyed seven entries that way, and
 `tests/test-planning-reconcile.sh` asserts that section stays byte-identical.
 
 **Fallbacks.** Merge drivers live in git config, which is not versioned, so a
-clone that never ran `gsd-bootstrap-repo` gets plain union — the repair fixes
+clone that never ran `gsd-init` gets plain union — the repair fixes
 that afterwards, and the test suite covers the no-driver path explicitly.
 Without `python3`, the driver does the plain union and warns; that is exactly
 today's behaviour, never worse.
@@ -168,9 +169,13 @@ today's behaviour, never worse.
 tests/test-planning-reconcile.sh
 ```
 
-73 assertions over the two real corruptions from `medyour-platform`
+101 assertions over the two real corruptions from `medyour-platform`
 (`tests/fixtures/`), an end-to-end `git merge` through the driver, the same
-merge without the driver, and a full `gsd-wt-finish` run.
+merge without the driver, a full `gsd-wt-finish` run, the three collateral-
+deletion regressions, and `gsd-doctor` — including that it leaves the working
+tree, git config and every file byte-identical.
+
+CI runs the suite on Linux and macOS (`.github/workflows/tests.yml`).
 
 ## Current state / roadmap
 
