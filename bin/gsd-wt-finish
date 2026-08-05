@@ -14,6 +14,14 @@
 # branch is left clean and the resolution steps are printed. Parallel runs
 # serialize on .git/gsd-cmd.lock (stale locks from crashed runs are reclaimed).
 #
+# .planning reconcile: ROADMAP.md and STATE.md merge with a union strategy so
+# parallel sessions can each append their own entries. Union keeps BOTH sides of
+# any line that is a single source of truth, so this command registers the
+# reconciling merge driver (gsd-planning-merge) and runs gsd-planning-repair
+# after BOTH merge points — the phase merge, and the `pull` on the push-retry
+# path, which fires exactly when a parallel session moved the base branch. The
+# base branch is never pushed while .planning contradicts itself.
+#
 # Pre-merge check hook: if the repo has an executable pre-merge script
 # (default scripts/gsd-premerge-check.sh, override with `premerge = <path>` in
 # .gsd.conf, 'none' disables), it runs from the main checkout AFTER the origin
@@ -102,6 +110,35 @@ if [ "$cur" != "$BASE" ]; then
   exit 1
 fi
 
+# ── .planning merge safety ───────────────────────────────────────────────────
+# The union merge strategy on .planning/ROADMAP.md + STATE.md keeps BOTH sides
+# of any single-value line, which leaves the roadmap claiming a phase is at once
+# complete and not started. Register the reconciling merge driver (config is not
+# versioned, so re-assert it every run) and repair after each merge point below.
+gsd_register_merge_driver "$MAIN"
+
+repair_planning() {  # $1 = a phrase naming the merge that just happened
+  [ -d "$MAIN/.planning" ] || return 0
+  if ! command -v gsd-planning-repair >/dev/null 2>&1; then
+    echo "⚠ gsd-planning-repair not on PATH — skipping the .planning reconcile (re-run install.sh)" >&2
+    return 0
+  fi
+  echo "▶ reconciling .planning after $1…"
+  if ! gsd-planning-repair --repo "$MAIN" --commit; then
+    echo "⚠ .planning reconcile could not run — check it by hand before pushing" >&2
+    return 0
+  fi
+  # Assert the guarantee rather than assume it: nothing self-contradictory may
+  # reach the shared branch. A failure here is a bug in the reconciler, not a
+  # merge artefact, so it stops the finish with the merge still only local.
+  if ! gsd-planning-repair --repo "$MAIN" --check >/dev/null 2>&1; then
+    echo "✗ .planning is STILL self-contradictory after the repair — not pushing." >&2
+    gsd-planning-repair --repo "$MAIN" --check >&2 || true
+    echo "  The merge is committed locally only. Fix .planning, commit, then re-run finish." >&2
+    return 1
+  fi
+}
+
 HAS_ORIGIN=0
 git -C "$MAIN" remote get-url origin >/dev/null 2>&1 && HAS_ORIGIN=1
 
@@ -134,6 +171,7 @@ if ! git -C "$MAIN" merge --no-ff "$BRANCH" -m "Merge $BRANCH into $BASE"; then
   echo "  Resolve in the worktree: git -C $DEST merge $BASE, fix conflicts, commit, then re-run finish." >&2
   exit 1
 fi
+repair_planning "the phase merge"
 
 if [ "$HAS_ORIGIN" = 1 ]; then
   echo "▶ pushing '$BASE'…"
@@ -148,6 +186,9 @@ if [ "$HAS_ORIGIN" = 1 ]; then
       echo "  Resolve manually: git -C $MAIN pull --no-rebase origin $BASE, fix, commit, push — then re-run finish to clean up." >&2
       exit 1
     fi
+    # This pull is the divergence case union handles worst — another session
+    # moved the base branch under us — so reconcile before retrying the push.
+    repair_planning "the origin/$BASE sync"
   done
   if [ "$pushed" != 1 ]; then
     echo "✗ could not push '$BASE' after 3 attempts — push manually, then re-run to clean up." >&2
