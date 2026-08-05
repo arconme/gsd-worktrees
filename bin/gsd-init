@@ -95,6 +95,15 @@ DEST="$(git rev-parse --show-toplevel 2>/dev/null)" \
   || die "run this from inside the target git repo"
 command -v gsd-bootstrap-repo >/dev/null 2>&1 || die "gsd-bootstrap-repo not found on PATH"
 
+SELF="$0"
+while [ -L "$SELF" ]; do
+  tgt=$(readlink "$SELF")
+  case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
+done
+GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GSD_PKG/lib/common.sh"
+
 # ── already initialized? (still repair/sync the workflow files below) ────────
 ALREADY=0
 [ -f "$DEST/.planning/ROADMAP.md" ] && ALREADY=1
@@ -113,11 +122,13 @@ review_notice() {
   echo "Review the tracked changes with:  git -C $DEST diff"
   echo "Also set, and NOT visible to git diff (per clone, not versioned):"
   echo "  • git config merge.gsd-planning.driver"
-  if [ -d "$DEST/.husky" ]; then
-    echo "  • .husky/post-merge   (versioned — this one IS in the diff)"
-  else
-    echo "  • $(git -C "$DEST" rev-parse --git-path hooks)/post-merge"
-  fi
+  # Where the hook lands, and whether it is versioned, is gsd_planning_hook's
+  # call — asking it here keeps this message from drifting out of step with
+  # what the bootstrap actually did.
+  gsd_planning_hook "$DEST"
+  [ "${GSD_HOOK_VERSIONED:-0}" = 1 ] \
+    && echo "  • $GSD_HOOK_LABEL   (versioned — this one IS in the diff)" \
+    || echo "  • $GSD_HOOK_LABEL"
 }
 
 if [ "$ALREADY" = 1 ]; then

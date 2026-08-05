@@ -552,6 +552,37 @@ is "the cd is given once"              "$(grep -c '^  cd .*/summary$' <<<"$out")
 is "gsd-init listed once, not 3×"      "$(grep -c '^  gsd-init$' <<<"$out")" 1
 is "and it says how to confirm"        "$(grep -c 're-run gsd-doctor to confirm' <<<"$out")" 1
 
+section "post-merge hook: versioned when it lands in the working tree"
+# A repo may point core.hooksPath at a TRACKED directory (scripts/git-hooks is
+# a common convention). The hook there belongs in the commit like any other
+# file. Assuming .git/hooks left it untracked in exactly such a repo — it
+# protected the clone that ran the bootstrap and nobody else.
+# shellcheck source=../lib/common.sh
+. "$PKG/lib/common.sh"
+
+HK="$WORK/hookrepo"
+mkdir -p "$HK/scripts/git-hooks"
+git init -q -b develop "$HK"
+git -C "$HK" config core.hooksPath "$HK/scripts/git-hooks"
+echo x > "$HK/f.txt"; git -C "$HK" add -A; git -C "$HK" commit -qm init
+gsd_planning_hook "$HK"
+is "custom hooks path is treated as versioned" "$GSD_HOOK_VERSIONED" "1"
+is "and its label is repo-relative"            "$GSD_HOOK_LABEL" "scripts/git-hooks/post-merge"
+
+# The default .git/hooks case must still be reported as per-clone.
+PLAIN="$WORK/plainrepo"
+mkdir -p "$PLAIN"; git init -q -b develop "$PLAIN"
+echo x > "$PLAIN/f.txt"; git -C "$PLAIN" add -A; git -C "$PLAIN" commit -qm init
+gsd_planning_hook "$PLAIN"
+is "default .git/hooks stays unversioned" "$GSD_HOOK_VERSIONED" "0"
+
+# End to end: the bootstrap must COMMIT the hook in the custom-path repo.
+( cd "$HK" && PATH="$PKG/bin:$PATH" gsd-bootstrap-repo --commit >/dev/null 2>&1 )
+is "the hook is tracked after bootstrap" \
+   "$(git -C "$HK" ls-files scripts/git-hooks/post-merge | wc -l | tr -d ' ')" "1"
+is "and nothing is left untracked" \
+   "$(git -C "$HK" status --porcelain | grep -c '^??' || true)" "0"
+
 section "python interpreter fallback"
 # Not every system names it python3 — minimal images and Windows use `python`.
 # The name alone is not enough to trust: `python` is still Python 2 in places,

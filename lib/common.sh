@@ -68,15 +68,40 @@ gsd_python() {  # → the interpreter for lib/gsd_planning.py; nonzero when none
 
 gsd__add_missing() { GSD_PLANNING_MISSING="${GSD_PLANNING_MISSING:+$GSD_PLANNING_MISSING }$1"; }
 
-gsd_planning_hook() {  # $1=repo root → sets GSD_HOOK_PATH + GSD_HOOK_LABEL
+gsd_planning_hook() {  # $1=repo root → GSD_HOOK_PATH, GSD_HOOK_LABEL, GSD_HOOK_VERSIONED
   # Husky owns post-merge where it is installed (core.hooksPath points into
   # .husky/_, which husky regenerates), and there the hook is a VERSIONED file.
-  # Everywhere else it is .git/hooks and per clone.
+  #
+  # Everywhere else, ASK GIT for the hooks dir and decide by WHERE IT LANDS —
+  # do not assume .git/hooks. A repo may point core.hooksPath at a tracked
+  # directory (scripts/git-hooks is a common convention), and there the hook
+  # belongs in the commit like any other file. Assuming it was always
+  # unversioned left it untracked in exactly such a repo: it worked for the
+  # clone that ran the bootstrap and protected nobody else.
+  local dir gitdir root
   if [ -d "$1/.husky" ]; then
     GSD_HOOK_PATH="$1/.husky/post-merge"
     GSD_HOOK_LABEL=".husky/post-merge"
+    GSD_HOOK_VERSIONED=1
+    return 0
+  fi
+  dir="$(git -C "$1" rev-parse --path-format=absolute --git-path hooks 2>/dev/null)"
+  gitdir="$(git -C "$1" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  # Take the root from GIT too, not from "$1": these are string comparisons, and
+  # a caller-supplied path can spell the same directory differently (on macOS
+  # /var vs /private/var), which would silently flip the answer.
+  root="$(git -C "$1" rev-parse --path-format=absolute --show-toplevel 2>/dev/null)" || root="$1"
+  [ -n "$root" ] || root="$1"
+  GSD_HOOK_PATH="$dir/post-merge"
+  # Order matters: .git/ is itself inside the working tree, so test it first.
+  case "$dir/" in
+    "$gitdir"/*) GSD_HOOK_VERSIONED=0 ;;   # per clone — cannot be committed
+    "$root"/*)   GSD_HOOK_VERSIONED=1 ;;   # in the working tree — tracked
+    *)           GSD_HOOK_VERSIONED=0 ;;   # outside the repo entirely
+  esac
+  if [ "$GSD_HOOK_VERSIONED" = 1 ]; then
+    GSD_HOOK_LABEL="${GSD_HOOK_PATH#"$root"/}"
   else
-    GSD_HOOK_PATH="$(git -C "$1" rev-parse --path-format=absolute --git-path hooks)/post-merge"
     GSD_HOOK_LABEL="$(git -C "$1" rev-parse --git-path hooks)/post-merge (not versioned)"
   fi
 }

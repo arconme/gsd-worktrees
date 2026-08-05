@@ -314,7 +314,12 @@ if [ "$COMMIT" = 1 ]; then
     scripts/gsd-planning-repair.sh \
     scripts/hooks/gsd-worktree-guard.sh \
     .claude/settings.json .gitignore .gitattributes CLAUDE.md
-  [ -f "$DEST/.husky/post-merge" ] && git -C "$DEST" add .husky/post-merge
+  # Commit the post-merge hook when it lands in the working tree — .husky/, or
+  # a core.hooksPath pointing at a tracked dir like scripts/git-hooks. A hook
+  # inside .git/ is per clone and cannot be committed.
+  gsd_planning_hook "$DEST"
+  [ "${GSD_HOOK_VERSIONED:-0}" = 1 ] && [ -f "$GSD_HOOK_PATH" ] \
+    && git -C "$DEST" add -- "$GSD_HOOK_PATH"
   if git -C "$DEST" diff --cached --quiet; then
     echo "• nothing new to commit"
   else
