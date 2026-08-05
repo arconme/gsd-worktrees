@@ -563,6 +563,10 @@ section "post-merge hook: versioned when it lands in the working tree"
 HK="$WORK/hookrepo"
 mkdir -p "$HK/scripts/git-hooks"
 git init -q -b develop "$HK"
+# CI runners have no global git identity — without this the commits below fail
+# and every assertion after them is measuring the wrong thing.
+git -C "$HK" config user.email t@example.com
+git -C "$HK" config user.name test
 git -C "$HK" config core.hooksPath "$HK/scripts/git-hooks"
 echo x > "$HK/f.txt"; git -C "$HK" add -A; git -C "$HK" commit -qm init
 gsd_planning_hook "$HK"
@@ -572,6 +576,8 @@ is "and its label is repo-relative"            "$GSD_HOOK_LABEL" "scripts/git-ho
 # The default .git/hooks case must still be reported as per-clone.
 PLAIN="$WORK/plainrepo"
 mkdir -p "$PLAIN"; git init -q -b develop "$PLAIN"
+git -C "$PLAIN" config user.email t@example.com
+git -C "$PLAIN" config user.name test
 echo x > "$PLAIN/f.txt"; git -C "$PLAIN" add -A; git -C "$PLAIN" commit -qm init
 gsd_planning_hook "$PLAIN"
 is "default .git/hooks stays unversioned" "$GSD_HOOK_VERSIONED" "0"
