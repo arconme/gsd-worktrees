@@ -93,9 +93,15 @@ def dedupe_keyed(lines, key_of, rank_of):
     return out, dropped
 
 
-def section_bounds(lines, heading_rx, stop_rx=re.compile(r"^##?\s")):
-    """[start, end) for a `##` section: its heading through the line before the
-    next same-or-higher-level heading."""
+def section_bounds(lines, heading_rx, stop_rx=re.compile(r"^#{1,6}\s")):
+    """[start, end) for a section: its heading through the line before the NEXT
+    HEADING OF ANY LEVEL.
+
+    Any level, not same-or-higher, on purpose. ROADMAP.md puts every
+    `### Phase N:` detail section after `## Progress`, so stopping only at
+    `##` made the Progress "section" run to end of file — and the progress-row
+    dedupe then ran across all of them, silently deleting a numbered table row
+    in one phase's detail because another phase's detail had the same number."""
     for i, line in enumerate(lines):
         if heading_rx.match(line):
             for j in range(i + 1, len(lines)):
@@ -371,19 +377,37 @@ def resolve_frontmatter(order, values, truth=None):
     return resolved, problems
 
 
-def emit_frontmatter(order, resolved):
-    out = []
-    for path in order:
-        if "." in path:
+def emit_frontmatter(body, resolved):
+    """Rewrite the frontmatter by WALKING THE ORIGINAL LINES: a key's first
+    occurrence takes its resolved value, later occurrences are dropped, and
+    anything we did not parse is passed through untouched.
+
+    Rebuilding from the parsed keys instead would silently delete every line the
+    parser has no model for — YAML lists, comments, blank lines. Dropping real
+    content is the failure this whole module exists to prevent, so the parser
+    only ever gets to change what it positively recognises."""
+    out, seen, parent = [], set(), None
+    for line in body:
+        path = None
+        sub = FM_SUB_RX.match(line)
+        top = FM_TOP_RX.match(line)
+        if sub and parent:
+            path = f"{parent}.{sub.group(2)}"
+            indent = sub.group(1)
+            key = sub.group(2)
+        elif top:
+            key = top.group(1)
+            path = key
+            indent = ""
+            parent = key if top.group(2).strip() == "" else None
+        if path is None:
+            out.append(line)  # not ours — verbatim
             continue
-        value = resolved[path]
-        if value.strip() == "":
-            out.append(f"{path}:\n")
-            for child in order:
-                if child.startswith(f"{path}."):
-                    out.append(f"  {child.split('.', 1)[1]}: {resolved[child]}\n")
-        else:
-            out.append(f"{path}: {value}\n")
+        if path in seen:
+            continue  # a later copy of a key we have already emitted
+        seen.add(path)
+        value = resolved.get(path, "")
+        out.append(f"{indent}{key}:\n" if value.strip() == "" else f"{indent}{key}: {value}\n")
     return out
 
 
@@ -535,7 +559,7 @@ def reconcile_state(lines, truth=None):
         order, values = parse_frontmatter(lines[start:end])
         resolved, fm_problems = resolve_frontmatter(order, values, truth)
         problems.extend(fm_problems)
-        lines = lines[:start] + emit_frontmatter(order, resolved) + lines[end:]
+        lines = lines[:start] + emit_frontmatter(lines[start:end], resolved) + lines[end:]
     else:
         problems.append((ADVISORY, "STATE.md: no frontmatter block found — left untouched"))
 

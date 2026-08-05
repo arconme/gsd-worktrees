@@ -124,17 +124,24 @@ repair_planning() {  # $1 = a phrase naming the merge that just happened
     return 0
   fi
   echo "▶ reconciling .planning after $1…"
-  if ! gsd-planning-repair --repo "$MAIN" --commit; then
-    echo "⚠ .planning reconcile could not run — check it by hand before pushing" >&2
-    return 0
-  fi
-  # Assert the guarantee rather than assume it: nothing self-contradictory may
-  # reach the shared branch. A failure here is a bug in the reconciler, not a
-  # merge artefact, so it stops the finish with the merge still only local.
+  gsd-planning-repair --repo "$MAIN" --commit \
+    || echo "⚠ .planning reconcile exited nonzero — verifying before we go on" >&2
+
+  # Assert the guarantee rather than assume it, and assert it even when the
+  # repair itself failed: an early return here would let a failed reconcile push
+  # the merge unverified. Two things must hold — the files must be coherent, and
+  # the repair must have been COMMITTED, since --check reads the working tree
+  # and a repaired-but-uncommitted tree would push the corruption anyway.
   if ! gsd-planning-repair --repo "$MAIN" --check >/dev/null 2>&1; then
     echo "✗ .planning is STILL self-contradictory after the repair — not pushing." >&2
     gsd-planning-repair --repo "$MAIN" --check >&2 || true
     echo "  The merge is committed locally only. Fix .planning, commit, then re-run finish." >&2
+    return 1
+  fi
+  if [ -n "$(git -C "$MAIN" status --porcelain -- .planning)" ]; then
+    echo "✗ the .planning repair was not committed — not pushing." >&2
+    git -C "$MAIN" status --short -- .planning >&2
+    echo "  Commit it, then re-run finish." >&2
     return 1
   fi
 }

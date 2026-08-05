@@ -88,7 +88,14 @@ rc=0
 python3 "$GSD_PKG/lib/gsd_planning.py" "${ARGS[@]}" || rc=$?
 
 if [ "$COMMIT" = 1 ] && [ -n "$(git -C "$REPO" status --porcelain -- .planning)" ]; then
-  git -C "$REPO" add .planning/ROADMAP.md .planning/STATE.md
+  # Stage only what exists: a repo may legitimately have ROADMAP.md without
+  # STATE.md, and `git add` on a missing pathspec is fatal — which, called from
+  # gsd-finish, aborted the repair with the merge already committed.
+  STAGE=()
+  for f in .planning/ROADMAP.md .planning/STATE.md; do
+    [ -f "$REPO/$f" ] && STAGE+=("$f")
+  done
+  [ "${#STAGE[@]}" -gt 0 ] && git -C "$REPO" add -- "${STAGE[@]}"
   if ! git -C "$REPO" diff --cached --quiet -- .planning; then
     git -C "$REPO" commit -q -m "docs(gsd): reconcile .planning after union merge
 

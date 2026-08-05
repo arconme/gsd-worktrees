@@ -337,5 +337,86 @@ is "develop's history is intact"             "$(grep -c '^Resume file:' "$S")" 2
 is "develop passes --check after the finish" "$?" 0
 is "the repair left no uncommitted changes"  "$(git -C "$WT/repo" status --porcelain -- .planning | wc -l | tr -d ' ')" 0
 
+# ── 8. content the reconciler must never touch ───────────────────────────────
+# Three defects found reviewing the committed fix. All three are the same class
+# of failure the tool exists to prevent: silently deleting real content.
+section "no collateral deletion"
+
+# A: ROADMAP.md puts every '### Phase N:' detail AFTER '## Progress'. When the
+# Progress section was bounded only at '##' it ran to EOF, so the progress-row
+# dedupe reached into the phase details and deleted a numbered table row in one
+# phase because another phase's detail happened to use the same number.
+COLL="$WORK/collateral"
+mkdir -p "$COLL/.planning/phases"
+# (built with python: the injected rows contain '|', which fights every sed delimiter)
+python3 - "$FIX/phase-11-merge/ROADMAP.md" "$COLL/.planning/ROADMAP.md" <<'INJECT'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+doc = open(src).read()
+table = "\n| Step | What |\n|------|------|\n| %s | who |\n"
+doc = doc.replace("### Phase 20: Verify and dispense\n",
+                  "### Phase 20: Verify and dispense\n" + table % "1. Scan the QR code")
+doc = doc.replace("### Phase 21: Branch self-service and admin queue\n",
+                  "### Phase 21: Branch self-service and admin queue\n" + table % "1. Open the queue")
+open(dst, "w").write(doc)
+INJECT
+cp "$FIX/phase-11-merge/STATE.md" "$COLL/.planning/"
+python3 "$ENGINE" repair "$COLL/.planning" >/dev/null 2>&1
+is "a phase detail's numbered row survives"        "$(grep -c '^| 1\. Scan the QR code' "$COLL/.planning/ROADMAP.md")" 1
+is "the same number in another phase survives too" "$(grep -c '^| 1\. Open the queue' "$COLL/.planning/ROADMAP.md")" 1
+is "the real progress table is still deduped"      "$(grep -c '^| 11\. Catalogs' "$COLL/.planning/ROADMAP.md")" 1
+
+# B: the frontmatter emitter used to rebuild from parsed keys, so any line it
+# had no model for — YAML lists, comments — was dropped on the floor.
+FM="$WORK/frontmatter"
+mkdir -p "$FM/.planning/phases/01-a"
+: > "$FM/.planning/phases/01-a/01-01-PLAN.md"
+printf '# Roadmap\n\n## Phases\n\n- [x] **Phase 1: A** - a\n' > "$FM/.planning/ROADMAP.md"
+cat > "$FM/.planning/STATE.md" <<'EOF'
+---
+milestone: v1.0
+status: planning
+tags:
+  - alpha
+  - beta
+# a comment the parser has no model for
+progress:
+  total_phases: 9
+  completed_phases: 9
+status: executing
+---
+
+# Project State
+
+## Current Position
+
+Phase: 1
+EOF
+python3 "$ENGINE" repair "$FM/.planning" >/dev/null 2>&1
+is "a YAML list item survives"        "$(grep -c '^  - alpha' "$FM/.planning/STATE.md")" 1
+is "every list item survives"         "$(grep -c '^  - beta' "$FM/.planning/STATE.md")" 1
+is "a comment survives"               "$(grep -c '^# a comment' "$FM/.planning/STATE.md")" 1
+is "the list's parent key survives"   "$(grep -c '^tags:' "$FM/.planning/STATE.md")" 1
+is "the duplicate key still collapses" "$(grep -c '^status:' "$FM/.planning/STATE.md")" 1
+is "and takes the incoming value"     "$(grep -c '^status: executing' "$FM/.planning/STATE.md")" 1
+is "counters still recomputed"        "$(grep -c '  total_phases: 1' "$FM/.planning/STATE.md")" 1
+
+# C: --commit ran `git add` on both planning files unconditionally, which is
+# fatal when one is absent. Called from gsd-finish that aborted the repair with
+# the merge already committed.
+NOSTATE="$WORK/nostate"
+mkdir -p "$NOSTATE/.planning/phases"
+git init -q "$NOSTATE"
+git -C "$NOSTATE" config user.email t@example.com
+git -C "$NOSTATE" config user.name test
+printf '# Roadmap\n\n## Phases\n\n- [x] **Phase 1: A** - a\n' > "$NOSTATE/.planning/ROADMAP.md"
+git -C "$NOSTATE" add -A && git -C "$NOSTATE" commit -qm init
+printf '# Roadmap\n\n## Phases\n\n- [ ] **Phase 1: A** - a\n- [x] **Phase 1: A** - a (completed 2026-01-01)\n' \
+  > "$NOSTATE/.planning/ROADMAP.md"
+PATH="$PKG/bin:$PATH" gsd-planning-repair --repo "$NOSTATE" --commit >/dev/null 2>&1
+is "--commit succeeds with no STATE.md" "$?" 0
+is "the repair was committed"           "$(git -C "$NOSTATE" status --porcelain -- .planning | wc -l | tr -d ' ')" 0
+is "the duplicate was collapsed"        "$(grep -c '^- \[.\] \*\*Phase 1:' "$NOSTATE/.planning/ROADMAP.md")" 1
+
 printf '\n%s\n' "── $PASS passed, $FAIL failed ──"
 [ "$FAIL" -eq 0 ]
