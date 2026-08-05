@@ -28,6 +28,11 @@ jobs:
           done
           python3 -c "import ast, pathlib; ast.parse(pathlib.Path('lib/gsd_planning.py').read_text())"
       - name: shellcheck
+        # Ubuntu only: shellcheck is static analysis, so its verdict does not
+        # differ per platform, and the macOS runner has no shellcheck (a brew
+        # install on every run would buy nothing). The matrix is here for the
+        # BSD-vs-GNU RUNTIME differences the suite exercises.
+        if: matrix.os == 'ubuntu-latest'
         # Policy (intentional-pattern exclusions, with reasons): .shellcheckrc
         run: shellcheck -x bin/* lib/common.sh shims/scripts/*.sh shims/scripts/hooks/*.sh install.sh tests/*.sh
       - name: planning reconcile suite
