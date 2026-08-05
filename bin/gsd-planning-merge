@@ -39,17 +39,19 @@ while [ -L "$SELF" ]; do
   case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
 done
 GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GSD_PKG/lib/common.sh"
 
 # Union first: same result git's built-in union driver produces, written to %A.
 git merge-file -q --union "$A" "$O" "$B" || true
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "⚠ gsd-planning-merge: python3 not found — left the plain union result in ${P:-$A}." >&2
+if ! PY=$(gsd_python); then
+  echo "⚠ gsd-planning-merge: no python 3.7+ (tried python3, python) — left the plain union result in ${P:-$A}." >&2
   echo "  It may contain both sides of single-value lines; run gsd-planning-repair after the merge." >&2
   exit 0
 fi
 
-python3 "$GSD_PKG/lib/gsd_planning.py" reconcile "$A" ${P:+--path "$P"} \
+"$PY" "$GSD_PKG/lib/gsd_planning.py" reconcile "$A" ${P:+--path "$P"} \
   || echo "⚠ gsd-planning-merge: reconcile failed on ${P:-$A} — plain union result kept; run gsd-planning-repair." >&2
 
 exit 0

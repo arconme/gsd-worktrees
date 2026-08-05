@@ -552,5 +552,52 @@ is "the cd is given once"              "$(grep -c '^  cd .*/summary$' <<<"$out")
 is "gsd-init listed once, not 3×"      "$(grep -c '^  gsd-init$' <<<"$out")" 1
 is "and it says how to confirm"        "$(grep -c 're-run gsd-doctor to confirm' <<<"$out")" 1
 
+section "python interpreter fallback"
+# Not every system names it python3 — minimal images and Windows use `python`.
+# The name alone is not enough to trust: `python` is still Python 2 in places,
+# and Python 2 cannot run the reconciler at all.
+# shellcheck source=../lib/common.sh
+. "$PKG/lib/common.sh"
+
+unset GSD_PYTHON
+resolved="$(gsd_python || true)"
+is "resolves an interpreter here" "$([ -n "$resolved" ] && echo yes)" "yes"
+is "and it really is python 3"    "$("$resolved" -c 'import sys; print(sys.version_info[0])')" "3"
+
+# A PATH holding ONLY a fake `python` — no python3 to fall back on, which is
+# what a minimal image looks like. PATH must exclude /usr/bin or the real
+# python3 is found first and the fallback is never exercised.
+REALPY="$(command -v python3)"
+FAKEBIN="$WORK/fakebin"
+mkdir -p "$FAKEBIN"
+
+# Case 1: `python` is Python 2 — must be REJECTED, not handed back to break
+# mid-merge. The probe asks the interpreter, so a stub that fails it is enough.
+cat > "$FAKEBIN/python" <<'STUB'
+#!/bin/bash
+case "$*" in
+  *version_info*) exit 1 ;;              # fails the >= 3.7 probe, as py2 does
+  --version) echo "Python 2.7.18"; exit 0 ;;
+esac
+exit 1
+STUB
+chmod +x "$FAKEBIN/python"
+unset GSD_PYTHON
+out="$(PATH="$FAKEBIN" /bin/bash -c ". '$PKG/lib/common.sh'; gsd_python && echo PICKED || echo REJECTED" 2>&1)"
+is "rejects a python 2 named 'python'" "$(grep -c REJECTED <<<"$out")" 1
+
+# Case 2: `python` IS Python 3 — must be ACCEPTED. That is the whole point.
+printf '#!/bin/bash\nexec %s "$@"\n' "$REALPY" > "$FAKEBIN/python"
+chmod +x "$FAKEBIN/python"
+unset GSD_PYTHON
+out="$(PATH="$FAKEBIN" /bin/bash -c ". '$PKG/lib/common.sh'; gsd_python" 2>&1)"
+is "accepts a python 3 named 'python'" "$out" "python"
+
+# And the reconciler genuinely runs under that name, not just the name check.
+unset GSD_PYTHON
+out="$(PATH="$FAKEBIN" /bin/bash -c "\"\$(. '$PKG/lib/common.sh'; gsd_python)\" '$ENGINE' --help" 2>&1 | head -1)"
+is "the engine runs under 'python'" "$(grep -c usage <<<"$out")" 1
+unset GSD_PYTHON
+
 printf '\n%s\n' "── $PASS passed, $FAIL failed ──"
 [ "$FAIL" -eq 0 ]

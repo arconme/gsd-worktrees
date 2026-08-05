@@ -48,6 +48,24 @@ gsd_register_merge_driver() {  # $1=repo root — register the .planning merge d
     "GSD planning files: union, then reconcile single-value lines"
 }
 
+gsd_python() {  # → the interpreter for lib/gsd_planning.py; nonzero when none
+  # Most systems have `python3`, but minimal images (and Windows) name it
+  # `python`. Checking the NAME is not enough: `python` is still Python 2 on
+  # older systems, which cannot run the reconciler at all — so verify the
+  # version by asking the interpreter itself. Cached: the reconciler is called
+  # several times per finish, and each probe is a process spawn.
+  if [ -n "${GSD_PYTHON:-}" ]; then printf '%s\n' "$GSD_PYTHON"; return 0; fi
+  local py
+  for py in python3 python; do
+    command -v "$py" >/dev/null 2>&1 || continue
+    "$py" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 7) else 1)' 2>/dev/null || continue
+    GSD_PYTHON="$py"
+    printf '%s\n' "$py"
+    return 0
+  done
+  return 1
+}
+
 gsd__add_missing() { GSD_PLANNING_MISSING="${GSD_PLANNING_MISSING:+$GSD_PLANNING_MISSING }$1"; }
 
 gsd_planning_hook() {  # $1=repo root → sets GSD_HOOK_PATH + GSD_HOOK_LABEL

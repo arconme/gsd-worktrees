@@ -78,14 +78,14 @@ if [ -z "$REPO" ]; then
 fi
 [ -d "$REPO/.planning" ] || die "$REPO has no .planning/ directory"
 
-command -v python3 >/dev/null 2>&1 \
-  || die "python3 not found — gsd-planning-repair needs it to parse the planning files"
+PY=$(gsd_python) \
+  || die "no python 3.7+ found (tried python3, then python) — gsd-planning-repair needs it to parse the planning files"
 
 ARGS=(repair "$REPO/.planning")
 [ "$CHECK" = 1 ] && ARGS+=(--check)
 
 rc=0
-python3 "$GSD_PKG/lib/gsd_planning.py" "${ARGS[@]}" || rc=$?
+"$PY" "$GSD_PKG/lib/gsd_planning.py" "${ARGS[@]}" || rc=$?
 
 if [ "$COMMIT" = 1 ] && [ -n "$(git -C "$REPO" status --porcelain -- .planning)" ]; then
   # Stage only what exists: a repo may legitimately have ROADMAP.md without

@@ -42,6 +42,15 @@ usage() {  # print the header comment block (everything up to the set line)
   awk 'NR>1 && /^set -euo/{exit} NR>1 {sub(/^# ?/,""); print}' "$0"
 }
 
+SELF="$0"
+while [ -L "$SELF" ]; do
+  tgt=$(readlink "$SELF")
+  case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
+done
+GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+. "$GSD_PKG/lib/common.sh"
+
 CONFIG="${GSD_CLICKUP_CONFIG:-$HOME/.config/gsd/clickup.env}"
 
 load_token() {
@@ -72,7 +81,9 @@ api() {  # api <method> <path> [json-body]; prints response body, fails on HTTP 
 }
 
 json_escape() {  # minimal JSON string escaper for comment/status payloads
-  printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+  local py
+  py=$(gsd_python) || die "no python 3.7+ found (tried python3, then python) — needed to build the request body"
+  printf '%s' "$1" | "$py" -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
 }
 
 norm() {  # normalize a status name for comparison: lowercase, alnum only
