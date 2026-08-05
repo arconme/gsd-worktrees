@@ -60,11 +60,15 @@ MAIN="$(gsd_main "$REPO")"
 [ -n "$MAIN" ] || die "not a git repository: $REPO"
 
 FINDINGS=0
+FIXES=""        # the distinct commands to run, in the order first needed
 pass() { [ "$QUIET" = 1 ] || printf '  \033[32m✔\033[0m %s\n' "$1"; }
 note() { [ "$QUIET" = 1 ] || printf '  • %s\n' "$1"; }
-fail() {  # $1=what is wrong  $2=the command that fixes it
+fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)
   FINDINGS=$((FINDINGS + 1))
-  printf '  \033[31m✖\033[0m %-52s \033[2m→ %s\033[0m\n' "$1" "$2"
+  printf '  \033[31m✖\033[0m %s \033[2m→ %s\033[0m\n' "$1" "$2"
+  # Collect for the summary. Repeating a long `cd … && …` on every line pushes
+  # the command off the right edge and reads as noise; the summary says it once.
+  case " $FIXES " in *" $2 "*) ;; *) FIXES="${FIXES:+$FIXES }$2" ;; esac
 }
 section() { [ "$QUIET" = 1 ] || printf '\n\033[1m%s\033[0m\n' "$1"; }
 
@@ -82,9 +86,9 @@ if live="$(command -v gsd-finish 2>/dev/null)"; then
   resolved="$(cd "$(dirname "$live")/.." 2>/dev/null && pwd)"
 fi
 if [ -z "$resolved" ]; then
-  fail "gsd commands are not on PATH" "cd $GSD_PKG && ./install.sh"
+  fail "gsd commands are not on PATH" "(cd $GSD_PKG && ./install.sh)"
 elif [ "$resolved" != "$GSD_PKG" ]; then
-  fail "PATH commands come from $resolved, not this package" "cd $GSD_PKG && ./install.sh"
+  fail "PATH commands come from $resolved, not this package" "(cd $GSD_PKG && ./install.sh)"
 else
   pass "PATH commands resolve to $GSD_PKG"
 fi
@@ -142,7 +146,7 @@ while IFS= read -r rel; do
   elif ! cmp -s "$GSD_PKG/shims/$rel" "$MAIN/$rel"; then drift=$((drift + 1)); fi
 done < <( cd "$GSD_PKG/shims" && find scripts -type f -name 'gsd-*' ! -name '*.example' 2>/dev/null )
 if [ "$missing" -gt 0 ] || [ "$drift" -gt 0 ]; then
-  fail "shims: $missing missing, $drift out of date" "cd $MAIN && gsd-init"
+  fail "shims: $missing missing, $drift out of date" "gsd-init"
 else
   pass "shims present and current"
 fi
@@ -153,18 +157,18 @@ gsd_planning_status "$MAIN"
 case " $GSD_PLANNING_MISSING " in
   *" attributes "*)
     [ "$GSD_ATTRS_STATE" = union ] \
-      && fail ".gitattributes still on merge=union (keeps BOTH sides)" "cd $MAIN && gsd-init" \
-      || fail ".gitattributes missing the .planning merge rules" "cd $MAIN && gsd-init" ;;
+      && fail ".gitattributes still on merge=union (keeps BOTH sides)" "gsd-init" \
+      || fail ".gitattributes missing the .planning merge rules" "gsd-init" ;;
   *) pass ".gitattributes: merge=gsd-planning on ROADMAP.md + STATE.md" ;;
 esac
 case " $GSD_PLANNING_MISSING " in
   # Not versioned, so a fresh clone always lacks it. gsd-finish re-asserts it,
   # so this is a finding rather than an emergency.
-  *" driver "*) fail "merge driver not registered (per-clone; git config is not versioned)" "cd $MAIN && gsd-init" ;;
+  *" driver "*) fail "merge driver not registered (per-clone; git config is not versioned)" "gsd-init" ;;
   *) pass "merge driver registered in git config" ;;
 esac
 case " $GSD_PLANNING_MISSING " in
-  *" hook "*) fail "no post-merge hook — a plain 'git pull' is unguarded" "cd $MAIN && gsd-init" ;;
+  *" hook "*) fail "no post-merge hook — a plain 'git pull' is unguarded" "gsd-init" ;;
   *) pass "post-merge hook reconciles .planning after a plain git pull" ;;
 esac
 
@@ -182,13 +186,13 @@ section "planning state"
 if [ ! -d "$MAIN/.planning" ]; then
   note "no .planning/ — this repo has no GSD planning state yet"
 elif ! command -v gsd-planning-repair >/dev/null 2>&1; then
-  fail "gsd-planning-repair not on PATH — cannot check .planning" "cd $GSD_PKG && ./install.sh"
+  fail "gsd-planning-repair not on PATH — cannot check .planning" "(cd $GSD_PKG && ./install.sh)"
 else
   out="$(gsd-planning-repair --repo "$MAIN" --check 2>&1)"; rc=$?
   case "$rc" in
     0) pass ".planning is coherent"
        printf '%s\n' "$out" | grep -E '^  - ' | while IFS= read -r l; do note "${l#  - }"; done ;;
-    1) fail ".planning contradicts itself (union-merge damage)" "cd $MAIN && gsd-planning-repair"
+    1) fail ".planning contradicts itself (union-merge damage)" "gsd-planning-repair"
        printf '%s\n' "$out" | grep -E '^  • ' | sed 's/^  •/      ·/' ;;
     *) note ".planning has no ROADMAP.md — nothing to check" ;;
   esac
@@ -206,7 +210,7 @@ if [ -d "$LOCK" ]; then
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
     note "a gsd command is running right now (pid $pid)"
   else
-    fail "stale command lock from a crashed run (pid ${pid:-?})" "rm -rf $LOCK"
+    fail "stale command lock from a crashed run (pid ${pid:-?})" "rm -rf .git/gsd-cmd.lock"
   fi
 fi
 
@@ -219,7 +223,7 @@ while IFS= read -r line; do
   esac
 done < <(git -C "$MAIN" worktree list --porcelain 2>/dev/null)
 [ "$gone" -gt 0 ] \
-  && fail "$gone worktree(s) recorded but missing on disk" "git -C $MAIN worktree prune" \
+  && fail "$gone worktree(s) recorded but missing on disk" "git worktree prune" \
   || pass "no stale worktree records"
 
 orphans=""
@@ -238,7 +242,7 @@ BASE="$(gsd_base "$MAIN")"
 cur="$(git -C "$MAIN" branch --show-current 2>/dev/null)"
 [ "$cur" = "$BASE" ] \
   && pass "main checkout is on '$BASE'" \
-  || fail "main checkout is on '$cur', not '$BASE' (gsd-finish will refuse)" "git -C $MAIN checkout $BASE"
+  || fail "main checkout is on '$cur', not '$BASE' (gsd-finish will refuse)" "git checkout $BASE"
 
 if git -C "$MAIN" show-ref --verify --quiet "refs/remotes/origin/$BASE"; then
   behind=$(git -C "$MAIN" rev-list --count "$BASE..origin/$BASE" 2>/dev/null || echo 0)
@@ -252,5 +256,9 @@ if [ "$FINDINGS" -eq 0 ]; then
   printf '\033[32m✔ no findings\033[0m\n'
   exit 0
 fi
-printf '\033[31m%d finding(s)\033[0m — each line above names the command that fixes it.\n' "$FINDINGS"
+printf '\033[31m%d finding(s).\033[0m Run:\n\n' "$FINDINGS"
+[ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$MAIN" ] || printf '  cd %s\n' "$MAIN"
+for fix in $FIXES; do printf '  %s\n' "$fix"; done
+echo ""
+echo "(then re-run gsd-doctor to confirm)"
 exit 1

@@ -441,7 +441,7 @@ is "reports the missing hook"     "$(grep -c 'no post-merge hook' <<<"$out")" 1
 is "reports missing shims"        "$(grep -c 'shims: .* missing' <<<"$out")" 1
 is "reports the planning damage"  "$(grep -c 'contradicts itself' <<<"$out")" 1
 is "names gsd-init as the fix"    "$([ "$(grep -c 'gsd-init' <<<"$out")" -ge 4 ] && echo yes)" yes
-is "names the repair as the fix"  "$(grep -c 'gsd-planning-repair' <<<"$out")" 1
+is "names the repair as the fix"  "$([ "$(grep -c 'gsd-planning-repair' <<<"$out")" -ge 1 ] && echo yes)" yes
 
 # THE guarantee: a diagnosis must not change the thing it diagnoses.
 before_tree="$(git -C "$DOC" status --porcelain)"
@@ -529,6 +529,28 @@ is "a dirty toolkit does not fail another repo's check" \
 # A real GSD repo must still get the full treatment.
 out="$(PATH="$PKG/bin:$PATH" gsd-doctor --repo "$DOC" 2>&1)"
 is "a real GSD repo is still checked in full" "$(grep -c 'merge=gsd-planning on ROADMAP' <<<"$out")" 1
+
+section "gsd-doctor tells you what to run"
+# Every finding used to carry its own 'cd <absolute path> && <cmd>', repeated
+# verbatim on each line, which pushed the actual command off the right edge and
+# read as noise. The commands are now collected once, at the end, in order.
+# a repo with findings — the earlier fixtures have all been fitted by now
+SUMM="$WORK/summary"
+mkdir -p "$SUMM/.planning"
+git init -q -b main "$SUMM"
+git -C "$SUMM" config user.email t@example.com
+git -C "$SUMM" config user.name test
+printf '.planning/ROADMAP.md merge=union\n.planning/STATE.md merge=union\n' > "$SUMM/.gitattributes"
+printf '# Roadmap\n' > "$SUMM/.planning/ROADMAP.md"
+git -C "$SUMM" add -A && git -C "$SUMM" commit -qm init
+
+# strip colour codes: they sit between words and break plain greps
+out="$(PATH="$PKG/bin:$PATH" gsd-doctor --repo "$SUMM" 2>&1 | sed 's/\x1b\[[0-9;]*m//g')"
+is "the summary says what to run"      "$(grep -c 'finding(s)\.' <<<"$out")" 1
+is "no repeated 'cd … &&' on findings" "$(grep -c '→ cd ' <<<"$out")" 0
+is "the cd is given once"              "$(grep -c '^  cd .*/summary$' <<<"$out")" 1
+is "gsd-init listed once, not 3×"      "$(grep -c '^  gsd-init$' <<<"$out")" 1
+is "and it says how to confirm"        "$(grep -c 're-run gsd-doctor to confirm' <<<"$out")" 1
 
 printf '\n%s\n' "── $PASS passed, $FAIL failed ──"
 [ "$FAIL" -eq 0 ]
