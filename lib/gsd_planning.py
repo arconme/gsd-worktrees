@@ -323,6 +323,24 @@ def resolve_frontmatter(order, values, truth=None):
     for path in order:
         seen = values[path]
         distinct = {unquote(v) for v in seen}
+        # A plan counter that recomputes to zero while the file claims
+        # otherwise means the phase files are not where we looked, not that the
+        # work vanished. Keep the file's figure and say so.
+        if (
+            truth
+            and path in ("progress.total_plans", "progress.completed_plans")
+            and truth.get(path) == 0
+            and any(as_int(v) > 0 for v in seen)
+        ):
+            resolved[path] = max(seen, key=as_int)
+            problems.append(
+                (
+                    ADVISORY,
+                    f"STATE.md: {path} left at {unquote(resolved[path])} — no plan files found "
+                    f"under .planning/phases/*/, so the recomputed 0 is not believable",
+                )
+            )
+            continue
         if truth and path in truth:
             resolved[path] = str(truth[path])
             if distinct != {str(truth[path])}:
@@ -463,12 +481,18 @@ def recompute_state_body(lines, truth):
                     lines[i] = want
                 break
 
+    if "progress.completed_plans" not in truth:
+        return lines, problems
     want_total = f"- Total plans completed: {truth['progress.completed_plans']}\n"
     metrics = section_bounds(lines, re.compile(r"^## Performance Metrics\b"))
     if metrics:
         start, end = metrics
         for i in range(start, end):
             if lines[i].startswith("- Total plans completed:"):
+                # Same guard as the frontmatter counters: a recomputed 0 against
+                # a nonzero figure means we did not find the plan files.
+                if truth["progress.completed_plans"] == 0 and as_int(lines[i].split(":", 1)[1]) > 0:
+                    break
                 if lines[i] != want_total:
                     problems.append(
                         (
@@ -545,17 +569,22 @@ def compute_truth(planning: Path):
             if entry.group(1).lower() == "x":
                 complete.add(entry.group(2))
 
-    plans = len(list((planning / "phases").glob("*/*-PLAN.md")))
-    summaries = len(list((planning / "phases").glob("*/*-SUMMARY.md")))
-
     total = len(phases)
-    return {
+    truth = {
         "progress.total_phases": total,
         "progress.completed_phases": len(complete),
-        "progress.total_plans": plans,
-        "progress.completed_plans": summaries,
         "progress.percent": round(len(complete) / total * 100) if total else 0,
     }
+
+    # Plan counters come from disk, so they are only trustworthy when the disk
+    # actually holds the phase directories. A repo whose phases/ has been
+    # archived away — or a caller pointed at the wrong .planning — would
+    # otherwise have real counters silently rewritten to zero.
+    phases_dir = planning / "phases"
+    if phases_dir.is_dir():
+        truth["progress.total_plans"] = len(list(phases_dir.glob("*/*-PLAN.md")))
+        truth["progress.completed_plans"] = len(list(phases_dir.glob("*/*-SUMMARY.md")))
+    return truth
 
 
 # ── entry points ─────────────────────────────────────────────────────────────
