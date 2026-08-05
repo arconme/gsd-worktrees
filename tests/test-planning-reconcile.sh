@@ -496,5 +496,39 @@ is "apply is idempotent (hook not duplicated)" \
 is "apply is idempotent (attributes not duplicated)" \
    "$(grep -c 'merge=gsd-planning' "$PRED/.gitattributes")" 2
 
+# ── 11. gsd-doctor knows what it is looking at ───────────────────────────────
+# It used to run the setup checks on anything, so a repo with no interest in GSD
+# — including the toolkit itself, which is the SOURCE of the scripts and is
+# deliberately not a GSD project — got four red lines telling it to run gsd-init.
+section "gsd-doctor does not demand GSD from repos that do not use it"
+
+PLAIN="$WORK/plain"
+mkdir -p "$PLAIN"
+git init -q -b main "$PLAIN"
+git -C "$PLAIN" config user.email t@example.com
+git -C "$PLAIN" config user.name test
+echo hi > "$PLAIN/f" && git -C "$PLAIN" add -A && git -C "$PLAIN" commit -qm init
+
+out="$(PATH="$PKG/bin:$PATH" gsd-doctor --repo "$PLAIN" 2>&1)"; rc=$?
+is "a plain repo has no findings"       "$rc" 0
+is "it says the repo does not use GSD"  "$(grep -c 'does not use GSD' <<<"$out")" 1
+is "no red line about .gitattributes"   "$(grep -c 'gitattributes' <<<"$out")" 0
+is "no red line about the driver"       "$(grep -c 'merge driver not registered' <<<"$out")" 0
+is "no red line about the hook"         "$(grep -c 'no post-merge hook' <<<"$out")" 0
+is "no red line about shims"            "$(grep -c 'shims:' <<<"$out")" 0
+
+out="$(PATH="$PKG/bin:$PATH" gsd-doctor --repo "$PKG" 2>&1)"
+is "the toolkit is recognised as itself" "$(grep -c 'toolkit itself, not a GSD project' <<<"$out")" 1
+is "and its setup checks are skipped"    "$(grep -c 'merge driver not registered' <<<"$out")" 0
+
+# Toolkit housekeeping is a note, not a finding: it is about the toolkit
+# checkout, not the repo you asked about.
+is "a dirty toolkit does not fail another repo's check" \
+   "$(PATH="$PKG/bin:$PATH" gsd-doctor --repo "$PLAIN" 2>&1 | grep -c '✖.*toolkit has')" 0
+
+# A real GSD repo must still get the full treatment.
+out="$(PATH="$PKG/bin:$PATH" gsd-doctor --repo "$DOC" 2>&1)"
+is "a real GSD repo is still checked in full" "$(grep -c 'merge=gsd-planning on ROADMAP' <<<"$out")" 1
+
 printf '\n%s\n' "── $PASS passed, $FAIL failed ──"
 [ "$FAIL" -eq 0 ]

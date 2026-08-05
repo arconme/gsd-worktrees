@@ -95,15 +95,39 @@ else
   fail "python3 missing — planning merges fall back to plain union" "install python3"
 fi
 
+# Notes, not findings: these are about the toolkit checkout, not the repo you
+# asked about. Nothing here is broken — you would just lose local edits. Only
+# toolkit problems that actually stop things working (no commands on PATH, no
+# python3) count against the repo you are inspecting.
 if [ -n "$(git -C "$GSD_PKG" status --porcelain 2>/dev/null)" ]; then
-  fail "toolkit has uncommitted changes" "cd $GSD_PKG && git status"
+  note "toolkit has uncommitted changes ($GSD_PKG)"
 fi
 if git -C "$GSD_PKG" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
   ahead=$(git -C "$GSD_PKG" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
-  [ "$ahead" -gt 0 ] && fail "toolkit has $ahead unpushed commit(s)" "gsd-sync"
+  [ "$ahead" -gt 0 ] && note "toolkit has $ahead unpushed commit(s) — gsd-sync pushes them"
+fi
+
+# ── is this even a GSD repo? ─────────────────────────────────────────────────
+# Without this, every repo that has nothing to do with GSD gets four red lines
+# telling it to install GSD — including this toolkit, which is the SOURCE of
+# the scripts and is deliberately not a GSD project. gsd-bootstrap-repo already
+# refuses to run here; doctor has to know the same thing.
+if [ -f "$GSD_PKG/install.sh" ] && [ -d "$GSD_PKG/shims" ] && [ "$MAIN" = "$GSD_PKG" ]; then
+  section "repo setup"
+  note "this is the gsd-worktrees toolkit itself, not a GSD project — setup checks skipped"
+  IS_GSD_REPO=0
+elif [ -d "$MAIN/.planning" ] || [ -f "$MAIN/.gsd.conf" ] \
+     || [ -f "$MAIN/scripts/gsd-finish-worktree-feature.sh" ]; then
+  IS_GSD_REPO=1
+else
+  section "repo setup"
+  note "no .planning/, no .gsd.conf, no gsd shims — this repo does not use GSD"
+  note "set it up with:  cd $MAIN && gsd-init"
+  IS_GSD_REPO=0
 fi
 
 # ── repo setup (fixed by re-running gsd-init) ────────────────────────────────
+if [ "$IS_GSD_REPO" = 1 ]; then
 section "repo setup"
 
 [ -f "$MAIN/.gsd.conf" ] \
@@ -149,8 +173,10 @@ if grep -q 'gsd-worktree-guard' "$MAIN/.claude/settings.json" 2>/dev/null; then
 else
   note "guard hook not registered (Claude Code only; harmless under other agents)"
 fi
+fi  # IS_GSD_REPO
 
 # ── planning state (fixed by gsd-planning-repair) ────────────────────────────
+if [ "$IS_GSD_REPO" = 1 ]; then
 section "planning state"
 
 if [ ! -d "$MAIN/.planning" ]; then
@@ -167,8 +193,11 @@ else
     *) note ".planning has no ROADMAP.md — nothing to check" ;;
   esac
 fi
+fi  # IS_GSD_REPO
 
 # ── worktree hygiene ─────────────────────────────────────────────────────────
+# Worth checking anywhere: stale locks and orphaned phase branches are about
+# git state, not about whether the repo opted into GSD.
 section "worktrees"
 
 LOCK="$MAIN/.git/gsd-cmd.lock"
