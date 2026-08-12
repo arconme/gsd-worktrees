@@ -204,23 +204,42 @@ fi
 # Progress rows, and phase.complete's tick regex is greedy — both fail without
 # saying so, which is exactly why this belongs in a health check. See
 # lib/roadmap-audit.pl for the mechanics.
-ROADMAP="$MAIN/.planning/ROADMAP.md"
+# Scoped to the checkout you are STANDING IN, not $MAIN — unlike every other
+# check here. Each worktree carries its own .planning/ROADMAP.md (its branch's
+# version), and the branch is where phase.complete will actually run. Auditing
+# $MAIN from inside a worktree reports the phase's roadmap clean while the
+# branch's own copy is broken, which is worse than not checking at all.
+HERE="$(git -C "$REPO" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$MAIN")"
+[ -f "$HERE/.planning/ROADMAP.md" ] || HERE="$MAIN"
+ROADMAP="$HERE/.planning/ROADMAP.md"
+
+# The branch is named ONCE, above the findings — repeating it on every line is
+# the same right-edge noise the fix-summary avoids.
+BR=""; EDIT="edit .planning/ROADMAP.md"
+if [ "$HERE" != "$MAIN" ]; then
+  BR="$(git -C "$HERE" branch --show-current 2>/dev/null)"
+  BR="${BR:-$(basename "$HERE")}"
+  EDIT="edit .planning/ROADMAP.md in $(basename "$HERE")"
+fi
+
 if [ -f "$ROADMAP" ] && [ -f "$GSD_PKG/lib/roadmap-audit.pl" ]; then
   audit="$(perl "$GSD_PKG/lib/roadmap-audit.pl" "$ROADMAP" 2>/dev/null)"
+  [ -z "$BR" ] || note "roadmap checked on '$BR' (this worktree's own copy, not $(gsd_base "$MAIN")'s)"
   if [ -z "$audit" ]; then
     pass "roadmap: every phase has its rows and ticks its own checkbox"
   else
     while IFS='|' read -r kind a b; do
       [ -n "$kind" ] || continue
       case "$kind" in
-        TICK)   fail "completing Phase $a would tick the wrong row: $b" "edit .planning/ROADMAP.md" ;;
-        NOROW)  fail "Phase $a has no checklist row — completing it ticks nothing, silently" "edit .planning/ROADMAP.md" ;;
-        NOPROG) fail "Phase $a is missing from the Progress table" "edit .planning/ROADMAP.md" ;;
+        TICK)   fail "completing Phase $a would tick the wrong row: $b" "$EDIT" ;;
+        NOROW)  fail "Phase $a has no checklist row — completing it ticks nothing, silently" "$EDIT" ;;
+        NOPROG) fail "Phase $a is missing from the Progress table" "$EDIT" ;;
       esac
     done <<EOF
 $audit
 EOF
     note "cross-references in a checklist row must read 'phase-13', never 'Phase 13'"
+    [ -z "$BR" ] || note "these may all clear with:  git merge $(gsd_base "$MAIN")"
   fi
 fi
 fi  # IS_GSD_REPO
