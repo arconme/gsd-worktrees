@@ -199,6 +199,30 @@ else
     *) note ".planning has no ROADMAP.md — nothing to check" ;;
   esac
 fi
+
+# Phase-checkbox bookkeeping. Upstream's phase.insert skips the checklist and
+# Progress rows, and phase.complete's tick regex is greedy — both fail without
+# saying so, which is exactly why this belongs in a health check. See
+# lib/roadmap-audit.pl for the mechanics.
+ROADMAP="$MAIN/.planning/ROADMAP.md"
+if [ -f "$ROADMAP" ] && [ -f "$GSD_PKG/lib/roadmap-audit.pl" ]; then
+  audit="$(perl "$GSD_PKG/lib/roadmap-audit.pl" "$ROADMAP" 2>/dev/null)"
+  if [ -z "$audit" ]; then
+    pass "roadmap: every phase has its rows and ticks its own checkbox"
+  else
+    while IFS='|' read -r kind a b; do
+      [ -n "$kind" ] || continue
+      case "$kind" in
+        TICK)   fail "completing Phase $a would tick the wrong row: $b" "edit .planning/ROADMAP.md" ;;
+        NOROW)  fail "Phase $a has no checklist row — completing it ticks nothing, silently" "edit .planning/ROADMAP.md" ;;
+        NOPROG) fail "Phase $a is missing from the Progress table" "edit .planning/ROADMAP.md" ;;
+      esac
+    done <<EOF
+$audit
+EOF
+    note "cross-references in a checklist row must read 'phase-13', never 'Phase 13'"
+  fi
+fi
 fi  # IS_GSD_REPO
 
 # ── worktree hygiene ─────────────────────────────────────────────────────────

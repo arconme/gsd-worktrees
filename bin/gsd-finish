@@ -167,5 +167,20 @@ if [ -n "$CU_ID" ]; then
     || echo "• ClickUp story $CU_ID not updated (non-fatal) — check gsd-clickup check / your token"
 fi
 
+# ── roadmap bookkeeping (best-effort, never blocks) ──────────────────────────
+# The merge is the moment the phase's tracking rows land on the base branch, so
+# it is the last cheap chance to notice that upstream's phase.insert /
+# phase.complete quietly failed to write or tick them. Warn only: the finish has
+# already succeeded by here, and a stale checkbox is not worth a red exit.
+if command -v gsd-doctor >/dev/null 2>&1; then
+  bookkeeping="$(gsd-doctor --repo "$MAIN" --quiet 2>/dev/null | grep -E 'checklist row|Progress table|tick' || true)"
+  if [ -n "$bookkeeping" ]; then
+    echo ""
+    echo "⚠ roadmap bookkeeping needs a hand (the merge itself is fine):"
+    printf '%s\n' "$bookkeeping"
+    echo "  full report: gsd-doctor"
+  fi
+fi
+
 echo ""
 echo "If your shell was inside the removed worktree:  cd $MAIN"
