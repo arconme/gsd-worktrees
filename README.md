@@ -78,6 +78,10 @@ gsd-finish                                          # merge back, push, clean up
 
 Every command self-documents: `gsd-start --help`, `gsd-finish --help`, ….
 
+The full order — including the optional gates (spec, UI, reviews, security) and
+which commands run in the worktree vs the main checkout — is laid out in
+[`docs/command-order.html`](docs/command-order.html). Open it in a browser.
+
 ## Concurrency model (the point of all this)
 
 - **One feature = one phase = one worktree = one session.** The main checkout

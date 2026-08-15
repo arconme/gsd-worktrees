@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GSD Command Order</title>
+<style>
+  :root {
+    --bg:        #F4F6F6;
+    --surface:   #FFFFFF;
+    --surface-2: #EDF1F1;
+    --ink:       #14262A;
+    --muted:     #5C6E71;
+    --faint:     #8A9A9C;
+    --primary:   #06585F;
+    --primary-2: #02393F;
+    --accent:    #00B0BF;
+    --border:    #D6DEDE;
+    --ok:        #00873A;
+    --warn:      #9A7100;
+    --shadow:    0 1px 2px rgba(2,57,63,.06), 0 8px 24px rgba(2,57,63,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #0B1719;
+      --surface:   #122528;
+      --surface-2: #162E31;
+      --ink:       #E4EDED;
+      --muted:     #9BB0B2;
+      --faint:     #6D8386;
+      --primary:   #4FC3CB;
+      --primary-2: #7FD8DE;
+      --accent:    #00B0BF;
+      --border:    #234145;
+      --ok:        #4FD08A;
+      --warn:      #E0B84A;
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:        #0B1719;
+    --surface:   #122528;
+    --surface-2: #162E31;
+    --ink:       #E4EDED;
+    --muted:     #9BB0B2;
+    --faint:     #6D8386;
+    --primary:   #4FC3CB;
+    --primary-2: #7FD8DE;
+    --accent:    #00B0BF;
+    --border:    #234145;
+    --ok:        #4FD08A;
+    --warn:      #E0B84A;
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0 20px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 780px; margin: 0 auto; }
+
+  header {
+    padding: 64px 0 40px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 48px;
+  }
+  h1 {
+    font-size: clamp(30px, 5vw, 42px);
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 18px;
+    color: var(--muted);
+    margin: 0;
+    max-width: 56ch;
+  }
+
+  h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    color: var(--primary);
+    margin: 0 0 20px;
+  }
+  section { margin-bottom: 56px; }
+
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 32px 24px;
+    overflow-x: auto;
+  }
+
+  .flow { display: grid; grid-template-columns: minmax(190px, 260px) 1fr; gap: 0 0; align-items: center; }
+
+  .node {
+    grid-column: 1;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 11px 14px;
+    text-align: center;
+  }
+  .node .n-cmd {
+    display: block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px; font-weight: 600; color: var(--primary);
+    word-break: break-word;
+  }
+  .node .n-sub { display: block; font-size: 12px; color: var(--faint); margin-top: 3px; }
+
+  .node.cap { background: var(--primary-2); border-color: var(--primary-2); }
+  .node.cap .n-cmd { color: #FFFFFF; }
+  .node.cap .n-sub { color: rgba(255,255,255,.72); }
+  :root[data-theme="dark"] .node.cap,
+  :root:not([data-theme="light"]) .node.cap { background: #0A2E33; border-color: #2E5B60; }
+
+  .link { grid-column: 1; justify-self: center; width: 2px; height: 22px; background: var(--border); }
+  .link::after {
+    content: ""; display: block; margin: 20px auto 0;
+    border-left: 5px solid transparent; border-right: 5px solid transparent;
+    border-top: 6px solid var(--border);
+  }
+
+  .branch {
+    grid-column: 2;
+    justify-self: start;
+    margin-inline-start: 0;
+    display: flex; align-items: center; gap: 0;
+  }
+  .branch .dash { width: 34px; border-top: 2px dashed var(--border); }
+  .branch .opt {
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+  }
+  .branch .opt .n-cmd { font-size: 12.5px; }
+  .branch .opt .n-sub { font-size: 11px; }
+
+  @media (max-width: 560px) {
+    .flow { grid-template-columns: 1fr; }
+    .branch { grid-column: 1; justify-self: center; margin-block: 8px; }
+    .branch .dash { width: 18px; }
+  }
+
+  ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 4px 14px;
+    align-items: baseline;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--faint);
+    grid-row: span 2;
+  }
+  .cmd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--primary);
+    word-break: break-word;
+  }
+  .why { color: var(--muted); font-size: 15px; }
+  .why strong { color: var(--ink); font-weight: 600; }
+
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 5px;
+    margin-inline-start: 8px;
+    vertical-align: 1px;
+  }
+  .tag-opt { background: var(--surface-2); color: var(--muted); }
+  .tag-fe  { background: rgba(0,176,191,.14); color: var(--accent); }
+  .tag-must{ background: rgba(0,135,58,.12); color: var(--ok); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .tablewrap {
+    overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  th, td { text-align: start; padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--faint); font-weight: 600; background: var(--surface-2);
+  }
+  td code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px; color: var(--primary); font-weight: 600; white-space: nowrap;
+  }
+
+  .note {
+    background: var(--surface-2);
+    border-inline-start: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 16px 18px;
+    color: var(--muted);
+    font-size: 15px;
+  }
+  .note strong { color: var(--ink); }
+  .note code, .why code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px; color: var(--primary);
+  }
+</style>
+</head>
+<body>
+
+
+
+<div class="wrap">
+
+  <header>
+    <h1>GSD Command Order</h1>
+    <p class="standfirst">One phase, from claiming the number to merging it back. Everything in the middle happens inside that phase's own worktree.</p>
+  </header>
+
+  <section>
+    <h2>The whole loop</h2>
+    <div class="diagram">
+      <div class="flow">
+
+        <div class="node cap">
+          <span class="n-cmd">gsd-start "description"</span>
+          <span class="n-sub">on develop</span>
+        </div>
+        <div class="link"></div>
+
+        <div class="branch">
+          <span class="dash"></span>
+          <span class="opt"><span class="n-cmd">/gsd-spec-phase N</span><span class="n-sub">if scope is fuzzy</span></span>
+        </div>
+
+        <div class="node">
+          <span class="n-cmd">/gsd-discuss-phase N</span>
+          <span class="n-sub">agree the decisions</span>
+        </div>
+        <div class="link"></div>
+
+        <div class="branch">
+          <span class="dash"></span>
+          <span class="opt"><span class="n-cmd">/gsd-ui-phase N</span><span class="n-sub">if it has screens</span></span>
+        </div>
+
+        <div class="node">
+          <span class="n-cmd">/gsd-plan-phase N</span>
+          <span class="n-sub">write the plan</span>
+        </div>
+        <div class="link"></div>
+
+        <div class="node">
+          <span class="n-cmd">/gsd-execute-phase N</span>
+          <span class="n-sub">build it</span>
+        </div>
+        <div class="link"></div>
+
+        <div class="node">
+          <span class="n-cmd">/gsd-verify-work N</span>
+          <span class="n-sub">did it deliver?</span>
+        </div>
+        <div class="link"></div>
+
+        <div class="branch">
+          <span class="dash"></span>
+          <span class="opt"><span class="n-cmd">/gsd-ui-review N</span><span class="n-sub">if it has screens</span></span>
+        </div>
+
+        <div class="node">
+          <span class="n-cmd">/gsd-code-review N</span>
+          <span class="n-sub">bugs + quality</span>
+        </div>
+        <div class="link"></div>
+
+        <div class="branch">
+          <span class="dash"></span>
+          <span class="opt"><span class="n-cmd">/gsd-validate-phase N</span><span class="n-sub">missing tests</span></span>
+        </div>
+
+        <div class="node">
+          <span class="n-cmd">/gsd-secure-phase N</span>
+          <span class="n-sub">security — every phase</span>
+        </div>
+        <div class="link"></div>
+
+        <div class="node cap">
+          <span class="n-cmd">gsd-finish</span>
+          <span class="n-sub">merge + clean up</span>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What each one is for</h2>
+    <ol class="steps">
+
+      <li class="step">
+        <span class="num">1</span>
+        <span class="cmd">gsd-start "description"<span class="tag tag-must">on develop</span></span>
+        <span class="why">Picks the next free phase number, makes the worktree, and opens a new session inside it. Run it from the main checkout. Everything after this happens in the new session.</span>
+      </li>
+
+      <li class="step">
+        <span class="num">2</span>
+        <span class="cmd">/gsd-spec-phase N<span class="tag tag-opt">optional</span></span>
+        <span class="why">Only when you are not yet sure <strong>what</strong> the phase delivers. It pins the scope down before anyone argues about how. Skip it when the roadmap line is already clear.</span>
+      </li>
+
+      <li class="step">
+        <span class="num">3</span>
+        <span class="cmd">/gsd-discuss-phase N</span>
+        <span class="why">Asks you the open questions and records your answers. This is where the real decisions get made, so do not rush it.</span>
+      </li>
+
+      <li class="step">
+        <span class="num">4</span>
+        <span class="cmd">/gsd-ui-phase N<span class="tag tag-fe">screens only</span></span>
+        <span class="why">Agrees the screens before anyone writes them. Your own rule says UI gets agreed before implementation — this is the step that does it.</span>
+      </li>
+
+      <li class="step">
+        <span class="num">5</span>
+        <span class="cmd">/gsd-plan-phase N</span>
+        <span class="why">Turns the decisions into numbered plans with tasks. Add <code>--research</code> to refresh the research first.</span>
+      </li>
+
+      <li class="step">
+        <span class="num">6</span>
+        <span class="cmd">/gsd-execute-phase N</span>
+        <span class="why">Builds it, one wave at a time, committing as it goes. The long one.</span>
+      </li>
+
+      <li class="step">
+        <span class="num">7</span>
+        <span class="cmd">/gsd-verify-work N</span>
+        <span class="why">Walks the phase's promises with you and checks each one really happened. Catches "the task is ticked but the feature is not there".</span>
+      </li>
+
+      <li class="step">
+        <span class="num">8</span>
+        <span class="cmd">/gsd-code-review N</span>
+        <span class="why">Reads the code the phase changed, looking for bugs and mess. Add <code>--fix</code> to apply what it finds.</span>
+      </li>
+
+      <li class="step">
+        <span class="num">9</span>
+        <span class="cmd">/gsd-ui-review N<span class="tag tag-fe">screens only</span></span>
+        <span class="why">Scores the screens that were built against six quality checks. Do it after the code review, not before.</span>
+      </li>
+
+      <li class="step">
+        <span class="num">10</span>
+        <span class="cmd">/gsd-secure-phase N<span class="tag tag-must">every phase</span></span>
+        <span class="why">Checks the security protections in the plan actually exist in the code. Run it for <strong>every</strong> phase, not only the ones that look security-related.</span>
+      </li>
+
+      <li class="step">
+        <span class="num">11</span>
+        <span class="cmd">/gsd-validate-phase N<span class="tag tag-opt">optional</span></span>
+        <span class="why">Finds requirements with no test covering them, and writes the missing tests.</span>
+      </li>
+
+      <li class="step">
+        <span class="num">12</span>
+        <span class="cmd">gsd-finish</span>
+        <span class="why">Merges the branch back, pushes, and deletes the worktree. Run it last — it removes the folder you are standing in.</span>
+      </li>
+
+    </ol>
+  </section>
+
+  <section>
+    <h2>Not part of the loop</h2>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Command</th><th>Use it when</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>/gsd-quick</code></td><td>A small job that does not deserve a whole phase. Still commits properly.</td></tr>
+          <tr><td><code>/gsd-fast</code></td><td>Truly tiny — a typo, one line. Three file edits at most.</td></tr>
+          <tr><td><code>/gsd-debug</code></td><td>Hunting a bug. Keeps its notes so you can stop and come back.</td></tr>
+          <tr><td><code>/gsd-progress</code></td><td>You forgot where you are.</td></tr>
+          <tr><td><code>/gsd-resume-work</code></td><td>Coming back to a phase after a break or a lost session.</td></tr>
+          <tr><td><code>/gsd-pause-work</code></td><td>Stopping in the middle and want to pick it up cleanly later.</td></tr>
+          <tr><td><code>/gsd-audit-uat</code></td><td>Listing every test item still waiting on you, across all phases.</td></tr>
+          <tr><td><code>/gsd-audit-milestone</code></td><td>Checking a finished milestone against what you originally wanted.</td></tr>
+          <tr><td><code>/gsd-complete-milestone</code></td><td>Closing a milestone and starting the next.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>The one rule that trips people up</h2>
+    <p class="note"><strong>Every command with a phase number runs inside that phase's worktree.</strong> A guard blocks them anywhere else. The exceptions are <code>gsd-start</code>, which runs on <code>develop</code> in the main checkout, and the two audit commands, which look across all phases and also run there.</p>
+  </section>
+
+</div>
+</body>
+</html>
