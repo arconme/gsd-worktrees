@@ -9,18 +9,19 @@
 #                    you when they're still uncommitted.
 #   2. re-link     : re-run install.sh so commands added by the pull get their
 #                    ~/.local/bin symlinks.
-#   3. shim check  : verify the reference repo's scripts/gsd-*.sh shims match
-#                    the package's shims/ (they're frozen delegators — logic
-#                    lives in the package). Drift means a re-bootstrap is due:
-#                    cd <repo> && gsd-init.
+#   3. shim check  : verify the scripts/gsd-*.sh shims of the repo you RAN
+#                    gsd-sync FROM match the package's shims/ (they're frozen
+#                    delegators — logic lives in the package). Drift means a
+#                    re-bootstrap is due: cd <repo> && gsd-init.
 #
 # Usage:
 #   gsd-sync [--check] [--src <path>]
 #
 # Options:
 #   --check       dry run: report what would change, change nothing
-#   --src <path>  reference repo for the shim check
-#                 (default: $GSD_SRC_REPO, else ~/projects/siminds/code/siminds-platform)
+#   --src <path>  repo whose shims to check
+#                 (default: $GSD_SRC_REPO, else the repo you run gsd-sync from;
+#                 the check is skipped when you're not inside a project repo)
 #   -h, --help    show this help
 #
 # RELATED
@@ -36,7 +37,7 @@ usage() {  # print the header comment block (everything up to the set line)
 }
 
 CHECK=0
-SRCR="${GSD_SRC_REPO:-$HOME/projects/siminds/code/siminds-platform}"
+SRCR="${GSD_SRC_REPO:-}"   # empty → the repo gsd-sync is run from
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -55,10 +56,21 @@ done
 REPO="$(cd "$(dirname "$SELF")/.." && pwd)"
 [ -d "$REPO/bin" ] && [ -f "$REPO/install.sh" ] \
   || die "could not locate the gsd-worktrees repo from $0 (resolved to $REPO)"
+# shellcheck source=lib/common.sh
+. "$REPO/lib/common.sh"
+START_DIR="$PWD"
 cd "$REPO"
 
+# Reference repo for the shim check: --src / GSD_SRC_REPO override; otherwise
+# the repo gsd-sync was RUN FROM (its main checkout, so worktrees work too).
+# Generic by design — no project path is baked into the toolkit.
+if [ -z "$SRCR" ]; then
+  SRCR="$(gsd_main "$START_DIR")"
+  [ "$SRCR" = "$REPO" ] && SRCR=""   # the toolkit itself has no shims to check
+fi
+
 echo "toolkit repo : $REPO"
-echo "reference    : $SRCR"
+echo "reference    : ${SRCR:-(none — not inside a project repo)}"
 [ "$CHECK" = 1 ] && echo "mode         : CHECK (dry run — nothing will change)"
 echo ""
 
@@ -103,15 +115,19 @@ else
 fi
 echo ""
 
-# ── step 3: shim drift check (package shims/ vs the reference repo) ──────────
-# Repo-side scripts are frozen shims delegating to the toolkit; if the copies
-# in the reference repo differ from the package's shims/, a re-bootstrap is
-# due — gsd-init re-runs the bootstrap, which overwrites shims idempotently.
-# Skip, don't die: on a machine without the reference checkout, steps 1–2
-# (self-update + re-link) are still the whole point of running gsd-sync.
-if [ ! -d "$SRCR/scripts" ]; then
-  echo "• reference repo not found ($SRCR) — shim check skipped"
-  echo "  (point it somewhere with --src <path> or GSD_SRC_REPO)"
+# ── step 3: shim drift check (package shims/ vs the repo run from) ───────────
+# Repo-side scripts are frozen shims delegating to the toolkit; if the target
+# repo's copies differ from the package's shims/, a re-bootstrap is due —
+# gsd-init re-runs the bootstrap, which overwrites shims idempotently.
+# Skip, don't die: steps 1–2 (self-update + re-link) are still the whole
+# point of running gsd-sync even when there is nothing to check here.
+if [ -z "$SRCR" ] || [ ! -d "$SRCR/scripts" ]; then
+  if [ -z "$SRCR" ]; then
+    echo "• not inside a project repo — shim check skipped"
+    echo "  (run gsd-sync from inside a GSD repo, or pass --src <path>)"
+  else
+    echo "• $SRCR has no scripts/ dir — shim check skipped (not bootstrapped yet?)"
+  fi
   [ -n "$DIRTY" ] && echo "reminder: the toolkit repo still has uncommitted changes (see above)"
   exit 0
 fi

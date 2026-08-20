@@ -23,7 +23,7 @@ its right place.
 | `gsd-init` | Take a repo with no GSD to "ready for gsd-start": bootstrap + open the right init skill (`/gsd-new-project` or `/gsd-ingest-docs`). |
 | `gsd-bootstrap-repo` | Fit a repo with the workflow: write `.gsd.conf`, install the frozen shims, register the guard hook, add the CLAUDE.md section + gitignore/gitattributes entries. Idempotent; no text rewriting. |
 | `gsd-clickup` | Minimal ClickUp write-back helper (status + comment + subtask cascade); token in `~/.config/gsd/clickup.env`. |
-| `gsd-sync` | Toolkit maintenance in one command: pull + push this repo, re-link `bin/`, and verify the reference repo's shims are current. `--check` for a dry run. |
+| `gsd-sync` | Toolkit maintenance in one command: pull + push this repo, re-link `bin/`, and verify the shims of the repo you run it from are current. `--check` for a dry run. |
 | `gsd-wt-new` / `gsd-wt-finish` | The worktree workers behind `gsd-start`/`gsd-finish` (create with config-copy + background install; merge back locked and conflict-safe). Callable standalone. |
 | `gsd-planning-repair` | Reconcile `.planning/ROADMAP.md` + `STATE.md` after a union merge and recompute their progress counters from the roadmap and the plan files on disk. `--check` is the CI guard (exit 1 on union-merge damage); `--commit` lands the repair. Run automatically by `gsd-finish` and the `post-merge` hook. |
 | `gsd-planning-merge` | The git merge driver behind `merge=gsd-planning`: union both sides, then collapse every single-value line back to one value so the contradiction never lands. Registered per clone by `gsd-bootstrap-repo`, re-asserted by `gsd-finish`. |
