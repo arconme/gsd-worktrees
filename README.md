@@ -31,6 +31,14 @@ its right place.
 | `gsd-worktree-guard` | The guard: blocks `/gsd-phase` off the base branch, per-phase commands outside their `phase-<N>-*` worktree, and execute-phase before deps land. Invoked via the repo's hook shim. |
 | `gsd-derive-port` | Per-worktree dev ports (base + phase N), so parallel worktrees never collide on a port. |
 
+**`skills/` — the agent-facing skill** (symlinked into `~/.claude/skills`):
+
+`gsd-worktrees/SKILL.md` teaches any Claude Code session, in any project, what
+these commands are and the order to use them in — `gsd-list` before claiming,
+`-p <N>` to attach, `-n` only for genuinely new work. Only its description line
+sits in context permanently; the body loads when a session is actually about
+GSD. `./install.sh` links it; `gsd-sync` keeps it current.
+
 ## Per-repo footprint
 
 All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:

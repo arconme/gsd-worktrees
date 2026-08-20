@@ -57,6 +57,24 @@ for dest in "$BIN_DIR"/*; do
   esac
 done
 
+# ── the agent-facing skill ───────────────────────────────────────────────────
+# Symlinked (never copied) even in --copy mode: a skill is read, not executed,
+# so a link costs nothing and keeps the live skill in step with the repo.
+SKILL_DIR="${GSD_SKILL_DIR:-$HOME/.claude/skills}"
+if [ -d "$REPO/skills" ]; then
+  mkdir -p "$SKILL_DIR"
+  for d in "$REPO"/skills/*/; do
+    name=$(basename "$d")
+    dest="$SKILL_DIR/$name"
+    if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+      mv "$dest" "$dest.bak"
+      echo "• existing skill $name was a real directory — backed up to $name.bak"
+    fi
+    ln -sfn "${d%/}" "$dest"
+    echo "✔ skill $name → $dest"
+  done
+fi
+
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "⚠ $BIN_DIR is not on your PATH — add it to your shell profile" ;;
