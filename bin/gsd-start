@@ -72,11 +72,18 @@ Agent-agnostic: --agent picks the CLI (claude, gemini, …). Default is no-launc
 — the 'cd … && <agent> …' one-liner is printed for you to run.
 
 USAGE
-  gsd-start "<phase description>" [options]     claim a NEW phase (default)
+  gsd-start -n "<phase description>" [options]  claim a NEW phase
   gsd-start --insert <N> "<desc>" [options]     claim a FRACTIONAL phase after N
   gsd-start -p <N> [options]                    attach to an EXISTING phase
 
+Claiming a new phase is never the default: -n (or --insert) says so explicitly,
+so a bare description can't silently open a second phase for work the roadmap
+already tracks.
+
 OPTIONS
+  -n, --new       claim a NEW phase for the given description. Required for
+                  the claim path — without it (and without -p/--insert) a bare
+                  description is refused, listing the three choices.
   -p, --phase <N> attach to already-claimed phase N: skip the claim/push,
                   create (or reuse) its worktree, open the session there.
                   Use after a failed run, or when the phase was claimed
@@ -108,7 +115,7 @@ OPTIONS
   -h, --help      show this help
 
 EXAMPLES
-  gsd-start "customer terms rework"
+  gsd-start -n "customer terms rework"
       Claim the phase, push, create ../<repo>-worktrees/phase-<N>-customer-
       terms-rework, and open Claude there.
 
@@ -132,25 +139,25 @@ EXAMPLES
       Phase 7 is already in ROADMAP.md: don't claim anything — create or
       reuse its phase-7-* worktree and open Claude there. Idempotent.
 
-  gsd-start "fix invoice rounding" --slug invoice-fix
+  gsd-start -n "fix invoice rounding" --slug invoice-fix
       Same, but the branch/worktree is phase-<N>-invoice-fix.
 
-  gsd-start "reporting exports"
+  gsd-start -n "reporting exports"
       Prepare everything, print the 'cd … && claude …' command to run later
       (no launch is the default).
 
-  gsd-start "reporting exports" --launch
+  gsd-start -n "reporting exports" --launch
       Same, but open the Claude session in the worktree right away.
 
-  gsd-start "reporting exports" --agent gemini
+  gsd-start -n "reporting exports" --agent gemini
       Prepare everything and open the session with the gemini CLI instead of
       claude (naming an agent implies --launch).
 
-  gsd-start "reporting exports" --agent gemini --no-launch
+  gsd-start -n "reporting exports" --agent gemini --no-launch
       Print 'cd … && gemini "/gsd-discuss-phase N"' for you to run — pick the
       agent for the printed command without opening it.
 
-  gsd-start "hotfix parsing" --repo ~/projects/acme/webshop
+  gsd-start -n "hotfix parsing" --repo ~/projects/acme/webshop
       Start a phase in another repo without cd-ing into it first.
 
 PARALLEL SESSIONS
@@ -166,6 +173,9 @@ NOTES
   - The claim is deterministic — gsd-sdk query phase.add (next integer) or,
     with --insert/--after, gsd-sdk query phase.insert (next decimal after N),
     the same CLIs the /gsd-phase skill uses; no LLM call is made.
+  - A claim is refused when the roadmap already has a phase with this exact
+    description, or (with --cu) a phase already carrying the same ClickUp id
+    however it was worded — the error names the phase to attach to instead.
   - --insert needs a description and cannot be combined with -p/--phase. The
     anchor phase N must already exist in ROADMAP.md (else it errors, claiming
     nothing). You don't pick the exact decimal — it auto-assigns the next free
@@ -189,6 +199,7 @@ SLUG=""
 CU=""
 ATTACH=""
 INSERT=""
+NEW=0
 AGENT="claude"
 LAUNCH=0
 FORCE_NOLAUNCH=0
@@ -197,6 +208,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     -p|--phase) [ $# -ge 2 ] || die "--phase needs a value"; ATTACH="$2"; shift 2 ;;
+    -n|--new)   NEW=1; shift ;;
     --insert|--after) [ $# -ge 2 ] || die "$1 needs a value"; INSERT="$2"; shift 2 ;;
     --repo)  [ $# -ge 2 ] || die "--repo needs a value";  REPO="$2"; shift 2 ;;
     --slug)  [ $# -ge 2 ] || die "--slug needs a value";  SLUG="$2"; shift 2 ;;
@@ -214,9 +226,25 @@ done
 if [ -n "$ATTACH" ] && [ -n "$INSERT" ]; then
   die "--insert and -p/--phase are mutually exclusive (insert claims a NEW phase; -p attaches to an existing one)"
 fi
+if [ -n "$ATTACH" ] && [ "$NEW" = 1 ]; then
+  die "-n/--new and -p/--phase are mutually exclusive (-n claims a NEW phase; -p attaches to an existing one)"
+fi
 if [ -z "$DESC" ] && [ -z "$ATTACH" ]; then
   [ -n "$INSERT" ] && die "--insert needs a phase description (e.g. gsd-start --insert 11 \"hotfix …\")"
+  [ "$NEW" = 1 ] && die "-n/--new needs a phase description (e.g. gsd-start -n \"customer terms rework\")"
   usage >&2; exit 1
+fi
+# Claiming a NEW phase must be explicit. A bare description used to claim, which
+# made it far too easy — for a human and especially for an agent — to open a
+# second phase for work the roadmap already tracks. Now the intent is stated.
+if [ -n "$DESC" ] && [ -z "$ATTACH" ] && [ -z "$INSERT" ] && [ "$NEW" = 0 ]; then
+  die "refusing to guess whether this is a new phase — say which:
+  gsd-start -n \"$DESC\"
+      claim a NEW phase
+  gsd-start -p <N>
+      attach to the EXISTING phase N (check gsd-list first)
+  gsd-start --insert <N> \"$DESC\"
+      insert a decimal hotfix phase after phase N"
 fi
 if [ -n "$ATTACH" ]; then
   printf '%s' "$ATTACH" | grep -qE '^[0-9]+(\.[0-9]+)?$' \
@@ -365,6 +393,19 @@ else
   # (Skipped for --insert: inserting a decimal beside a same-named phase is
   # an explicit, intentional act — e.g. a hotfix under an existing feature.)
   if [ -z "$INSERT" ]; then
+    # Same story, reworded: a ClickUp id is the identity of the work, so a
+    # phase already carrying cu_<id> IS this phase however the description
+    # was phrased this time. Checked before the exact-title match, which only
+    # catches a verbatim repeat.
+    if [ -n "$CU" ]; then
+      cu_n=$(grep -iE "^### Phase [0-9]+(\.[0-9]+)?:.*cu[-_]$CU([^A-Za-z0-9]|$)" \
+        "$MAIN/.planning/ROADMAP.md" | head -1 \
+        | sed -E 's/^### Phase ([0-9]+(\.[0-9]+)?):.*/\1/' || true)
+      [ -z "${cu_n:-}" ] \
+        || die "phase $cu_n already tracks ClickUp story cu_$CU — attach to it instead: gsd-start -p $cu_n
+  (to add a hotfix under it anyway: gsd-start --insert $cu_n \"<desc>\")"
+    fi
+
     desc_lc=$(printf '%s' "$DESC" | tr '[:upper:]' '[:lower:]')
     # `|| true`: on a roadmap with NO phases yet, grep exits 1 and pipefail
     # would silently kill the script — the very first claim of a project.

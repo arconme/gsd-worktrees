@@ -17,7 +17,7 @@ its right place.
 
 | Command | What it does |
 |---|---|
-| `gsd-start` | Start a feature in one step: claim the phase (deterministic, parallel-safe with auto-renumber), push, create the `phase-<N>-<slug>` worktree, open/print the session. `-p <N>` re-attaches, `--insert <N>` claims a decimal hotfix phase, `--cu <id>` drives a ClickUp story. |
+| `gsd-start` | Start a feature in one step: claim the phase (deterministic, parallel-safe with auto-renumber), push, create the `phase-<N>-<slug>` worktree, open/print the session. `-n` is required to claim a new phase (a bare description is refused, so nobody — human or agent — opens a duplicate by accident); `-p <N>` re-attaches, `--insert <N>` claims a decimal hotfix phase, `--cu <id>` drives a ClickUp story (and a phase already carrying that id is refused, whatever the wording). |
 | `gsd-finish` | Finish from anywhere: merge the phase branch back into the base branch, push (with retry on parallel pushes), remove the worktree + branch, move the ClickUp story to its list's testing/review status (resolved per list, so differently-named statuses all work). |
 | `gsd-list` | Read-only table of all phases: number, description, plan progress, lifecycle stage (live from the phase's worktree), worktree state. |
 | `gsd-init` | Take a repo with no GSD to "ready for gsd-start": bootstrap + open the right init skill (`/gsd-new-project` or `/gsd-ingest-docs`). |
@@ -71,7 +71,7 @@ are current. `gsd-sync --check` previews without changing anything.
 ## The loop per feature
 
 ```sh
-gsd-start "customer terms rework" --cu 869e33cv4   # claim + worktree + session
+gsd-start -n "customer terms rework" --cu 869e33cv4   # claim + worktree + session
 # … discuss → plan → execute in the session it opens …
 gsd-finish                                          # merge back, push, clean up
 ```
