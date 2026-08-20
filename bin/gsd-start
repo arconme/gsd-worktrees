@@ -18,7 +18,7 @@
 # distinct phase numbers.
 #
 # Usage (from anywhere inside a GSD-fitted repo or its worktrees):
-#   gsd-start "<phase description>" [--slug <slug>] [--repo <path>]
+#   gsd-start -n "<phase description>" [--slug <slug>] [--repo <path>]
 #             [--agent <cmd>] [--launch] [--no-push]
 #   gsd-start --insert <N> "<phase description>" [--slug <slug>] [--repo <path>]
 #             [--agent <cmd>] [--launch] [--no-push]

@@ -48,7 +48,7 @@ OPTIONS
 AFTER RUNNING
   Open an agent session in the repo and initialize planning state:
       /gsd-new-project      (fresh)  or  /gsd-ingest-docs  (existing docs)
-  Then the loop per feature:  gsd-start "<desc>" → work → gsd-finish
+  Then the loop per feature:  gsd-start -n "<desc>" → work → gsd-finish
 
 RELATED
   gsd-init     bootstrap + open the initialization session in one command
@@ -223,10 +223,14 @@ fi
 agent_usage_block() {
   AGENT="$AGENT" perl -pe 's/\{\{AGENT\}\}/$ENV{AGENT}/g' <<'MD'
 - **How the agent should use the shared commands** (from inside a session):
-  - Asked to start a new feature/phase → run `gsd-start "<desc>"` via Bash; it
-    prints a `cd … && {{AGENT}} …` one-liner (no nested session) — relay it to the
-    user to run in a fresh terminal, and do NOT do the phase work in the current
-    session.
+  - Asked to start a feature/phase → FIRST run `gsd-list` and check whether the
+    roadmap already has a phase for this work. If it does, attach to it:
+    `gsd-start -p <N>`. Only when it is genuinely new: `gsd-start -n "<desc>"`.
+    Claiming needs the explicit `-n` — a bare description is refused on purpose,
+    so a reworded restatement of existing work can't open a duplicate phase.
+  - Either way the command prints a `cd … && {{AGENT}} …` one-liner (no nested
+    session) — relay it to the user to run in a fresh terminal, and do NOT do the
+    phase work in the current session.
   - Asked to finish/land a phase (from that phase's worktree session) → run
     `gsd-finish` via Bash as the session's LAST action (it removes the worktree
     the session is standing in).
@@ -258,7 +262,7 @@ sessions may run in parallel, so:
   against the same folder/branch, and don't do feature work directly in the main
   checkout on `{{BASE}}`.
 - **The loop per feature** (shared commands, in `~/.local/bin`):
-  1. `gsd-start "<description>"` — claims a uniquely-numbered phase in
+  1. `gsd-start -n "<description>"` — claims a uniquely-numbered phase in
      `ROADMAP.md` (deterministic, parallel-safe with auto-renumber), pushes the
      claim, creates worktree `../{{WT_DIR}}/phase-<N>-<slug>` off `{{BASE}}`, and
      prints (or with `--launch` opens) the session there on `/gsd-discuss-phase <N>`.
@@ -351,5 +355,5 @@ fi
 cat <<EOS
 
 Then the loop per feature (parallel-safe):
-  gsd-start "<desc>"   →  work in the session it opens  →  gsd-finish
+  gsd-start -n "<desc>"   →  work in the session it opens  →  gsd-finish
 EOS

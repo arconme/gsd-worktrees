@@ -60,7 +60,7 @@ EXAMPLES
       Bootstrap against 'main', print the init command to run later.
 
 AFTER INITIALIZATION
-  gsd-start "<description>"   begin each feature (claim + worktree + session)
+  gsd-start -n "<description>"   begin each feature (claim + worktree + session)
   gsd-finish                  land it (merge back, push, clean up)
 
 RELATED

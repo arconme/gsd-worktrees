@@ -51,7 +51,7 @@ COLUMNS
   WORKTREE  the phase's phase-<N>-* branch; ● = worktree attached
 
 RELATED
-  gsd-start "<desc>"     claim a NEW phase and open its session
+  gsd-start -n "<desc>"     claim a NEW phase and open its session
   gsd-start -p <N>       attach to an existing phase (no duplicate claim)
   gsd-finish             finish the phase from inside its worktree
 HELP
