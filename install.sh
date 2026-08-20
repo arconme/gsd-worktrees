@@ -58,19 +58,24 @@ for dest in "$BIN_DIR"/*; do
 done
 
 # ── the agent-facing skill ───────────────────────────────────────────────────
-# Symlinked (never copied) even in --copy mode: a skill is read, not executed,
-# so a link costs nothing and keeps the live skill in step with the repo.
+# Follows the chosen mode like bin/ does: --copy exists for machines that
+# won't keep this checkout around, and a symlinked skill would dangle there.
 SKILL_DIR="${GSD_SKILL_DIR:-$HOME/.claude/skills}"
 if [ -d "$REPO/skills" ]; then
   mkdir -p "$SKILL_DIR"
   for d in "$REPO"/skills/*/; do
     name=$(basename "$d")
     dest="$SKILL_DIR/$name"
-    if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    if [ -e "$dest" ] && [ ! -L "$dest" ] && [ "$MODE" = link ]; then
       mv "$dest" "$dest.bak"
       echo "• existing skill $name was a real directory — backed up to $name.bak"
     fi
-    ln -sfn "${d%/}" "$dest"
+    if [ "$MODE" = link ]; then
+      ln -sfn "${d%/}" "$dest"
+    else
+      rm -rf "$dest"                     # a plain copy is ours to replace
+      cp -R "${d%/}" "$dest"
+    fi
     echo "✔ skill $name → $dest"
   done
 fi

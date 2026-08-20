@@ -138,7 +138,7 @@ if [ "$ALREADY" = 1 ]; then
   review_notice
   echo ""
   echo "  Health check:  gsd-doctor"
-  echo "  Start features with:  gsd-start \"<description>\""
+  echo "  Start features with:  gsd-start -n \"<description>\""
   exit 0
 fi
 
@@ -179,5 +179,5 @@ else
     echo "• '$AGENT' not found on PATH — not launching."
   fi
   echo "Next:  cd $DEST && $AGENT \"$CMD\""
-  echo "Then per feature:  gsd-start \"<description>\"  →  work  →  gsd-finish"
+  echo "Then per feature:  gsd-start -n \"<description>\"  →  work  →  gsd-finish"
 fi

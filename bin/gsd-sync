@@ -107,7 +107,14 @@ echo ""
 # Repo-side scripts are frozen shims delegating to the toolkit; if the copies
 # in the reference repo differ from the package's shims/, a re-bootstrap is
 # due — gsd-init re-runs the bootstrap, which overwrites shims idempotently.
-[ -d "$SRCR/scripts" ] || die "reference repo has no scripts/ dir: $SRCR (pass --src <path>)"
+# Skip, don't die: on a machine without the reference checkout, steps 1–2
+# (self-update + re-link) are still the whole point of running gsd-sync.
+if [ ! -d "$SRCR/scripts" ]; then
+  echo "• reference repo not found ($SRCR) — shim check skipped"
+  echo "  (point it somewhere with --src <path> or GSD_SRC_REPO)"
+  [ -n "$DIRTY" ] && echo "reminder: the toolkit repo still has uncommitted changes (see above)"
+  exit 0
+fi
 ok=0; drift=0
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue

@@ -76,7 +76,8 @@ if [ -n "$REPO" ]; then
 else
   git rev-parse --show-toplevel >/dev/null 2>&1 \
     || die "not inside a git repo — cd into the target repo or pass --repo <path>"
-  MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+  # substr, not $2: a checkout path with a space would be cut at the space
+  MAIN=$(git worktree list --porcelain | awk '/^worktree /{print substr($0,10); exit}')
 fi
 ROADMAP="$MAIN/.planning/ROADMAP.md"
 [ -f "$ROADMAP" ] || die "$ROADMAP not found — is GSD initialized here?"
@@ -299,5 +300,5 @@ for my $i (0 .. $#phases) {
   print $rule->('├', '┼', '┤', '┈') if $i < $#phases;
 }
 print $rule->('└', '┴', '┘');
-print "  new phase: gsd-start \"<desc>\" · attach: gsd-start -p <N> · ● worktree attached\n";
+print "  new phase: gsd-start -n \"<desc>\" · attach: gsd-start -p <N> · ● worktree attached\n";
 PERL
