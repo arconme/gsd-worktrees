@@ -120,12 +120,22 @@ else
 fi
 
 echo "▶ copying gitignored local config…"
+# .claude/settings.local.json carries the user's permission allowlist and
+# gsd-core's worktree.baseRef; without it every worktree re-prompts for
+# everything. Only gitignored files are copied — gsd-bootstrap-repo ignores it.
+# `git ls-files --others --ignored` does not recurse into a directory that is
+# itself ignored: it collapses the whole tree to one 'path/' entry, which the
+# pathspec still matches when a file inside it does. Nested agent checkouts
+# (.claude/worktrees/agent-*) with their own .env.local hit this. Those entries
+# are directories, not config files — skip anything that is not a regular file.
 while IFS= read -r rel; do
   [ -z "$rel" ] && continue
+  [ -f "$MAIN/$rel" ] || continue
   mkdir -p "$DEST/$(dirname "$rel")"
   cp "$MAIN/$rel" "$DEST/$rel" && echo "  copied $rel"
 done < <( cd "$MAIN" && git ls-files --others --ignored --exclude-standard \
-            -- ':(glob)**/.env.local' '.env.local' '.mcp.json' 2>/dev/null )
+            -- ':(glob)**/.env.local' '.env.local' '.mcp.json' \
+               '.claude/settings.local.json' 2>/dev/null )
 
 case "$INSTALL_MODE" in
   background)

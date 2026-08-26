@@ -45,6 +45,10 @@ N=$(printf '%s' "$args" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1 || true)
 
 dir="${CLAUDE_PROJECT_DIR:-$PWD}"
 branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+# gsd-core's parallel executors run in nested worktrees on agent-* branches
+# (.claude/worktrees/agent-*). They are inside a phase worktree already, and
+# the phase-<N>-* rule below would block them — let gsd-core's own workers pass.
+case "$branch" in agent-*|worktree-agent-*) exit 0 ;; esac
 BASE=$(gsd_base "$dir" 2>/dev/null || echo develop)
 
 block() { printf '%s\n' "$@" >&2; exit 2; }

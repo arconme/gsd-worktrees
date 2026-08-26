@@ -11,6 +11,40 @@ git worktrees, claim races resolved automatically, a checkout lock, per-worktree
 dev ports, ClickUp write-back, and the guard hook that keeps each command in
 its right place.
 
+## Which command when
+
+**Every day:**
+
+| Command | What it does | When |
+|---|---|---|
+| `gsd-init` | Sets up a repo from zero: bootstrap, then points you at `/gsd-new-project` or `/gsd-ingest-docs` | First time in a new repo |
+| `gsd-start` | Claims a phase, pushes it, creates the worktree, prints the session command | Begin a feature. `-n "desc"` = new phase, `-p <N>` = existing one |
+| `gsd-list` | Table of every phase: number, plans done, stage, worktree | "What's in flight?" Read-only, safe anywhere |
+| `gsd-finish` | Merges the phase back to base, pushes, deletes worktree + branch | Phase is done. No argument needed from inside the worktree |
+| `gsd-doctor` | Health check that names the command fixing each finding | Something feels off. Never writes anything |
+| `gsd-sync` | Updates the toolkit, re-links commands, checks this repo's shims | Occasionally, or after a toolkit change |
+
+**Rarely:**
+
+| Command | What it does | When |
+|---|---|---|
+| `gsd-bootstrap-repo` | Writes `.gsd.conf`, shims, guard hook, CLAUDE.md section | Usually called by `gsd-init`. Re-running is safe |
+| `gsd-planning-repair` | Fixes `ROADMAP.md` / `STATE.md` after a merge scrambles them | When `gsd-doctor` tells you to |
+| `gsd-clickup` | Moves a ClickUp story to "in progress" / "in testing" | Only if you wired ClickUp up |
+
+**Never by hand — something else calls these:**
+
+| Command | Called by |
+|---|---|
+| `gsd-wt-new` | `gsd-start` — the worktree-creating half |
+| `gsd-wt-finish` | `gsd-finish` — the merge-and-cleanup half |
+| `gsd-worktree-guard` | The Claude Code hook. Blocks GSD commands run in the wrong worktree |
+| `gsd-planning-merge` | git, as the merge driver for `.planning/` files |
+| `gsd-derive-port` | your app's `dev` script, to pick a per-worktree port |
+
+The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
+`gsd-list` to look, `gsd-doctor` when confused.
+
 ## Components
 
 **`bin/` — shared commands** (installed to `~/.local/bin`, canonical here):
@@ -43,7 +77,7 @@ GSD. `./install.sh` links it; `gsd-sync` keeps it current.
 
 All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
 
-- **`.gsd.conf`** (committed) — `base`, `wtdir`, `install`; every key optional,
+- **`.gsd.conf`** (committed) — `base`, `wtdir`, `install`, `premerge`, `test`; every key optional,
   falling back to auto-detection (develop/main, `<repo>-worktrees`, lockfile).
 - **`shims/` → `scripts/gsd-*.sh` + `scripts/hooks/gsd-worktree-guard.sh`** —
   frozen 7-line delegators to the PATH commands, so committed references
@@ -61,6 +95,9 @@ All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
   origin sync, before the merge; nonzero aborts the finish with nothing merged.
   The home for repo-specific validations (e.g. TypeORM migration-timestamp
   collision checks). Path override: `premerge =` in `.gsd.conf`; `none` disables.
+  Without it, `gsd-finish` runs the project's test suite in the worktree
+  instead — `test =` in `.gsd.conf` sets the command, `none` skips, otherwise
+  detected (xcodebuild / make / just / cargo / go / npm / pytest).
 
 ## Install
 

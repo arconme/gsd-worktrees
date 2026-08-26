@@ -101,6 +101,22 @@ else
   fail "no python 3.7+ (tried python3, then python) — planning merges fall back to plain union" "install python3"
 fi
 
+# GSD itself: is a newer release on npm? A note, never a finding — the parsers
+# in lib/ track the installed version, and upgrading is the user's call.
+if command -v gsd-sdk >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+  have=$(gsd-sdk -v 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  want=$(npm view get-shit-done-cc dist-tags.latest --fetch-retries=0 --fetch-timeout=5000 2>/dev/null || true)
+  if [ -z "$have" ] || [ -z "$want" ]; then
+    note "gsd-sdk ${have:-?} installed (npm not reachable — latest unknown)"
+  elif [ "$have" = "$want" ]; then
+    pass "gsd-sdk $have is the latest on npm"
+  elif [ "$(printf '%s\n%s\n' "$have" "$want" | sort -V | tail -1)" = "$want" ]; then
+    note "gsd-sdk $have installed, $want on npm — npm i -g get-shit-done-cc@latest (then re-check gsd-list/gsd-planning-repair)"
+  else
+    note "gsd-sdk $have installed, ahead of npm latest ($want)"
+  fi
+fi
+
 # Notes, not findings: these are about the toolkit checkout, not the repo you
 # asked about. Nothing here is broken — you would just lose local edits. Only
 # toolkit problems that actually stop things working (no commands on PATH, no

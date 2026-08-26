@@ -27,7 +27,9 @@
 # .gsd.conf, 'none' disables), it runs from the main checkout AFTER the origin
 # sync and BEFORE the merge, as `<script> <branch> <base>`. Nonzero exit
 # aborts the finish with nothing merged — the place for repo-specific
-# validations like migration-timestamp collision checks.
+# validations like migration-timestamp collision checks. Without that script
+# the project's test suite runs instead (`test = <cmd>` in .gsd.conf, 'none'
+# disables; otherwise detected: xcodebuild/make/just/cargo/go/npm/pytest).
 #
 # Repo settings (base branch, worktree dir): .gsd.conf, see gsd-bootstrap-repo.
 # The old per-repo copy of this logic (scripts/gsd-finish-worktree-feature.sh)
@@ -145,6 +147,16 @@ if [ "$PREMERGE" != none ] && [ -x "$PREMERGE_PATH" ]; then
   echo "▶ pre-merge check ($PREMERGE)…"
   if ! ( cd "$MAIN" && "$PREMERGE_PATH" "$BRANCH" "$BASE" ); then
     echo "✗ pre-merge check failed — nothing was merged. Fix in the worktree, commit, re-run finish." >&2
+    exit 1
+  fi
+elif TEST_CMD=$(gsd_test_cmd "$MAIN") && [ -n "$TEST_CMD" ]; then
+  # No repo-authored check: fall back to the project's test suite, run in the
+  # worktree (that is where the phase's code and node_modules are). `test =`
+  # in .gsd.conf overrides the detection; 'none' skips.
+  echo "▶ pre-merge tests ($TEST_CMD, in $DEST)…"
+  if ! ( cd "$DEST" && $TEST_CMD ); then
+    echo "✗ tests failed — nothing was merged. Fix in the worktree, commit, re-run finish." >&2
+    echo "  (skip with 'test = none' in .gsd.conf, or provide $PREMERGE)" >&2
     exit 1
   fi
 fi

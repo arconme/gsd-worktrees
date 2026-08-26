@@ -214,6 +214,25 @@ gsd_acquire_lock() {  # $1=MAIN checkout — serialize gsd commands on this chec
   trap gsd_release_lock EXIT INT TERM
 }
 
+gsd_test_cmd() {  # $1=repo root → pre-merge test command ('' = skip)
+  # `test =` in .gsd.conf wins ('none' disables); otherwise the same detection
+  # table gsd-core uses for workflow.test_command.
+  local v; v=$(gsd_conf_get "$1" test)
+  if [ -n "$v" ]; then
+    [ "$v" = none ] || printf '%s\n' "$v"
+    return 0
+  fi
+  local x; for x in "$1"/*.xcodeproj; do [ -e "$x" ] && { echo "xcodebuild test"; return 0; }; done
+  if   false; then :
+  elif [ -f "$1/Makefile" ] && grep -qE '^test:' "$1/Makefile";     then echo "make test"
+  elif [ -f "$1/Justfile" ] || [ -f "$1/justfile" ];                then echo "just test"
+  elif [ -f "$1/Cargo.toml" ];                                       then echo "cargo test"
+  elif [ -f "$1/go.mod" ];                                           then echo "go test ./..."
+  elif [ -f "$1/package.json" ] && grep -q '"test"' "$1/package.json"; then echo "npm test"
+  elif [ -f "$1/pyproject.toml" ] || [ -f "$1/pytest.ini" ];         then echo "python -m pytest"
+  fi
+}
+
 gsd_install_cmd() {  # $1=repo root → worktree bootstrap command ('' = skip)
   local v; v=$(gsd_conf_get "$1" install)
   if [ -n "$v" ]; then

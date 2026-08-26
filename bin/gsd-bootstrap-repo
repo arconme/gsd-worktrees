@@ -132,6 +132,8 @@ wtdir = $WT_DIR
 install = $PM
 # premerge = scripts/gsd-premerge-check.sh   # pre-merge hook run by gsd-finish
 #                                            # (default path; 'none' disables)
+# test = npm test                            # tests gsd-finish runs when no premerge script
+#                                            # (auto-detected; 'none' skips)
 CONF_EOF
   echo "✔ .gsd.conf (created)"
 elif [ "$BASE_EXPLICIT" = 1 ]; then
@@ -156,10 +158,12 @@ for rel in scripts/gsd-new-worktree-feature.sh scripts/gsd-finish-worktree-featu
 done
 
 # ── .gitignore: worktree install artifacts ───────────────────────────────────
-for pat in .gsd-install.status .gsd-install.log; do
+# .claude/settings.local.json is per-user (permissions, worktree.baseRef) and
+# must be ignored so gsd-wt-new can carry it into each worktree.
+for pat in .gsd-install.status .gsd-install.log .claude/settings.local.json; do
   grep -qxF "$pat" "$DEST/.gitignore" 2>/dev/null || echo "$pat" >> "$DEST/.gitignore"
 done
-echo "✔ .gitignore (.gsd-install.log/.status)"
+echo "✔ .gitignore (.gsd-install.log/.status, .claude/settings.local.json)"
 
 # ── .planning merge safety ───────────────────────────────────────────────────
 # What "installed" means lives in gsd_planning_status (lib/common.sh) and is
