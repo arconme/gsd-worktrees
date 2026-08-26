@@ -38,6 +38,12 @@ USAGE
 OPTIONS
   --repo <path>   any checkout of the target repo (default: derived from the
                   current directory)
+  --pr            do NOT merge: push the phase branch and open a GitHub PR
+                  against the base branch (needs gh). Uses the *-pr branch
+                  from /gsd-pr-branch when one exists (planning commits
+                  stripped), else the phase branch itself. Worktree stays;
+                  run gsd-finish again (without --pr) once the PR is merged.
+  --draft         with --pr: open it as a draft
   -h, --help      show this help
 
 EXAMPLES
@@ -75,10 +81,14 @@ HELP
 
 ID=""
 REPO=""
+PR=0
+DRAFT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --repo) [ $# -ge 2 ] || die "--repo needs a value"; REPO="$2"; shift 2 ;;
+    --pr) PR=1; shift ;;
+    --draft) DRAFT=1; shift ;;
     -*) die "unknown flag: $1 (see gsd-finish --help)" ;;
     *)  [ -z "$ID" ] || die "unexpected argument: $1 (see gsd-finish --help)"; ID="$1"; shift ;;
   esac
@@ -152,6 +162,36 @@ if command -v gsd-clickup >/dev/null 2>&1; then
     TITLE=$(grep -E "^### Phase $N_RE:" "$MAIN/.planning/ROADMAP.md" | head -1 || true)
     CU_ID=$(gsd-clickup extract "${TITLE:-}" 2>/dev/null || true)
   fi
+fi
+
+# ── --pr: push + open a PR instead of merging ────────────────────────────────
+# For repos with branch protection. Nothing is merged or removed; the normal
+# finish runs later, after the PR lands, to clean the worktree and branch.
+if [ "$PR" = 1 ]; then
+  command -v gh >/dev/null 2>&1 || die "--pr needs the GitHub CLI (gh) on PATH"
+  case "$ID" in
+    phase-*) BR="$ID" ;;
+    *) BR=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$ID-*" \
+              | grep -v -- '-pr$' | head -1 || true)
+       [ -n "$BR" ] || die "no phase-$ID-* branch found" ;;
+  esac
+  PHASE_N=$(printf '%s' "$BR" | sed -E 's/^phase-([0-9]+(\.[0-9]+)?)-.*/\1/')
+  HEAD_BR="$BR"
+  git -C "$MAIN" show-ref --verify --quiet "refs/heads/$BR-pr" && HEAD_BR="$BR-pr"
+  echo "▶ pushing '$HEAD_BR'…"
+  git -C "$MAIN" push -u origin "$HEAD_BR" --quiet || die "push failed"
+  N_RE=$(printf '%s' "${PHASE_N:-x}" | sed 's/\./\\./g')
+  TITLE=$(grep -E "^### Phase $N_RE:" "$MAIN/.planning/ROADMAP.md" 2>/dev/null | head -1 | sed -E 's/^### //' || true)
+  echo "▶ opening PR $HEAD_BR → $BASE…"
+  gh pr create --repo "$(git -C "$MAIN" remote get-url origin)" --base "$BASE" --head "$HEAD_BR" \
+     --title "${TITLE:-$HEAD_BR}" --fill-verbose ${DRAFT:+--draft} 2>/dev/null \
+  || gh pr create --base "$BASE" --head "$HEAD_BR" --title "${TITLE:-$HEAD_BR}" --body "" ${DRAFT:+--draft} \
+  || die "gh pr create failed (is origin a GitHub repo and gh authenticated?)"
+  [ -z "$CU_ID" ] || gsd-clickup finish "$CU_ID" "🔀 GSD phase ${PHASE_N:-?}: PR opened $HEAD_BR → $BASE" \
+     || echo "• ClickUp story $CU_ID not updated (non-fatal)"
+  echo ""
+  echo "Worktree kept. After the PR merges:  gsd-finish $BR"
+  exit 0
 fi
 
 # Run from the main checkout so removing the worktree we may be standing in is

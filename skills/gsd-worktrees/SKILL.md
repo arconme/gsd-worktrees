@@ -52,8 +52,8 @@ however differently it was worded — that phase *is* this work.
 |---|---|
 | `gsd-list [--compact]` | Read-only table of every phase: number, description, plan progress, lifecycle stage, worktree state. **Run this before starting anything.** |
 | `gsd-start` | `-n "<desc>"` new · `-p <N>` attach · `--insert <N> "<desc>"` decimal hotfix · `--cu <id>` ClickUp story · `--slug` · `--repo <path>` · `--agent <cmd>` · `--launch` / `--no-launch` (print-only is the default) · `--no-push` |
-| `gsd-finish [<N>]` | Land the phase. No argument = infer from the current worktree branch. |
-| `gsd-doctor` | Read-only health check: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene. Diagnoses only — each finding names the command that fixes it. No `--fix`, by design. |
+| `gsd-finish [<N>]` | Land the phase. No argument = infer from the current worktree branch. Runs the repo's pre-merge check or its test suite first. `--pr` opens a GitHub PR instead of merging (worktree stays; re-run after it lands). |
+| `gsd-doctor` | Read-only health check: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene. Diagnoses only — each finding names the command that fixes it, with a code; `--json` for scripts. No `--fix`, by design. |
 | `gsd-init` | Repo with no GSD → ready for `gsd-start`. Bootstrap + opens the right init skill. |
 | `gsd-bootstrap-repo` | Just the file installation `gsd-init` wraps. Idempotent. |
 | `gsd-planning-repair` | Reconcile `ROADMAP.md` + `STATE.md` after a union merge, recompute counters. `--check` = CI guard, `--commit` = land the repair. Runs automatically from `gsd-finish` and the `post-merge` hook. |

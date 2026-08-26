@@ -13,11 +13,15 @@
 # therefore use the refs from your last fetch and are marked as such.
 #
 # Usage:
-#   gsd-doctor [--repo <path>] [--quiet]
+#   gsd-doctor [--repo <path>] [--quiet] [--json]
 #
 # Options:
 #   --repo <path>  repo to inspect (default: the checkout containing cwd)
 #   --quiet        print findings only, not the checks that passed
+#   --json         machine output: {"repo","findings":[{code,message,fix}],"count"}
+#                  Codes shared with gsd-core's /gsd-health where they mean the
+#                  same thing (W017 orphan branch, W027 stale worktree record);
+#                  toolkit-only findings use T0xx.
 #   -h, --help     show this help
 #
 # Exit status: 0 when everything checks out, 1 when there is a finding.
@@ -43,11 +47,13 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 
 REPO=""
 QUIET=0
+JSON=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --repo) [ $# -ge 2 ] || die "--repo needs a value"; REPO="$2"; shift 2 ;;
     --quiet|-q) QUIET=1; shift ;;
+    --json) JSON=1; QUIET=1; shift ;;
     *) die "unknown argument: $1 (see gsd-doctor --help)" ;;
   esac
 done
@@ -63,9 +69,15 @@ FINDINGS=0
 FIXES=""        # the distinct commands to run, ONE PER LINE, in the order first needed
 pass() { [ "$QUIET" = 1 ] || printf '  \033[32m✔\033[0m %s\n' "$1"; }
 note() { [ "$QUIET" = 1 ] || printf '  • %s\n' "$1"; }
-fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)
+JSON_ITEMS=""
+jstr() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\033' ; }
+fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)  $3=code
   FINDINGS=$((FINDINGS + 1))
-  printf '  \033[31m✖\033[0m %s \033[2m→ %s\033[0m\n' "$1" "$2"
+  if [ "$JSON" = 1 ]; then
+    JSON_ITEMS="${JSON_ITEMS:+$JSON_ITEMS,}{\"code\":\"${3:-T000}\",\"message\":\"$(jstr "$1")\",\"fix\":\"$(jstr "$2")\"}"
+    return 0
+  fi
+  printf '  \033[31m✖\033[0m %s \033[2m→ %s [%s]\033[0m\n' "$1" "$2" "${3:-T000}"
   # Collect for the summary. Repeating a long `cd … && …` on every line pushes
   # the command off the right edge and reads as noise; the summary says it once.
   # Newline-separated: fixes are commands WITH spaces ('rm -rf …'), so a
@@ -74,7 +86,7 @@ fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)
 }
 section() { [ "$QUIET" = 1 ] || printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-printf '\033[1mgsd-doctor\033[0m — %s\n%s\n' "$(basename "$MAIN")" "$MAIN"
+[ "$JSON" = 1 ] || printf '\033[1mgsd-doctor\033[0m — %s\n%s\n' "$(basename "$MAIN")" "$MAIN"
 
 # ── toolkit ──────────────────────────────────────────────────────────────────
 section "toolkit"
@@ -88,9 +100,9 @@ if live="$(command -v gsd-finish 2>/dev/null)"; then
   resolved="$(cd "$(dirname "$live")/.." 2>/dev/null && pwd)"
 fi
 if [ -z "$resolved" ]; then
-  fail "gsd commands are not on PATH" "(cd $GSD_PKG && ./install.sh)"
+  fail "gsd commands are not on PATH" "(cd $GSD_PKG && ./install.sh)" "T001"
 elif [ "$resolved" != "$GSD_PKG" ]; then
-  fail "PATH commands come from $resolved, not this package" "(cd $GSD_PKG && ./install.sh)"
+  fail "PATH commands come from $resolved, not this package" "(cd $GSD_PKG && ./install.sh)" "T002"
 else
   pass "PATH commands resolve to $GSD_PKG"
 fi
@@ -98,7 +110,7 @@ fi
 if PY=$(gsd_python); then
   pass "$PY $("$PY" --version 2>&1 | awk '{print $2}') (the planning repair needs it)"
 else
-  fail "no python 3.7+ (tried python3, then python) — planning merges fall back to plain union" "install python3"
+  fail "no python 3.7+ (tried python3, then python) — planning merges fall back to plain union" "install python3" "T003"
 fi
 
 # GSD itself: is a newer release on npm? A note, never a finding — the parsers
@@ -164,7 +176,7 @@ while IFS= read -r rel; do
   elif ! cmp -s "$GSD_PKG/shims/$rel" "$MAIN/$rel"; then drift=$((drift + 1)); fi
 done < <( cd "$GSD_PKG/shims" && find scripts -type f -name 'gsd-*' ! -name '*.example' 2>/dev/null )
 if [ "$missing" -gt 0 ] || [ "$drift" -gt 0 ]; then
-  fail "shims: $missing missing, $drift out of date" "gsd-init"
+  fail "shims: $missing missing, $drift out of date" "gsd-init" "T010"
 else
   pass "shims present and current"
 fi
@@ -175,18 +187,18 @@ gsd_planning_status "$MAIN"
 case " $GSD_PLANNING_MISSING " in
   *" attributes "*)
     [ "$GSD_ATTRS_STATE" = union ] \
-      && fail ".gitattributes still on merge=union (keeps BOTH sides)" "gsd-init" \
-      || fail ".gitattributes missing the .planning merge rules" "gsd-init" ;;
+      && fail ".gitattributes still on merge=union (keeps BOTH sides)" "gsd-init" "T011" \
+      || fail ".gitattributes missing the .planning merge rules" "gsd-init" "T012" ;;
   *) pass ".gitattributes: merge=gsd-planning on ROADMAP.md + STATE.md" ;;
 esac
 case " $GSD_PLANNING_MISSING " in
   # Not versioned, so a fresh clone always lacks it. gsd-finish re-asserts it,
   # so this is a finding rather than an emergency.
-  *" driver "*) fail "merge driver not registered (per-clone; git config is not versioned)" "gsd-init" ;;
+  *" driver "*) fail "merge driver not registered (per-clone; git config is not versioned)" "gsd-init" "T013" ;;
   *) pass "merge driver registered in git config" ;;
 esac
 case " $GSD_PLANNING_MISSING " in
-  *" hook "*) fail "no post-merge hook — a plain 'git pull' is unguarded" "gsd-init" ;;
+  *" hook "*) fail "no post-merge hook — a plain 'git pull' is unguarded" "gsd-init" "T014" ;;
   *) pass "post-merge hook reconciles .planning after a plain git pull" ;;
 esac
 
@@ -203,14 +215,21 @@ section "planning state"
 
 if [ ! -d "$MAIN/.planning" ]; then
   note "no .planning/ — this repo has no GSD planning state yet"
+elif [ -d "$MAIN/.planning/workstreams" ] && [ -n "$(ls -A "$MAIN/.planning/workstreams" 2>/dev/null)" ]; then
+  # gsd-core's /gsd-workstreams routes ROADMAP/STATE under
+  # .planning/workstreams/<name>/. Every command in this toolkit reads the
+  # top-level .planning/ROADMAP.md, so gsd-start/gsd-list/gsd-planning-repair
+  # would silently claim, list and repair the wrong roadmap. Loud, not quiet.
+  fail "gsd-core workstreams in use (.planning/workstreams/) — this toolkit only reads the top-level .planning/ and is not workstream-aware" \
+       "/gsd-workstreams complete <name>, or drive those phases without gsd-start" "T024"
 elif ! command -v gsd-planning-repair >/dev/null 2>&1; then
-  fail "gsd-planning-repair not on PATH — cannot check .planning" "(cd $GSD_PKG && ./install.sh)"
+  fail "gsd-planning-repair not on PATH — cannot check .planning" "(cd $GSD_PKG && ./install.sh)" "T004"
 else
   out="$(gsd-planning-repair --repo "$MAIN" --check 2>&1)"; rc=$?
   case "$rc" in
     0) pass ".planning is coherent"
        printf '%s\n' "$out" | grep -E '^  - ' | while IFS= read -r l; do note "${l#  - }"; done ;;
-    1) fail ".planning contradicts itself (union-merge damage)" "gsd-planning-repair"
+    1) fail ".planning contradicts itself (union-merge damage)" "gsd-planning-repair" "T020"
        printf '%s\n' "$out" | grep -E '^  • ' | sed 's/^  •/      ·/' ;;
     *) note ".planning has no ROADMAP.md — nothing to check" ;;
   esac
@@ -247,9 +266,9 @@ if [ -f "$ROADMAP" ] && [ -f "$GSD_PKG/lib/roadmap-audit.pl" ]; then
     while IFS='|' read -r kind a b; do
       [ -n "$kind" ] || continue
       case "$kind" in
-        TICK)   fail "completing Phase $a would tick the wrong row: $b" "$EDIT" ;;
-        NOROW)  fail "Phase $a has no checklist row — completing it ticks nothing, silently" "$EDIT" ;;
-        NOPROG) fail "Phase $a is missing from the Progress table" "$EDIT" ;;
+        TICK)   fail "completing Phase $a would tick the wrong row: $b" "$EDIT" "T021" ;;
+        NOROW)  fail "Phase $a has no checklist row — completing it ticks nothing, silently" "$EDIT" "T022" ;;
+        NOPROG) fail "Phase $a is missing from the Progress table" "$EDIT" "T023" ;;
       esac
     done <<EOF
 $audit
@@ -271,7 +290,7 @@ if [ -d "$LOCK" ]; then
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
     note "a gsd command is running right now (pid $pid)"
   else
-    fail "stale command lock from a crashed run (pid ${pid:-?})" "rm -rf .git/gsd-cmd.lock"
+    fail "stale command lock from a crashed run (pid ${pid:-?})" "rm -rf .git/gsd-cmd.lock" "T030"
   fi
 fi
 
@@ -284,7 +303,7 @@ while IFS= read -r line; do
   esac
 done < <(git -C "$MAIN" worktree list --porcelain 2>/dev/null)
 [ "$gone" -gt 0 ] \
-  && fail "$gone worktree(s) recorded but missing on disk" "git worktree prune" \
+  && fail "$gone worktree(s) recorded but missing on disk" "git worktree prune" "W027" \
   || pass "no stale worktree records"
 
 orphans=""
@@ -294,16 +313,22 @@ while IFS= read -r br; do
   orphans="$orphans $br"
 done < <(git -C "$MAIN" for-each-ref --format='%(refname:short)' 'refs/heads/phase-*' 2>/dev/null)
 if [ -n "$orphans" ]; then
-  fail "phase branch(es) with no worktree:$orphans" "gsd-finish <N>, or git branch -d"
+  fail "phase branch(es) with no worktree:$orphans" "gsd-finish <N>, or git branch -d" "W017"
 else
   pass "every phase branch has its worktree"
 fi
+
+# Branches whose upstream was deleted (a merged PR, a gsd-finish run from
+# another machine). Read from the last fetch — no fetch here, by design.
+gone_up=$(git -C "$MAIN" for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads 2>/dev/null \
+            | awk '$2=="[gone]"{print $1}' | tr '\n' ' ')
+[ -z "$gone_up" ] || note "branch(es) whose upstream is gone: ${gone_up}— git fetch --prune && git branch -d <name>"
 
 BASE="$(gsd_base "$MAIN")"
 cur="$(git -C "$MAIN" branch --show-current 2>/dev/null)"
 [ "$cur" = "$BASE" ] \
   && pass "main checkout is on '$BASE'" \
-  || fail "main checkout is on '$cur', not '$BASE' (gsd-finish will refuse)" "git checkout $BASE"
+  || fail "main checkout is on '$cur', not '$BASE' (gsd-finish will refuse)" "git checkout $BASE" "T031"
 
 if git -C "$MAIN" show-ref --verify --quiet "refs/remotes/origin/$BASE"; then
   behind=$(git -C "$MAIN" rev-list --count "$BASE..origin/$BASE" 2>/dev/null || echo 0)
@@ -312,6 +337,10 @@ if git -C "$MAIN" show-ref --verify --quiet "refs/remotes/origin/$BASE"; then
 fi
 
 # ── verdict ──────────────────────────────────────────────────────────────────
+if [ "$JSON" = 1 ]; then
+  printf '{"repo":"%s","count":%d,"findings":[%s]}\n' "$(jstr "$MAIN")" "$FINDINGS" "$JSON_ITEMS"
+  [ "$FINDINGS" -eq 0 ]; exit $?
+fi
 echo ""
 if [ "$FINDINGS" -eq 0 ]; then
   printf '\033[32m✔ no findings\033[0m\n'

@@ -20,8 +20,8 @@ its right place.
 | `gsd-init` | Sets up a repo from zero: bootstrap, then points you at `/gsd-new-project` or `/gsd-ingest-docs` | First time in a new repo |
 | `gsd-start` | Claims a phase, pushes it, creates the worktree, prints the session command | Begin a feature. `-n "desc"` = new phase, `-p <N>` = existing one |
 | `gsd-list` | Table of every phase: number, plans done, stage, worktree | "What's in flight?" Read-only, safe anywhere |
-| `gsd-finish` | Merges the phase back to base, pushes, deletes worktree + branch | Phase is done. No argument needed from inside the worktree |
-| `gsd-doctor` | Health check that names the command fixing each finding | Something feels off. Never writes anything |
+| `gsd-finish` | Merges the phase back to base, pushes, deletes worktree + branch. `--pr` pushes and opens a GitHub PR instead (branch protection) | Phase is done. No argument needed from inside the worktree |
+| `gsd-doctor` | Health check that names the command fixing each finding. `--json` for CI | Something feels off. Never writes anything |
 | `gsd-sync` | Updates the toolkit, re-links commands, checks this repo's shims | Occasionally, or after a toolkit change |
 
 **Rarely:**
@@ -52,7 +52,7 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 | Command | What it does |
 |---|---|
 | `gsd-start` | Start a feature in one step: claim the phase (deterministic, parallel-safe with auto-renumber), push, create the `phase-<N>-<slug>` worktree, open/print the session. `-n` is required to claim a new phase (a bare description is refused, so nobody — human or agent — opens a duplicate by accident); `-p <N>` re-attaches, `--insert <N>` claims a decimal hotfix phase, `--cu <id>` drives a ClickUp story (and a phase already carrying that id is refused, whatever the wording). |
-| `gsd-finish` | Finish from anywhere: merge the phase branch back into the base branch, push (with retry on parallel pushes), remove the worktree + branch, move the ClickUp story to its list's testing/review status (resolved per list, so differently-named statuses all work). |
+| `gsd-finish` | Finish from anywhere: merge the phase branch back into the base branch, push (with retry on parallel pushes), remove the worktree + branch, move the ClickUp story to its list's testing/review status (resolved per list, so differently-named statuses all work). Runs the pre-merge check or the project's tests first. `--pr` (with `--draft`) skips the merge: pushes the branch — the `*-pr` one from `/gsd-pr-branch` when present — and opens a GitHub PR via `gh`; run `gsd-finish` again after it lands to clean up. |
 | `gsd-list` | Read-only table of all phases: number, description, plan progress, lifecycle stage (live from the phase's worktree), worktree state. |
 | `gsd-init` | Take a repo with no GSD to "ready for gsd-start": bootstrap + open the right init skill (`/gsd-new-project` or `/gsd-ingest-docs`). |
 | `gsd-bootstrap-repo` | Fit a repo with the workflow: write `.gsd.conf`, install the frozen shims, register the guard hook, add the CLAUDE.md section + gitignore/gitattributes entries. Idempotent; no text rewriting. |
@@ -61,7 +61,7 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 | `gsd-wt-new` / `gsd-wt-finish` | The worktree workers behind `gsd-start`/`gsd-finish` (create with config-copy + background install; merge back locked and conflict-safe). Callable standalone. |
 | `gsd-planning-repair` | Reconcile `.planning/ROADMAP.md` + `STATE.md` after a union merge and recompute their progress counters from the roadmap and the plan files on disk. `--check` is the CI guard (exit 1 on union-merge damage); `--commit` lands the repair. Run automatically by `gsd-finish` and the `post-merge` hook. |
 | `gsd-planning-merge` | The git merge driver behind `merge=gsd-planning`: union both sides, then collapse every single-value line back to one value so the contradiction never lands. Registered per clone by `gsd-bootstrap-repo`, re-asserted by `gsd-finish`. |
-| `gsd-doctor` | Read-only health check of a repo's GSD setup: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene. Diagnoses only — every finding names the command that fixes it. No `--fix`, by design. |
+| `gsd-doctor` | Read-only health check of a repo's GSD setup: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene, gsd-core workstreams (not supported here — flagged loud), branches whose upstream is gone, newer GSD on npm. Diagnoses only — every finding names the command that fixes it and carries a code (`W017`/`W027` shared with `/gsd-health`, `T0xx` toolkit-only); `--json` emits them for CI. No `--fix`, by design. |
 | `gsd-worktree-guard` | The guard: blocks `/gsd-phase` off the base branch, per-phase commands outside their `phase-<N>-*` worktree, and execute-phase before deps land. Invoked via the repo's hook shim. |
 | `gsd-derive-port` | Per-worktree dev ports (base + phase N), so parallel worktrees never collide on a port. |
 
