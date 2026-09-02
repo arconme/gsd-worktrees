@@ -39,6 +39,7 @@ its right place.
 | `gsd-wt-new` | `gsd-start` — the worktree-creating half |
 | `gsd-wt-finish` | `gsd-finish` — the merge-and-cleanup half |
 | `gsd-worktree-guard` | The Claude Code hook. Blocks GSD commands run in the wrong worktree |
+| `gsd-flow-next` | Which phase-flow step is next, read from the phase folder. Engine behind the `/gsd-flow` skill |
 | `gsd-planning-merge` | git, as the merge driver for `.planning/` files |
 | `gsd-derive-port` | your app's `dev` script, to pick a per-worktree port |
 
