@@ -80,6 +80,17 @@ mkrepo strict phase-8-new 08-new; rmdir "$PDIR"
 allowed "no phase dir yet → nothing to order"        gsd-plan-phase "8"
 GSD_SKIP_GUARD=1 allowed "GSD_SKIP_GUARD=1 bypasses"  gsd-plan-phase "8"
 
+section "flow = strict — policy comes from the MAIN checkout, not the worktree copy"
+mkrepo "" phase-7-thing 07-thing          # branch carries NO flow key
+git -C "$REPO" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1
+git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m wt >/dev/null 2>&1
+MAIN="$REPO"; WT="$WORK/wt-$RANDOM"
+git -C "$MAIN" checkout -q develop
+echo "flow = strict" >> "$MAIN/.gsd.conf"   # main turns it on later
+git -C "$MAIN" worktree add -q "$WT" phase-7-thing
+REPO="$WT"; PDIR="$WT/.planning/phases/07-thing"; mkdir -p "$PDIR"
+blocked "old worktree (no flow key in its .gsd.conf) is still gated" gsd-plan-phase "7"
+
 section "flow = strict — the older rules still fire first"
 mkrepo strict phase-7-thing 07-thing
 blocked "wrong phase worktree is still blocked"  gsd-plan-phase "9"

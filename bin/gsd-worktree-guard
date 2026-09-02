@@ -99,7 +99,9 @@ if [ "$cmd" = "gsd-execute-phase" ] && [ -n "$(gsd_install_cmd "$dir")" ] && [ !
 fi
 
 # Rule 4 — phase-flow order (opt-in: `flow = strict` in .gsd.conf)
-[ "$(gsd_conf_get "$dir" flow)" = "strict" ] || exit 0
+# Policy is read from the MAIN checkout's .gsd.conf, not the worktree's copy, so
+# turning it on takes effect for worktrees branched before the key existed.
+[ "$(gsd_conf_get "$(gsd_main "$dir" 2>/dev/null || echo "$dir")" flow)" = "strict" ] || exit 0
 case "$N" in *.*) P="$N" ;; *) P=$(printf '%02d' "$N") ;; esac
 pdir=""; for d in "$dir/.planning/phases/$P"-*; do [ -d "$d" ] && { pdir="$d"; break; }; done
 [ -n "$pdir" ] || exit 0   # no phase dir yet (fresh claim) — nothing to order
