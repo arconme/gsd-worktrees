@@ -62,7 +62,7 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 | `gsd-planning-repair` | Reconcile `.planning/ROADMAP.md` + `STATE.md` after a union merge and recompute their progress counters from the roadmap and the plan files on disk. `--check` is the CI guard (exit 1 on union-merge damage); `--commit` lands the repair. Run automatically by `gsd-finish` and the `post-merge` hook. |
 | `gsd-planning-merge` | The git merge driver behind `merge=gsd-planning`: union both sides, then collapse every single-value line back to one value so the contradiction never lands. Registered per clone by `gsd-bootstrap-repo`, re-asserted by `gsd-finish`. |
 | `gsd-doctor` | Read-only health check of a repo's GSD setup: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene, gsd-core workstreams (not supported here — flagged loud), branches whose upstream is gone, newer GSD on npm. Diagnoses only — every finding names the command that fixes it and carries a code (`W017`/`W027` shared with `/gsd-health`, `T0xx` toolkit-only); `--json` emits them for CI. No `--fix`, by design. |
-| `gsd-worktree-guard` | The guard: blocks `/gsd-phase` off the base branch, per-phase commands outside their `phase-<N>-*` worktree, and execute-phase before deps land. Invoked via the repo's hook shim. |
+| `gsd-worktree-guard` | The guard: blocks `/gsd-phase` off the base branch, per-phase commands outside their `phase-<N>-*` worktree, and execute-phase before deps land. With `flow = strict` in `.gsd.conf` it also enforces the phase order: `/gsd-plan-phase` needs `<P>-CONTEXT.md` (discuss; `--prd` exempt), `/gsd-execute-phase` needs `<P>-REVIEWS.md` (cross-AI review; `--gaps-only` exempt), `/gsd-secure-phase` needs `<P>-REVIEW.md` and, when a UI-SPEC exists, `<P>-UI-REVIEW.md`. Invoked via the repo's hook shim. |
 | `gsd-derive-port` | Per-worktree dev ports (base + phase N), so parallel worktrees never collide on a port. |
 
 **`skills/` — the agent-facing skill** (symlinked into `~/.claude/skills`):
@@ -77,8 +77,9 @@ GSD. `./install.sh` links it; `gsd-sync` keeps it current.
 
 All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
 
-- **`.gsd.conf`** (committed) — `base`, `wtdir`, `install`, `premerge`, `test`; every key optional,
+- **`.gsd.conf`** (committed) — `base`, `wtdir`, `install`, `premerge`, `test`, `flow`; every key optional,
   falling back to auto-detection (develop/main, `<repo>-worktrees`, lockfile).
+  `flow = strict` turns on the guard's phase-flow rule (below).
 - **`shims/` → `scripts/gsd-*.sh` + `scripts/hooks/gsd-worktree-guard.sh`** —
   frozen 7-line delegators to the PATH commands, so committed references
   (package.json dev scripts, `.claude/settings.json` hook registration, docs)

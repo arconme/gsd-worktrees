@@ -37,3 +37,5 @@ jobs:
         run: shellcheck -x bin/* lib/common.sh shims/scripts/*.sh shims/scripts/hooks/*.sh install.sh tests/*.sh
       - name: planning reconcile suite
         run: tests/test-planning-reconcile.sh
+      - name: worktree guard suite
+        run: tests/test-worktree-guard.sh

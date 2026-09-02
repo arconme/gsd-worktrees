@@ -427,7 +427,7 @@
 
   <section>
     <h2>The one rule that trips people up</h2>
-    <p class="note"><strong>Every command with a phase number runs inside that phase's worktree.</strong> A guard blocks them anywhere else. The exceptions are <code>gsd-start</code>, which runs on <code>develop</code> in the main checkout, and the two audit commands, which look across all phases and also run there.</p>
+    <p class="note"><strong>Every command with a phase number runs inside that phase's worktree.</strong> A guard blocks them anywhere else, and with <code>flow = strict</code> in <code>.gsd.conf</code> it also refuses a step whose predecessor left no artifact (plan without discuss, execute without the cross-AI review, secure-phase without the code review). The exceptions are <code>gsd-start</code>, which runs on <code>develop</code> in the main checkout, and the two audit commands, which look across all phases and also run there.</p>
   </section>
 
 </div>
