@@ -10,6 +10,8 @@ is()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'
 section() { printf '\n%s\n' "$1"; }
 
 REPO="$WORK/r"; PD="$REPO/.planning/phases/07-thing"; mkdir -p "$PD"
+git -C "$REPO" init -q -b develop
+gcommit() { git -C "$REPO" add -A >/dev/null; GIT_AUTHOR_DATE="$1" GIT_COMMITTER_DATE="$1" git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m "$2" --allow-empty; }
 step() { "$NEXT" 7 --repo "$REPO" "$@" | sed -n 's/^step=//p'; }
 fm() { printf -- '---\nstatus: %s\n%s\n---\n' "$2" "${3:-}" > "$PD/07-$1"; }
 
@@ -22,9 +24,16 @@ is "ui-decision --ui → ui-phase"      "$(step --ui)" ui-phase
 : > "$PD/07-UI-SPEC.md";    is "UI-SPEC → plan (no flag needed)" "$(step)" plan
 : > "$PD/07-01-PLAN.md"; : > "$PD/07-02-PLAN.md"
 is "plans → review"                   "$(step)" review
-: > "$PD/07-REVIEWS.md";    is "REVIEWS → execute"             "$(step)" execute
+: > "$PD/07-REVIEWS.md";    is "REVIEWS uncommitted → replan"  "$(step)" replan
+gcommit 2026-01-01T10:00:00 "plans"          # plans + REVIEWS in one commit → counts as replanned
+is "REVIEWS + plans same commit → execute"  "$(step)" execute
+: > "$PD/07-REVIEWS.md"; echo x >> "$PD/07-REVIEWS.md"; gcommit 2026-01-01T11:00:00 "review again"
+is "REVIEWS committed after plans → replan" "$(step)" replan
+echo y >> "$PD/07-01-PLAN.md"; gcommit 2026-01-01T12:00:00 "replan"
+is "plan committed after REVIEWS → execute" "$(step)" execute
 : > "$PD/07-01-SUMMARY.md"; is "one summary short → execute"  "$(step)" execute
 : > "$PD/07-02-SUMMARY.md"
+is "all summaries, no VERIFICATION → verifier" "$(step)" verifier
 fm VERIFICATION.md gaps_found; is "gaps_found → gaps"          "$(step)" gaps
 fm VERIFICATION.md passed;     is "passed → verify-work"       "$(step)" verify-work
 fm HUMAN-UAT.md partial;       is "partial UAT → verify-work"  "$(step)" verify-work

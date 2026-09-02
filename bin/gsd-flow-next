@@ -18,7 +18,9 @@
 #   plan         a <P>-NN-PLAN.md                           /gsd-plan-phase
 #   review       <P>-REVIEWS.md                             /gsd-review --codex
 #                                                           + /gsd-plan-phase --reviews
+#   replan       a PLAN committed after REVIEWS.md            /gsd-plan-phase --reviews
 #   execute      a SUMMARY for every PLAN                   /gsd-execute-phase
+#   verifier     <P>-VERIFICATION.md exists                  (execute-phase re-run)
 #   gaps         <P>-VERIFICATION.md status gaps_found      --gaps / --gaps-only
 #   verify-work  a <P>-*UAT.md not pending/partial          /gsd-verify-work
 #   code-review  <P>-REVIEW.md; not clean → <P>-REVIEW-FIX  /gsd-code-review [--fix]
@@ -104,9 +106,23 @@ fi
 [ -n "$PLANS" ] || emit plan "/gsd-plan-phase $N" "" "" ""
 # 6 cross-AI review
 has REVIEWS.md || emit review "/gsd-review --phase $N --codex" "/gsd-plan-phase $N --reviews" "show the user the codex findings before the replan; verify each against the plans, never accept on trust" "key: OPENAI_API_KEY from ~/.config/ai-keys/keys.env"
+# 6b replan — the --reviews replan leaves no artifact of its own, so use git:
+# a plan committed after REVIEWS.md means it happened (commit_docs is on in a
+# GSD repo). Same commit counts as done; REVIEWS.md uncommitted = not yet.
+if has REVIEWS.md && [ -n "$PLANS" ]; then
+  rt=$(git -C "$REPO" log -1 --format=%ct -- "$pd/$P-REVIEWS.md" 2>/dev/null || true)
+  pt=0; for f in $PLANS; do t=$(git -C "$REPO" log -1 --format=%ct -- "$f" 2>/dev/null || true); [ "${t:-0}" -gt "$pt" ] && pt="$t"; done
+  if [ -z "$rt" ] || [ "$pt" -lt "$rt" ]; then
+    emit replan "/gsd-plan-phase $N --reviews" "" "" "REVIEWS.md exists but no plan was committed after it — the review was not folded into the plans"
+  fi
+fi
 # 7 execute
 MISSING=0; for f in $PLANS; do [ -f "${f%-PLAN.md}-SUMMARY.md" ] || MISSING=$((MISSING + 1)); done
 [ "$MISSING" -eq 0 ] || emit execute "/gsd-execute-phase $N" "" "" "$MISSING plan(s) without a SUMMARY; execute-phase runs code review and the verifier itself"
+# 7b verifier — all plans done but the verifier never wrote its report
+if [ -n "$PLANS" ] && [ "$MISSING" -eq 0 ] && ! has VERIFICATION.md; then
+  emit verifier "/gsd-execute-phase $N" "" "" "every plan has a SUMMARY but there is no VERIFICATION.md; with all plans complete, execute-phase only runs the verifier"
+fi
 # 8 gaps
 if [ "$(fm VERIFICATION.md status)" = "gaps_found" ]; then
   emit gaps "/gsd-plan-phase $N --gaps" "/gsd-execute-phase $N --gaps-only" "" "VERIFICATION.md reports gaps"

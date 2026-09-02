@@ -31,17 +31,19 @@ Read `step=`, `run=`, `then=`, `stop=`, `note=`. Then:
 | step | what you do |
 |---|---|
 | `story` | Create the ClickUp story (product words, no tech; see the repo's CLAUDE.md / memory for the list). Write `<P>-STORY.md` as a snapshot. **Stop** if you need the user's intent. |
-| `discuss` | `Skill("gsd-discuss-phase", "<N>")` — live, the user answers. Afterwards **update the ClickUp story** to the agreed scope (the `then=` line). |
+| `discuss` | `Skill(skill="gsd-discuss-phase", args="<N>")` — live, the user answers. Afterwards **update the ClickUp story** to the agreed scope (the `then=` line). |
 | `ui-decision` | Ask the user once: does this phase have screens? Re-run `gsd-flow-next` with `--ui` or `--no-ui` and keep passing that flag for the rest of this session. |
-| `ui-phase` | `Skill("gsd-ui-phase", "<N>")`. **Stop**: the user agrees the screens before planning. |
-| `plan` | `Skill("gsd-plan-phase", "<N>")`. |
-| `review` | `Skill("gsd-review", "--phase <N> --codex")`. **Stop**: show the codex findings, each one checked against the plans (never accepted on trust). Then `Skill("gsd-plan-phase", "<N> --reviews")`. |
-| `execute` | `Skill("gsd-execute-phase", "<N>")`. It runs code review and the verifier itself. |
-| `gaps` | `Skill("gsd-plan-phase", "<N> --gaps")` then `Skill("gsd-execute-phase", "<N> --gaps-only")`. |
-| `verify-work` | `Skill("gsd-verify-work", "<N>")` — agent-driven (Playwright, screenshots), recorded as agent-verified. |
-| `code-review` | `Skill("gsd-code-review", "<N> --fix")` (or without `--fix` if REVIEW.md is missing). |
-| `ui-review` | `Skill("gsd-ui-review", "<N>")`. |
-| `secure` | `Skill("gsd-secure-phase", "<N>")` — the LAST code gate, after every fix has landed. |
+| `ui-phase` | `Skill(skill="gsd-ui-phase", args="<N>")`. **Stop**: the user agrees the screens before planning. |
+| `plan` | `Skill(skill="gsd-plan-phase", args="<N>")`. |
+| `review` | `Skill(skill="gsd-review", args="--phase <N> --codex")`. **Stop**: show the codex findings, each one checked against the plans (never accepted on trust). Then, in the same turn, `Skill(skill="gsd-plan-phase", args="<N> --reviews")`. |
+| `replan` | REVIEWS.md exists but no plan was committed after it — the `--reviews` replan did not happen. `Skill(skill="gsd-plan-phase", args="<N> --reviews")`. |
+| `verifier` | Every plan has a SUMMARY but there is no VERIFICATION.md (the verifier errored). `Skill(skill="gsd-execute-phase", args="<N>")` — with all plans complete it only runs the verifier. |
+| `execute` | `Skill(skill="gsd-execute-phase", args="<N>")`. It runs code review and the verifier itself. |
+| `gaps` | `Skill(skill="gsd-plan-phase", args="<N> --gaps")` then `Skill(skill="gsd-execute-phase", args="<N> --gaps-only")`. |
+| `verify-work` | `Skill(skill="gsd-verify-work", args="<N>")` — agent-driven (Playwright, screenshots), recorded as agent-verified. |
+| `code-review` | `Skill(skill="gsd-code-review", args="<N> --fix")` (or without `--fix` if REVIEW.md is missing). |
+| `ui-review` | `Skill(skill="gsd-ui-review", args="<N>")`. |
+| `secure` | `Skill(skill="gsd-secure-phase", args="<N>")` — the LAST code gate, after every fix has landed. |
 | `done` | Print the finish line. Do **not** run `gsd-finish` unless the user says so: it deletes the directory this session stands in and must be the session's last action. |
 
 After every step: run `gsd-flow-next` again. Loop until `step=done`.
