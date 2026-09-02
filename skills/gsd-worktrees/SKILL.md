@@ -85,6 +85,8 @@ handling the manual path lacks.
 
 ## When something looks wrong
 
-Run `gsd-doctor` first and report what it says. `.planning/` looking
+Run `gsd-doctor` first and report what it says. In a `flow = strict` repo it
+also lists every merged phase that skipped a mandatory step (T040) — that is
+the backlog, not something to fix from the main checkout. `.planning/` looking
 contradictory after a merge is the known failure mode — `gsd-planning-repair
 --check` confirms it, `--commit` fixes it.

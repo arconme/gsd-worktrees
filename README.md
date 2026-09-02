@@ -79,7 +79,8 @@ All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
 
 - **`.gsd.conf`** (committed) — `base`, `wtdir`, `install`, `premerge`, `test`, `flow`; every key optional,
   falling back to auto-detection (develop/main, `<repo>-worktrees`, lockfile).
-  `flow = strict` turns on the guard's phase-flow rule (below).
+  `flow = strict` turns on the guard's phase-flow rule (below) and gsd-doctor's
+  phase-flow debt report (T040); `flow_since = <N>` limits that report to phases >= N.
 - **`shims/` → `scripts/gsd-*.sh` + `scripts/hooks/gsd-worktree-guard.sh`** —
   frozen 7-line delegators to the PATH commands, so committed references
   (package.json dev scripts, `.claude/settings.json` hook registration, docs)
