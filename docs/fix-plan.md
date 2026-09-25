@@ -37,6 +37,17 @@ Status: `todo` · `in progress` · `done` (fixed + regression test) · `won't fi
 | R13 | Gemini shell hook allows a renamed/aliased gsd command (`pp 5`) | `lib/gsd_hook_payload.py` | document; the mandatory command guard still applies | done (`docs/gemini-hooks.md`) |
 | R14 | `lib/__pycache__/*.pyc` committed, no `.gitignore`; old finished tracker in `docs/` | repo | remove `.pyc`, add `.gitignore`; tracker archived | done |
 
+## Wave 4 — found by the end-to-end run in a fake project
+
+A fake project with a local bare remote, the real `gsd-sdk` 1.42.3, two clones
+claiming and finishing at the same moment, a Claude → Codex handoff, and strict
+flow. AI output simulated with files. Result: 32 of 33 checks pass.
+
+| ID | Finding | Where | Fix | Status |
+|---|---|---|---|---|
+| R15 | **Claim race loses a phase.** Two sessions claim at once, both get phase N; on the loser's rebase the planning merge driver collapses the two `### Phase N` sections into one, so the duplicate count stays 1, no renumber happens, and the other session's phase vanishes from the roadmap (its branch/worktree remain). The driver (2026-08-05) broke the renumber logic (2026-07-18); no test covered it | `bin/gsd-start` publish loop | decide the race on `origin/<base>`'s roadmap **before** merging: fetch, and if phase N is already there, unclaim → fast-forward → claim again | done — regression test R15 in `tests/test-review-round2.sh` (stub `gsd-sdk` + pre-push race) fails on the old code; the e2e run with the real `gsd-sdk` now yields phases 2 and 3 |
+| R16 | **Every claim leaves the roadmap red in `gsd-doctor`.** `gsd-sdk phase.add` writes only the `### Phase N` section and a `- [ ] TBD (run /gsd-plan-phase N …)` line — no checklist row, no Progress row. Doctor then reports T022 + T023 + T021 (completing the phase would tick the TBD line) for each new phase. `roadmap-audit.pl` documents this for `phase.insert` only; `phase.add` does it too | `bin/gsd-start` `claim()` / `insert_phase()` | after the claim, add the missing checklist row (before any TBD line, so `phase.complete` ticks the right line) and Progress row, only when absent | todo |
+
 ## Backlog — not part of this pass
 
 | ID | Item | Why not now |

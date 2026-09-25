@@ -460,17 +460,25 @@ else
     ok=0
     for _try in 1 2 3 4; do
       if git -C "$MAIN" push origin "$BASE" --quiet 2>/dev/null; then ok=1; break; fi
-      echo "  push rejected (parallel session got there first) — rebasing…"
-      git -C "$MAIN" pull --rebase origin "$BASE" --quiet \
-        || { git -C "$MAIN" rebase --abort 2>/dev/null || true
-             die "rebase conflict while syncing the claim — resolve in $MAIN, then push manually"; }
+      echo "  push rejected (parallel session got there first) — syncing…"
+      git -C "$MAIN" fetch --quiet origin "$BASE" \
+        || die "could not fetch origin/$BASE to resolve the claim race — push '$BASE' manually"
+      # Decide the race on origin's roadmap BEFORE merging. The planning merge
+      # driver collapses duplicate '### Phase N' sections into one, so counting
+      # headings after a rebase never sees the collision — and the other
+      # session's claim would silently vanish from the roadmap.
       N_RE=$(printf '%s' "$N" | sed 's/\./\\./g')
-      dups=$(grep -cE "^### Phase $N_RE:" "$MAIN/.planning/ROADMAP.md" || true)
-      if [ "${dups:-1}" -gt 1 ]; then
+      if git -C "$MAIN" show "origin/$BASE:.planning/ROADMAP.md" 2>/dev/null | grep -qE "^### Phase $N_RE:"; then
         echo "  phase $N was claimed by the other session too — renumbering…"
         unclaim
+        git -C "$MAIN" merge --ff-only --quiet "origin/$BASE" \
+          || die "could not fast-forward $BASE to origin/$BASE — resolve in $MAIN, then rerun"
         do_claim
         echo "✔ re-claimed as phase $N"
+      else
+        git -C "$MAIN" pull --rebase origin "$BASE" --quiet \
+          || { git -C "$MAIN" rebase --abort 2>/dev/null || true
+               die "rebase conflict while syncing the claim — resolve in $MAIN, then push manually"; }
       fi
     done
     [ "$ok" = 1 ] || die "could not push the claim after 4 attempts — push '$BASE' manually"

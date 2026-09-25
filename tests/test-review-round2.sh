@@ -101,5 +101,39 @@ section "R12 — gsd-start -p says when it ignores a description"
 gsd-start -p 1 "some text" --repo "$WORK/r05" --no-launch > "$WORK/out" 2>&1 || true
 check "warning names the ignored text" 'grep -q "ignoring \"some text\"" "$WORK/out"'
 
+section "R15 — two sessions claiming at once: the loser renumbers, nobody's claim is lost"
+# Stand-in for gsd-sdk (not on CI runners): phase.add appends the next number.
+mkdir -p "$WORK/stub"
+cat > "$WORK/stub/gsd-sdk" <<'SDK'
+#!/usr/bin/env bash
+[ "$1 $2" = "query phase.add" ] || { echo "stub: unsupported $*" >&2; exit 1; }
+desc=$3; dir=$5; rm="$dir/.planning/ROADMAP.md"
+n=$(grep -oE '^### Phase [0-9]+' "$rm" | grep -oE '[0-9]+' | sort -n | tail -1)
+printf '\n### Phase %s: %s\n' "$((n + 1))" "$desc" >> "$rm"
+SDK
+chmod +x "$WORK/stub/gsd-sdk"
+git init -q --bare -b main "$WORK/r15.git"
+R="$WORK/r15"; mkdir -p "$R/.planning"; git -C "$R" init -qb main
+printf '# Roadmap\n\n### Phase 1: first\n' > "$R/.planning/ROADMAP.md"
+printf '.planning/ROADMAP.md merge=gsd-planning\n.planning/STATE.md merge=gsd-planning\n' > "$R/.gitattributes"
+printf 'install = none\n' > "$R/.gsd.conf"
+commit "$R" init; git -C "$R" remote add origin "$WORK/r15.git"; git -C "$R" push -qu origin main
+gsd_register_merge_driver "$R"
+# The rival session claims phase 2 and pushes it the moment we try to push.
+git clone -q "$WORK/r15.git" "$WORK/r15-rival"
+printf '\n### Phase 2: user login\n' >> "$WORK/r15-rival/.planning/ROADMAP.md"
+commit "$WORK/r15-rival" "docs(gsd): claim phase 2 — user login"
+printf '#!/bin/sh\n[ -f "$RIVAL_DONE" ] && exit 0\ntouch "$RIVAL_DONE"\ngit -C "$RIVAL" push -q origin main\n' > "$R/.git/hooks/pre-push"
+chmod +x "$R/.git/hooks/pre-push"
+(cd "$R" && RIVAL="$WORK/r15-rival" RIVAL_DONE="$WORK/r15-done" PATH="$WORK/stub:$PATH" \
+   gsd-start -n "shopping cart" --no-launch) > "$WORK/out" 2>&1; rc=$?
+ORIGIN_RM=$(git --git-dir="$WORK/r15.git" show main:.planning/ROADMAP.md)
+check "claim succeeds" '[ "$rc" = 0 ]' || cat "$WORK/out"
+check "the race was detected and renumbered" 'grep -q "renumbering" "$WORK/out"'
+check "the rival's phase 2 survives on origin" 'printf "%s" "$ORIGIN_RM" | grep -q "^### Phase 2: user login"'
+check "our claim landed as phase 3" 'printf "%s" "$ORIGIN_RM" | grep -q "^### Phase 3: shopping cart"'
+check "exactly one phase 2 heading" '[ "$(printf "%s" "$ORIGIN_RM" | grep -c "^### Phase 2:")" = 1 ]'
+check "worktree branch is phase-3" 'git -C "$R" show-ref --verify --quiet refs/heads/phase-3-shopping-cart'
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
