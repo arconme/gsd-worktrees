@@ -61,4 +61,7 @@ Status: `todo` · `in progress` · `done` (fixed + regression test) · `won't fi
   review round 2 19 — **450 passed, 0 failed**; copy-install suite passed.
   `bash -n` on every script, Python AST parse, whole-tree ShellCheck and
   `git diff --check` clean. Both new suites wired into CI and README.
-- Hosted CI (Linux + macOS): pending push.
+- Hosted CI: the first run (`a23a87b`) failed in the new `gsd-list` wrap check.
+  CI has no terminal, so the width fell back to 120 and the title wrapped
+  differently. Fixed in `8932223`: `gsd-list` honors `COLUMNS`, and the test
+  joins the wrapped cell before comparing. Run 36130616994 passed on Linux and macOS.
