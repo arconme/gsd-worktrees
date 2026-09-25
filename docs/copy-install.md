@@ -1,5 +1,9 @@
 # Standalone copy installation
 
+Most users want a release install instead: `get.sh` / `gsd-update`, see
+[releases.md](releases.md). It uses this same `--copy` mode, one folder per
+release.
+
 Installation requires Python 3.7+ (`python3` or `python`), checked before writing
 destinations. Bash, Git and Perl are also required by the toolkit.
 

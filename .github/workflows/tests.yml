@@ -2,7 +2,9 @@ name: tests
 
 on:
   push:
+    branches: ['**']     # tags run these through release.yml instead
   pull_request:
+  workflow_call:         # release.yml gates a release on this suite
 
 jobs:
   reconcile:
@@ -23,7 +25,7 @@ jobs:
           python3 --version
       - name: syntax
         run: |
-          for f in bin/* lib/*.sh install.sh shims/scripts/*.sh shims/scripts/hooks/*.sh tests/*.sh; do
+          for f in bin/* lib/*.sh lib/trackers/*.sh install.sh get.sh shims/scripts/*.sh shims/scripts/hooks/*.sh tests/*.sh; do
             bash -n "$f" || exit 1
           done
           python3 -c "import ast, pathlib; ast.parse(pathlib.Path('lib/gsd_planning.py').read_text())"
@@ -35,7 +37,7 @@ jobs:
         # BSD-vs-GNU RUNTIME differences the suite exercises.
         if: matrix.os == 'ubuntu-latest'
         # Policy (intentional-pattern exclusions, with reasons): .shellcheckrc
-        run: shellcheck -x bin/* lib/*.sh lib/trackers/*.sh shims/scripts/*.sh shims/scripts/hooks/*.sh install.sh tests/*.sh
+        run: shellcheck -x bin/* lib/*.sh lib/trackers/*.sh get.sh tools/*.sh shims/scripts/*.sh shims/scripts/hooks/*.sh install.sh tests/*.sh
       - name: planning reconcile suite
         run: tests/test-planning-reconcile.sh
       - name: worktree guard suite
@@ -58,5 +60,7 @@ jobs:
         run: tests/test-commands.sh
       - name: ticket tracker suite
         run: tests/test-tracker.sh
+      - name: release install + update suite
+        run: tests/test-update.sh
       - name: end-to-end suite (skips without gsd-sdk)
         run: tests/test-e2e.sh

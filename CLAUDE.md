@@ -17,6 +17,7 @@ GSD itself (the `/gsd-*` planning skills, including `gsd-review`, and the `gsd-s
 ## Commands
 
 ```sh
+# Users install a GitHub release: curl -fsSL …/main/get.sh | bash  (then gsd-update)
 ./install.sh [--copy] [--agent claude|codex|gemini]... [--all-agents]
 # default: symlink bin/* → ~/.local/bin, skills into each agent's skill dir.
 # In symlink mode, editing a file here changes the live command at once.
@@ -33,13 +34,17 @@ tests/test-list.sh                    # gsd-list PLANS/STAGE/WORKTREE derivation
 tests/test-review-round2.sh           # regressions from the 2026-09-25 review (docs/fix-plan.md)
 tests/test-commands.sh                # derive-port, start refusals/insert/-p/--flow, conflict abort, stale lock, init docs detection, finish --pr, bash-3.2 lint
 tests/test-tracker.sh                 # tickets: ids, gsd-tracker none/custom/fake ClickUp (curl stub), --ticket through start/finish, doctor T070–T072
+tests/test-update.sh                  # releases: get.sh, gsd-update, checksums, pruning, update notice (fake GitHub via a curl stub)
 tests/test-e2e.sh                     # END-TO-END: fake project + real gsd-sdk (skips without it), ~15s.
                                       # Run it after ANY change to start/finish/guard/flow/planning code —
                                       # it caught 4 bugs the unit suites missed (fix-plan R15–R18).
 
 # Lint / syntax (CI)
-for f in bin/* lib/*.sh install.sh shims/scripts/*.sh shims/scripts/hooks/*.sh tests/*.sh; do bash -n "$f"; done
-shellcheck -x bin/* lib/*.sh shims/scripts/*.sh shims/scripts/hooks/*.sh install.sh tests/*.sh
+for f in bin/* lib/*.sh lib/trackers/*.sh install.sh get.sh shims/scripts/*.sh shims/scripts/hooks/*.sh tests/*.sh; do bash -n "$f"; done
+shellcheck -x bin/* lib/*.sh lib/trackers/*.sh get.sh tools/*.sh shims/scripts/*.sh shims/scripts/hooks/*.sh install.sh tests/*.sh
+
+# Release (maintainer): add "## X.Y.Z" to CHANGELOG.md, commit, then
+tools/release.sh X.Y.Z --push   # VERSION + tag → .github/workflows/release.yml tests, builds, publishes
 ```
 
 There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `section` headers, and builds throwaway repos in `mktemp -d`. To focus, run one suite. Every command has `--help`. New suites must also be added to `.github/workflows/tests.yml` and the README test list.
@@ -56,6 +61,7 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 - **`lib/roadmap-rows.pl`** — run by `gsd-start` after each claim: adds the checklist + Progress rows `gsd-sdk` omits, so the new phase passes `roadmap-audit.pl`.
 - **`lib/tracker.sh`** + **`lib/trackers/<name>.sh`** — tickets (see `docs/trackers.md`). `tracker =` in `.gsd.conf` picks `none` (default), `clickup`, or `custom` (a repo script). A phase links to a ticket by the tag `tk-<id>` at the end of its title and slug; the id is read back from the ROADMAP title first (the slug is lowercased). Legacy `cu_<id>` tags, `--cu`, and `STORY.md` are read, never written. Tracker calls are best-effort: failures print a note and never block start/finish. To add a tracker, add `lib/trackers/<name>.sh` defining `tracker_run`, then extend `gsd_tracker_known`.
 - **`lib/roadmap-audit.pl`** — read-only ROADMAP audit for `gsd-doctor`. It catches two upstream `gsd-sdk` bugs (`phase.insert` writes no checklist row; `phase.complete` can tick another phase's row).
+- **Releases** (`docs/releases.md`) — `VERSION` is the package version. `get.sh` (standalone; runs via `curl | bash`) downloads a release tarball + `SHA256SUMS`, verifies, and runs that package's `install.sh --copy` into `…/share/gsd-worktrees/releases/<X.Y.Z>/`, keeping only the new and the previous release. `bin/gsd-update` re-runs its own runtime's `get.sh`; a git-checkout install is sent to `gsd-sync`. `lib/version.sh` holds the day-long cached latest-release check; `gsd-start`/`gsd-list` print the notice only when stderr is a tty (`GSD_UPDATE_NOTICE=always` forces it in tests), `gsd-doctor` always notes it. `install.sh` replaces links/skills it placed earlier (`owned_link`, `.gsd-worktrees-skill` marker) instead of making `.bak` copies — a `.bak` on PATH or in a skill dir would load as real. The update repo is `arconme/gsd-worktrees` (`GSD_UPDATE_REPO` overrides).
 - **`shims/`** — frozen 7-line delegators that bootstrap copies into target repos as `scripts/gsd-*.sh`. Keep them unchanged.
 - **`skills/`** — `gsd-worktrees` and `gsd-flow`, installed per agent. They must stay provider-neutral: no literal `Skill()` calls. The flow skill only interprets `gsd-flow-next` output; it is not a second state machine.
 

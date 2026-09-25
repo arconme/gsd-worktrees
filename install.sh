@@ -35,6 +35,17 @@ INSTALL_PYTHON=$(gsd_python) || { echo 'installation requires Python 3.7+ (pytho
 backup_path() { local base=$1 out=$1.bak n=1; while [ -e "$out" ] || [ -L "$out" ]; do out=$base.bak.$n; n=$((n+1)); done; printf '%s\n' "$out"; }
 absolute_path() { "$INSTALL_PYTHON" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"; }
 within() { case "$1/" in "$2/"*) return 0 ;; *) return 1 ;; esac; }
+# A command link or skill this toolkit placed earlier (from any checkout or
+# release runtime) is replaced in place, not moved to .bak: a gsd-list.bak on
+# PATH, or a gsd-flow.bak in an agent's skill dir, would be picked up as real.
+toolkit_pkg() { [ -f "$1/install.sh" ] && [ -f "$1/lib/common.sh" ]; }
+owned_link() {  # $1=symlink $2=bin|skills
+  local t; t=$(readlink "$1") || return 1
+  case "$t" in /*) ;; *) t="$(dirname "$1")/$t" ;; esac
+  toolkit_pkg "$(dirname "$(dirname "$t")")" && return 0
+  case "$t" in */gsd-worktrees/releases/*/"$2"/*) return 0 ;; esac   # a removed release
+  return 1
+}
 BIN_DIR=$(absolute_path "$BIN_DIR")
 if within "$BIN_DIR" "$REPO" || within "$REPO" "$BIN_DIR"; then
   echo "unsafe $([ "$MODE" = copy ] && printf '%s ' --copy)destination: bin and source directories must not overlap" >&2; exit 1
@@ -129,14 +140,17 @@ if [ "$MODE" = copy ]; then
     done < "$COPY_DIR/.gsd-owned-commands"
   fi
   for component in bin lib shims skills; do copy_tree "$REPO/$component" "$COPY_DIR/$component"; done
-  if [ -e "$COPY_DIR/install.sh" ] || [ -L "$COPY_DIR/install.sh" ]; then
-    if ! { [ -f "$COPY_DIR/install.sh" ] && [ ! -L "$COPY_DIR/install.sh" ] && cmp -s "$REPO/install.sh" "$COPY_DIR/install.sh"; }; then
-      bak=$(backup_path "$COPY_DIR/install.sh"); mv "$COPY_DIR/install.sh" "$bak"
-      cp -P "$REPO/install.sh" "$COPY_DIR/install.sh"
+  for top in install.sh get.sh VERSION; do
+    [ -f "$REPO/$top" ] || continue
+    if [ -e "$COPY_DIR/$top" ] || [ -L "$COPY_DIR/$top" ]; then
+      if ! { [ -f "$COPY_DIR/$top" ] && [ ! -L "$COPY_DIR/$top" ] && cmp -s "$REPO/$top" "$COPY_DIR/$top"; }; then
+        bak=$(backup_path "$COPY_DIR/$top"); mv "$COPY_DIR/$top" "$bak"
+        cp -P "$REPO/$top" "$COPY_DIR/$top"
+      fi
+    else
+      cp -P "$REPO/$top" "$COPY_DIR/$top"
     fi
-  else
-    cp -P "$REPO/install.sh" "$COPY_DIR/install.sh"
-  fi
+  done
   inventory=$(mktemp)
   for command_file in "$REPO"/bin/*; do basename "$command_file" >> "$inventory"; done
   mv "$inventory" "$COPY_DIR/.gsd-owned-commands"
@@ -152,7 +166,9 @@ for f in "$REPO"/bin/*; do
   if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$target" ]; then
     echo "✔ $name → $dest"; continue
   fi
-  if [ -e "$dest" ] || [ -L "$dest" ]; then
+  if [ -L "$dest" ] && owned_link "$dest" bin; then
+    rm -f "$dest"
+  elif [ -e "$dest" ] || [ -L "$dest" ]; then
     bak=$(backup_path "$dest"); mv "$dest" "$bak"
     echo "• existing $name preserved at $bak"
   fi
@@ -161,11 +177,15 @@ for f in "$REPO"/bin/*; do
 done
 
 # Prune links left behind by commands DELETED from bin/ — a dangling symlink
-# would otherwise sit on PATH forever as a broken command.
-for dest in "$BIN_DIR"/*; do
+# would otherwise sit on PATH forever as a broken command. Links into another
+# toolkit runtime (an older release) for a command this version no longer has
+# go too.
+for dest in "$BIN_DIR"/gsd-*; do
   [ -L "$dest" ] || continue
+  [ ! -e "$REPO/bin/$(basename "$dest")" ] || continue
   case "$(readlink "$dest")" in
     "$REPO"/bin/*) [ -e "$dest" ] || { rm -f "$dest"; echo "✂ $(basename "$dest") removed (deleted from the toolkit)"; } ;;
+    *) if owned_link "$dest" bin; then rm -f "$dest"; echo "✂ $(basename "$dest") removed (not in this version)"; fi ;;
   esac
 done
 
@@ -182,8 +202,12 @@ install_skills() {
     if [ -e "$dest" ] || [ -L "$dest" ]; then
       if [ -L "$dest" ] && [ "$(readlink "$dest")" = "${d%/}" ] && [ "$MODE" = link ]; then :
       elif [ "$MODE" = copy ] && [ -d "$dest" ] && [ ! -L "$dest" ] \
-        && diff -qr "${d%/}" "$dest" >/dev/null 2>&1; then
+        && diff -qr -x .gsd-worktrees-skill "${d%/}" "$dest" >/dev/null 2>&1; then
         echo "• $provider skill $name already current"; continue
+      elif [ -L "$dest" ] && owned_link "$dest" skills; then
+        rm -f "$dest"
+      elif [ -d "$dest" ] && [ ! -L "$dest" ] && [ -f "$dest/.gsd-worktrees-skill" ]; then
+        rm -rf "$dest"
       else
         bak=$(backup_path "$dest"); mv "$dest" "$bak"
         echo "• existing $provider skill $name preserved at $bak"
@@ -193,6 +217,8 @@ install_skills() {
       ln -sfn "${d%/}" "$dest"
     else
       cp -R "${d%/}" "$dest"
+      # marks the copy as the toolkit's, so the next update replaces it in place
+      head -1 "$REPO/VERSION" 2>/dev/null > "$dest/.gsd-worktrees-skill" || : > "$dest/.gsd-worktrees-skill"
     fi
     echo "✔ $provider skill $name → $dest"
   done

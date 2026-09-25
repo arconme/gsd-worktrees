@@ -55,6 +55,8 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 . "$GSD_PKG/lib/provider.sh"
 # shellcheck source=../lib/tracker.sh
 . "$GSD_PKG/lib/tracker.sh"
+# shellcheck source=../lib/version.sh
+. "$GSD_PKG/lib/version.sh"
 
 REPO=""
 QUIET=0
@@ -141,6 +143,20 @@ if PY=$(gsd_python); then
   pass "$PY $("$PY" --version 2>&1 | awk '{print $2}') (the planning repair needs it)"
 else
   fail "no python 3.7+ (tried python3, then python) — planning merges fall back to plain union" "install python3" "T003"
+fi
+
+# This toolkit: a newer release on GitHub? A note, never a finding. Uses the
+# day-old cache (lib/version.sh) and refreshes it when stale.
+if [ -z "${GSD_NO_UPDATE_CHECK:-}" ]; then
+  gsd_latest_stale && gsd_latest_refresh
+  tk_new=$(gsd_latest_cached); tk_cur=$(gsd_version)
+  if [ -n "$tk_new" ] && gsd_version_gt "$tk_new" "$tk_cur"; then
+    note "gsd-worktrees $tk_cur installed, $tk_new released — update: $(gsd_update_how)"
+  elif [ -n "$tk_new" ]; then
+    pass "gsd-worktrees $tk_cur (latest release: $tk_new)"
+  else
+    note "gsd-worktrees $tk_cur (latest release unknown — GitHub not reachable)"
+  fi
 fi
 
 # GSD itself: is a newer release on npm? A note, never a finding — the parsers

@@ -79,7 +79,7 @@ echo ""
 # ── step 1: self-update ──────────────────────────────────────────────────────
 DIRTY=""
 if [ ! -e "$REPO/.git" ]; then
-  echo "• standalone copy — self-update and reinstall skipped (run install.sh --copy from a newer package to update)"
+  echo "• standalone copy — self-update and reinstall skipped (update with: gsd-update)"
 elif [ -n "$(git status --porcelain)" ]; then
   DIRTY=$(git status --porcelain)
   echo "• toolkit repo has uncommitted changes (commit them so they're versioned):"

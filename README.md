@@ -118,7 +118,8 @@ are marked and repeated bootstrap updates only those blocks. See
 | `gsd-list` | Table of every phase: number, plans done, stage, worktree | "What's in flight?" Read-only, safe anywhere |
 | `gsd-finish` | Merges the phase back to base, pushes, deletes worktree + branch. `--pr` pushes and opens a GitHub PR instead (branch protection) | Phase is done. No argument needed from inside the worktree |
 | `gsd-doctor` | Health check that names the command fixing each finding. `--json` for CI | Something feels off. Never writes anything |
-| `gsd-sync` | Updates the toolkit, re-links commands, checks this repo's shims | Occasionally, or after a toolkit change |
+| `gsd-update` | Installs a newer release (release installs) | When a command says a newer release is out |
+| `gsd-sync` | Updates a git-checkout toolkit, re-links commands, checks this repo's shims | Occasionally, or after a toolkit change |
 
 **Rarely:**
 
@@ -154,6 +155,7 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 | `gsd-init` | Take a repo with no GSD to "ready for gsd-start": bootstrap one or more providers, then print or open the right provider-specific initialization prompt. |
 | `gsd-bootstrap-repo` | Fit a repo with shared workflow files and explicitly selected provider adapters. Marked blocks preserve unrelated instructions. |
 | `gsd-tracker` | Ticket write-back: `start` / `finish` / `comment` / `status` / `snapshot` / `extract` / `check`. Tracker from `tracker =` in `.gsd.conf`: `none` (default), `clickup`, or `custom` (your script). See [docs/trackers.md](docs/trackers.md). `gsd-clickup` is the old name, fixed to ClickUp. |
+| `gsd-update` | Update a release install: `--check`, the latest, or `--version X.Y.Z`. Checksum-verified; keeps the previous release. |
 | `gsd-sync` | Toolkit maintenance in one command: pull + push this repo, re-link `bin/`, and verify the shims of the repo you run it from are current. `--check` for a dry run. |
 | `gsd-wt-new` / `gsd-wt-finish` | The worktree workers behind `gsd-start`/`gsd-finish` (create with config-copy + background install; merge back locked and conflict-safe). Callable standalone. |
 | `gsd-planning-repair` | Reconcile `.planning/ROADMAP.md` + `STATE.md` after a union merge and recompute their progress counters from the roadmap and the plan files on disk. `--check` is the CI guard (exit 1 on union-merge damage); `--commit` lands the repair. Run automatically by `gsd-finish` and the `post-merge` hook. |
@@ -208,16 +210,41 @@ All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
 
 ## Install
 
-Requires Bash, Git, Perl and Python 3.7+ (`python3` or `python`). `jq` enables
-native-hook registration/inspection; command-level guards do not require it.
+Requires Bash, Git, Perl, curl and Python 3.7+ (`python3` or `python`). `jq`
+enables native-hook registration/inspection and the ClickUp tracker; the
+command-level guards do not require it.
+
+**Use it (a release):**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/get.sh | bash
+# pick the agents that get the skills (default: claude):
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/get.sh | bash -s -- --agent claude --agent codex
+```
+
+This downloads the latest GitHub release, checks its SHA256, and installs it to
+`~/.local/share/gsd-worktrees/releases/<version>/` with the commands linked in
+`~/.local/bin`. `--version X.Y.Z` installs a given release.
+
+**Updates:** `gsd-start`, `gsd-list` and `gsd-doctor` tell you when a newer
+release is out (at most one GitHub call a day; `GSD_NO_UPDATE_CHECK=1` turns it
+off). Then:
+
+```sh
+gsd-update --check        # installed vs latest
+gsd-update                # install the latest
+gsd-update --version 0.2.0   # a given release (going back works too)
+```
+
+The release you had before stays on disk; older ones are removed. What changed
+in each release: [CHANGELOG.md](CHANGELOG.md). More: [docs/releases.md](docs/releases.md).
+
+**Work on the toolkit itself (a git checkout):**
 
 ```sh
 git clone git@github.com:arconme/gsd-worktrees.git
 cd gsd-worktrees
-./install.sh --agent claude
-./install.sh --agent codex
-./install.sh --agent gemini
-./install.sh --all-agents
+./install.sh --agent claude      # or --agent codex / --agent gemini / --all-agents
 ```
 
 Symlink mode means `git pull` updates the live commands, and edits to the live
@@ -227,10 +254,11 @@ point into that copy. See [copy installation](docs/copy-install.md) for
 `GSD_COPY_DIR`, backup behavior, and updates.
 Commands default to `GSD_BIN_DIR` or `~/.local/bin`. Skill roots can be isolated
 or relocated with `GSD_CLAUDE_SKILL_DIR`, `GSD_CODEX_SKILL_DIR`, and
-`GSD_GEMINI_SKILL_DIR`. Existing unrelated directories and links are backed up.
+`GSD_GEMINI_SKILL_DIR`. Existing unrelated files are backed up; command links
+and skills the toolkit placed earlier are replaced in place.
 Stale toolkit skill links are reported; stale toolkit command links are pruned.
 
-**Staying up to date:** run `gsd-sync` — it pulls this repo, pushes your local
+**Staying up to date (checkout):** run `gsd-sync` — it pulls this repo, pushes your local
 commits, re-links any new commands, and verifies the reference repo's shims
 are current. `gsd-sync --check` previews without changing anything.
 It uses last-fetched remote refs; it does not fetch. Installation records the
@@ -352,6 +380,7 @@ bash tests/test-review-fixes.sh
 tests/test-list.sh
 tests/test-review-round2.sh
 tests/test-commands.sh
+tests/test-update.sh     # releases: get.sh install, gsd-update, checksums, pruning, the update notice
 tests/test-tracker.sh    # tickets: id parsing, none/custom/fake-ClickUp, start/finish/doctor paths
 tests/test-e2e.sh        # whole journey in a fake project; needs gsd-sdk (skips without it)
 ```

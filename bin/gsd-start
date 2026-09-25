@@ -60,6 +60,8 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 . "$GSD_PKG/lib/provider.sh"
 # shellcheck source=../lib/tracker.sh
 . "$GSD_PKG/lib/tracker.sh"
+# shellcheck source=../lib/version.sh
+. "$GSD_PKG/lib/version.sh"
 
 usage() {
   cat <<'HELP'
@@ -277,6 +279,8 @@ if [ -n "$INSERT" ]; then
   printf '%s' "$INSERT" | grep -qE '^[0-9]+(\.[0-9]+)?$' \
     || die "--insert must be the phase number to insert after (e.g. 11), got: $INSERT"
 fi
+
+gsd_update_notice   # a newer release? one stderr line, terminal only
 
 # ── locate the main checkout ─────────────────────────────────────────────────
 if [ -n "$REPO" ]; then

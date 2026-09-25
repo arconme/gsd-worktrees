@@ -118,6 +118,11 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Backups before overwrite; prunes links to deleted commands; refuses overlapping destinations | `install.sh` |
 | Install manifest + `--reuse-install-config` | `install.sh` |
 | One-command upkeep: pull/push this repo, re-link, check the calling repo's shims; `--check` dry run | `gsd-sync` |
+| One-line install of a GitHub release, SHA256-checked, one folder per release (`--version`, `--agent`) | `get.sh` |
+| Update / go back: `gsd-update [--check \| --version X.Y.Z]`; keeps the previous release, prunes older ones | `gsd-update` |
+| "Newer release" notice in `gsd-start` / `gsd-list` (terminal only) and `gsd-doctor`; day-long cache, background refresh; `GSD_NO_UPDATE_CHECK=1` | `lib/version.sh` |
+| Reinstall replaces the toolkit's own links and skills in place (no `.bak` on PATH or in skill dirs) | `install.sh` |
+| Tag-driven releases: tests → tarball + `SHA256SUMS` → GitHub release; `tools/release.sh X.Y.Z --push` | `.github/workflows/release.yml`, `tools/release.sh` |
 
 ## 10. Tickets and trackers ([trackers.md](trackers.md))
 
@@ -142,5 +147,6 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | `lib/gsd_hook_payload.py` | Claude/Gemini hook JSON → guard input |
 | `lib/roadmap-audit.pl` | read-only ROADMAP bookkeeping audit |
 | `lib/roadmap-rows.pl` | adds a claimed phase's missing checklist + Progress rows (the ones `gsd-sdk` leaves out) |
+| `lib/version.sh` | this package's version, version compare, the cached latest-release check and notice |
 | `lib/tracker.sh` | tracker choice, ticket id parsing, tag extraction and matching |
 | `lib/trackers/*.sh` | one adapter per tracker (`clickup`, `custom`), sourced by `gsd-tracker` |

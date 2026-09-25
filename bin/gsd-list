@@ -69,6 +69,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# a newer release? (one stderr line, terminal only — see lib/version.sh)
+SELF=$0
+while [ -L "$SELF" ]; do t=$(readlink "$SELF"); case "$t" in /*) SELF=$t ;; *) SELF="$(dirname "$SELF")/$t" ;; esac; done
+GSD_PKG=$(cd "$(dirname "$SELF")/.." && pwd)
+if [ -f "$GSD_PKG/lib/version.sh" ]; then
+  # shellcheck source=../lib/version.sh
+  . "$GSD_PKG/lib/version.sh"; gsd_update_notice
+fi
+
 # ── locate the main checkout (same detection as gsd-start) ───────────────────
 if [ -n "$REPO" ]; then
   MAIN="$(cd "$REPO" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)" \
