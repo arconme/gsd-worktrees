@@ -77,14 +77,14 @@ GSD_BIN_DIR="$WORK/isolated-bin" GSD_COPY_DIR="$WORK/isolated-runtime" \
 [ ! -L "$WORK/isolated-skills/gsd-flow" ]
 rm -rf "$FIXTURE"
 "$WORK/isolated-bin/gsd-sync" --check > "$WORK/sync-output"
-rg -q 'standalone copy' "$WORK/sync-output"
+grep -q 'standalone copy' "$WORK/sync-output"
 "$WORK/isolated-bin/gsd-planning-repair" --help >/dev/null
 
 if GSD_BIN_DIR="$PKG/bin" GSD_COPY_DIR="$WORK/unsafe" \
   GSD_CLAUDE_SKILL_DIR="$WORK/unused" "$PKG/install.sh" --copy > "$WORK/unsafe-output" 2>&1; then
   echo 'overlapping source destination was accepted' >&2; exit 1
 fi
-rg -q 'unsafe --copy destination' "$WORK/unsafe-output"
+grep -q 'unsafe --copy destination' "$WORK/unsafe-output"
 mkdir -p "$WORK/other-runtime"
 printf 'keep\n' > "$WORK/other-runtime/marker"
 ln -s "$WORK/other-runtime" "$WORK/runtime-link"
