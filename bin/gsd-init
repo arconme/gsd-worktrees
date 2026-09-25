@@ -229,7 +229,7 @@ NEXT=$(gsd_provider_render "$DEST" "${GSD_LAUNCH_ARGV[@]}")
 # The adapter builds an argv array; no shell template expansion is used.
 if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
   echo ""
-  echo "▶ opening $GSD_PROVIDER_RESOLVED session in $DEST…"
+  echo "▶ opening $GSD_PROVIDER_RESOLVED session in ${DEST}…"
   cd "$DEST"
   exec "${GSD_LAUNCH_ARGV[@]}"
 else

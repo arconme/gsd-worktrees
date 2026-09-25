@@ -559,7 +559,7 @@ gsd_provider_argv "$GSD_PROVIDER_RESOLVED" "$GSD_AGENT_COMMAND_RESOLVED" "$PROMP
 NEXT=$(gsd_provider_render "$DEST" "${GSD_LAUNCH_ARGV[@]}")
 if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
   echo ""
-  echo "▶ opening $GSD_PROVIDER_RESOLVED session in $DEST…"
+  echo "▶ opening $GSD_PROVIDER_RESOLVED session in ${DEST}…"
   cd "$DEST"
   gsd_release_lock   # exec replaces the process — the EXIT trap would never fire
   exec "${GSD_LAUNCH_ARGV[@]}"

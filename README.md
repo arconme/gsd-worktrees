@@ -348,6 +348,8 @@ tests/test-install-copy.sh
 bash tests/test-review-fixes.sh
 tests/test-list.sh
 tests/test-review-round2.sh
+tests/test-commands.sh
+tests/test-e2e.sh        # whole journey in a fake project; needs gsd-sdk (skips without it)
 ```
 
 The suites cover the two real planning corruptions from `medyour-platform`

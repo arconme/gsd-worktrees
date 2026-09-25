@@ -54,3 +54,7 @@ jobs:
         run: tests/test-list.sh
       - name: full-review regression suite (2026-09-25)
         run: tests/test-review-round2.sh
+      - name: command paths suite
+        run: tests/test-commands.sh
+      - name: end-to-end suite (skips without gsd-sdk)
+        run: tests/test-e2e.sh

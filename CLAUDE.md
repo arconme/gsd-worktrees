@@ -31,6 +31,10 @@ tests/test-install-copy.sh            # install.sh --copy runtime
 bash tests/test-review-fixes.sh       # regressions (finish push race, no-jq hooks, …)
 tests/test-list.sh                    # gsd-list PLANS/STAGE/WORKTREE derivation + layout
 tests/test-review-round2.sh           # regressions from the 2026-09-25 review (docs/fix-plan.md)
+tests/test-commands.sh                # derive-port, start refusals/insert/-p/--flow, conflict abort, stale lock, init docs detection, finish --pr, bash-3.2 lint
+tests/test-e2e.sh                     # END-TO-END: fake project + real gsd-sdk (skips without it), ~15s.
+                                      # Run it after ANY change to start/finish/guard/flow/planning code —
+                                      # it caught 4 bugs the unit suites missed (fix-plan R15–R18).
 
 # Lint / syntax (CI)
 for f in bin/* lib/*.sh install.sh shims/scripts/*.sh shims/scripts/hooks/*.sh tests/*.sh; do bash -n "$f"; done
@@ -68,4 +72,5 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 - Planning reconcile: keyed lines keep the **first** occurrence's position and the **best** occurrence's content (`[x]` beats `[ ]`, longer wins among equals). Single-value lines keep the last copy (the incoming branch). STATE.md's `## Session Continuity` must stay byte-identical — a test asserts it.
 - `gsd-doctor` is read-only by design (no `--fix`). Finding codes: `W0xx` are shared with `/gsd-health`, `T0xx` are toolkit-only (e.g. `T050` bad providers list, `T059` bad model).
 - Legacy configs keep working: a singular `provider` key, `agent_command`, `--agent`, and `GSD_AGENT` are read-only compatibility inputs. With no provider configured, the default is Claude.
+- macOS runs bash 3.2. There, `"$VAR…"` (a variable touching a non-ASCII character) is read as an unknown variable, and with the lock's EXIT trap an "unbound variable" crash **exits 0**. Always brace: `${VAR}…`. `tests/test-commands.sh` lints for it. Phase numbers may be zero-padded (`08`, `02.1` from gsd-sdk): never feed them to `$(( ))` without `10#`, and compare them numerically, not as strings.
 - Scripts must work on both BSD (macOS) and GNU userlands. Shellcheck exceptions go in `.shellcheckrc` with a reason.

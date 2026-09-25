@@ -52,13 +52,31 @@ claim race (script kept outside the repo; it needs the real `gsd-sdk`).
 | R17 | **A plain `git pull` blocks the next claim.** Claims left STATE.md's counters stale (`total_phases: 1` with 3 phases); the `post-merge` hook recomputes them on the next pull and leaves STATE.md modified, so `gsd-start` refuses ("uncommitted .planning changes"). Seen in e2e whenever the other clone won the race | `bin/gsd-start` | recompute counters (`gsd-planning-repair`, no commit) inside the claim commit; the refusal now names `gsd-planning-repair --commit` | done — 2 checks in round 2 fail on the old code |
 | R18 | **Regression from R03.** Normalizing `02.1` → `2.1` broke `gsd-sdk`'s zero-padded decimal inserts: branch `phase-02.1-*` no longer matched, so every `gsd-start --insert` ended BLOCKED | `bin/gsd-worktree-guard` | compare branch and requested phase numerically; take the artifact prefix from the phase dir that exists (`02.1-` or `7.1-`) | done — 5 guard checks with a padded decimal fixture |
 
+## Wave 5 — found while adding tests for untested command paths
+
+`tests/test-commands.sh` (new, CI-safe with stubbed `gsd-sdk`/`gh`) covers what
+no suite ran before: `gsd-derive-port`, `gsd-start` refusals / `--insert` / `-p` /
+`--flow`, a conflicting finish, stale-lock reclaim, `gsd-init` docs detection,
+`gsd-finish --pr`. The fake-project run is now `tests/test-e2e.sh`.
+`gsd-clickup` is left out on purpose (to be redesigned).
+
+| ID | Finding | Where | Fix | Status |
+|---|---|---|---|---|
+| R19 | `gsd-derive-port` crashes on a padded insert branch (`phase-08.1-*`): `$((base + 08))` is invalid octal → the app's `dev` script gets no port | `bin/gsd-derive-port` | `10#` | done — fails on old code |
+| R20 | **`gsd-finish --pr` always crashed on macOS**: bash 3.2 in a UTF-8 locale reads `"$BASE…"` as variable `BASE` + a byte of `…` → "unbound variable". And because the lock's EXIT trap is installed, bash 3.2 then **exits 0** — the crash looked like success, and no PR was opened. Same pattern in the launch messages of `gsd-start` and `gsd-init` | `bin/gsd-finish:193`, `bin/gsd-start`, `bin/gsd-init` | brace the variables (`${BASE}…`); a lint check in `test-commands.sh` fails on any `$VAR` touching a non-ASCII character; rule added to CLAUDE.md | done — `--pr` checks and the lint fail on old code |
+
+Known limit (documented, not fixable in the scripts): in bash 3.2 any "unbound
+variable" error under an EXIT trap exits 0 — the trap sees `$?` = 0. The lint
+removes the one known trigger; CI's macOS runner exercises bash 3.2.
+
 ## Backlog — not part of this pass
 
 | ID | Item | Why not now |
 |---|---|---|
 | B01 | Native guard hook for Codex | needs a verified Codex hook API; the command-level guard already covers Codex |
 | B02 | Lock against two agents editing one worktree at once | design decision (docs define handoff as sequential) |
-| B03 | Live handoff test with logged-in Claude → Codex / Gemini sessions | needs the user's authenticated CLIs |
+| B03 | Live handoff test with logged-in Claude → Codex / Gemini sessions | done by the user (2026-09-25) |
+| B04 | `gsd-clickup`: redesign to be tracker-generic, then test | user wants to discuss the design first |
 
 ## Verification log
 

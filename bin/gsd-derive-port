@@ -18,4 +18,5 @@ case "$base" in ''|*[!0-9]*) echo "gsd-derive-port: base must be an integer: $ba
 
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 n="$(printf '%s' "$branch" | sed -n 's/^phase-\([0-9]\{1,\}\).*/\1/p')"
-echo "$((base + ${n:-0}))"
+# 10#: gsd-sdk pads inserted phases (phase-08.1-*); a bare 08 is invalid octal.
+echo "$((base + 10#${n:-0}))"

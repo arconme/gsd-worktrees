@@ -190,7 +190,7 @@ if [ "$PR" = 1 ]; then
     || die "push of '$HEAD_BR' failed — if origin has newer commits, run 'git pull --rebase origin $HEAD_BR' where that branch is checked out, then rerun gsd-finish --pr"
   N_RE=$(printf '%s' "${PHASE_N:-x}" | sed 's/\./\\./g')
   TITLE=$(grep -E "^### Phase $N_RE:" "$MAIN/.planning/ROADMAP.md" 2>/dev/null | head -1 | sed -E 's/^### //' || true)
-  echo "▶ opening PR $HEAD_BR → $BASE…"
+  echo "▶ opening PR ${HEAD_BR} → ${BASE}…"
   gh pr create --repo "$(git -C "$MAIN" remote get-url origin)" --base "$BASE" --head "$HEAD_BR" \
      --title "${TITLE:-$HEAD_BR}" --fill-verbose ${DRAFT:+--draft} 2>/dev/null \
   || gh pr create --base "$BASE" --head "$HEAD_BR" --title "${TITLE:-$HEAD_BR}" --body "" ${DRAFT:+--draft} \
