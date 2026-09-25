@@ -77,6 +77,12 @@ if [ -z "$REPO" ]; then
     || die "not inside a git repository — pass --repo <path>"
 fi
 [ -d "$REPO/.planning" ] || die "$REPO has no .planning/ directory"
+# No roadmap yet (fresh project, or archived): nothing to reconcile, and not
+# merge damage — so not a --check failure either.
+if [ ! -f "$REPO/.planning/ROADMAP.md" ]; then
+  echo "• no .planning/ROADMAP.md — nothing to check"
+  exit 0
+fi
 
 PY=$(gsd_python) \
   || die "no python 3.7+ found (tried python3, then python) — gsd-planning-repair needs it to parse the planning files"

@@ -1,89 +1,64 @@
-# Fresh-review fix tracker
+# Fix plan — full-code review, 2026-09-25
 
-Scope: address the fresh review on the agent-agnostic feature worktree. No
-consumer repositories, planning state, commits, pushes, or merges are part of
-this implementation task. Git operations in isolated test fixtures are allowed.
+Source: a fresh full-code review of `main` at `b88ea04` (four area reviews:
+start/setup, finish/planning, guard/flow/providers, doctor/install/docs).
+Every finding below was re-checked against the code before it was listed.
+The previous tracker (agent-agnostic refactor, F01–F14) is archived in
+[`archive/2026-09-agent-agnostic-fix-plan.md`](archive/2026-09-agent-agnostic-fix-plan.md).
 
-Status: `pending`, `in progress`, `verified` (implementation and regression tests).
+Status: `todo` · `in progress` · `done` (fixed + regression test) · `won't fix` (reason given) · `backlog`
 
-| ID | Finding / acceptance criterion | Status |
+## Wave 1 — can let unvalidated code through (high)
+
+| ID | Finding | Where | Fix | Status |
+|---|---|---|---|---|
+| R01 | `install =` / `test =` values run word-split, not parsed: `npm ci && npm run build` runs `npm` with `&& npm run build` as arguments → wrong command, possible false `ok` / false test pass | `bin/gsd-wt-new:144,149`, `bin/gsd-wt-finish:168` | run through `bash -c "$CMD"` | done |
+| R02 | A pre-merge script that exists but lost its executable bit is skipped silently; with `test = none` finish merges with no validation | `bin/gsd-wt-finish:157` | refuse the finish and say `chmod +x` | done |
+| R03 | Guard pads the phase with `printf '%02d' "$N"`; `08`/`09` are invalid octal → `00` → false strict-flow block | `bin/gsd-worktree-guard:183` | `printf '%02d' "$((10#$N))"`, as `gsd-flow-next` does | done — also fixed: `/gsd-plan-phase 08` in the `phase-8-*` worktree was blocked as "wrong phase" |
+
+## Wave 2 — wrong result, visible (medium)
+
+| ID | Finding | Where | Fix | Status |
+|---|---|---|---|---|
+| R04 | Deprecated `GSD_AGENT` (unknown name) overwrites an explicit `--agent-command` | `lib/provider.sh:164` | feed the legacy value into the executable chain below `--agent-command` / `GSD_AGENT_COMMAND` | done |
+| R05 | `gsd-wt-new` takes no lock; two concurrent runs for one phase → raw `cannot lock ref` instead of reuse | `bin/gsd-wt-new` | `gsd_acquire_lock` (re-entrant under `gsd-start`) | done — `gsd-start` passes `GSD_LOCK_HELD=1` so it does not wait on itself |
+| R06 | `gsd-planning-repair --check` exits 2 when `.planning/ROADMAP.md` is missing; docs promise failure only on merge damage | `bin/gsd-planning-repair`, `lib/gsd_planning.py:658` | no roadmap → nothing to check, exit 0 with a note | done |
+| R07 | `gsd-doctor --json` looks identical for a healthy GSD repo and a non-GSD repo; `--help` omits most JSON keys | `bin/gsd-doctor:21,464` | add `"gsd_repo"`; document the real keys | done |
+| R08 | `gsd-list` (≈300 lines, Perl table + stage derivation) has no test | `tests/` | new `tests/test-list.sh`, wired into CI | done (18 checks) |
+
+## Wave 3 — low / hygiene
+
+| ID | Finding | Where | Fix | Status |
+|---|---|---|---|---|
+| R09 | npm test detection greps the whole `package.json` for `"test"` (a dependency named `test` matches) | `lib/common.sh:234` | match a `"test"` key inside `"scripts"` only | done |
+| R10 | A leftover `.husky/` dir counts as "post-merge hook installed" even when git does not use husky's hooks | `lib/common.sh:82` | doctor note when `core.hooksPath` does not point into `.husky/` | done (verified by hand; doctor notes are not in `--json`) |
+| R11 | `gsd-finish --pr` push has no retry | `bin/gsd-finish:187` | clearer failure message only — see status | won't fix the retry — a rejected PR push needs the user to integrate origin's commits; the error now says how |
+| R12 | `gsd-start -p N "text"` silently drops the text | `bin/gsd-start` | warn that the description is ignored when attaching | done |
+| R13 | Gemini shell hook allows a renamed/aliased gsd command (`pp 5`) | `lib/gsd_hook_payload.py` | document; the mandatory command guard still applies | done (`docs/gemini-hooks.md`) |
+| R14 | `lib/__pycache__/*.pyc` committed, no `.gitignore`; old finished tracker in `docs/` | repo | remove `.pyc`, add `.gitignore`; tracker archived | done |
+
+## Backlog — not part of this pass
+
+| ID | Item | Why not now |
 |---|---|---|
-| F01 | Finish fails safely on sync failure and validates combined changes before push, including retries | verified |
-| F02 | Claude hook parses nested arguments without jq; wrong-phase requests fail | verified |
-| F03 | Doctor reports actual command guard and structurally valid hook state | verified |
-| F04 | Bootstrap preserves user additions to canonical instructions | verified |
-| F05 | Sync preserves installed provider selection; check is read-only | verified |
-| F06 | Flow handles artifact paths containing spaces | verified |
-| F07 | Finish rejects non-phase and PR-helper branch targets | verified |
-| F08 | Planning post-merge hook is executable and idempotently repaired | verified |
-| F09 | Codex/custom shared entrypoint is unambiguous; doctor validates complete blocks | verified |
-| F10 | Installer rejects symlink aliases, handles stale copy commands safely, and preflights Python | verified |
-| F11 | Shared provider metadata and skill paths used consistently | verified |
-| F12 | Review provider validation and honest capability limitations | verified |
-| F13 | Workflow/skill/HTML order, human gates, finish rule, configuration and test docs agree | verified |
-| F14 | Full tests, syntax, ShellCheck, isolated doctor checks and final diff review | verified locally; hosted CI pending |
-
-Execution groups: core safety (main agent), integration/configuration,
-installation/sync, documentation. Independent groups run concurrently; main
-agent reviews their changes and runs the complete suite before closing items.
-Delegated workers stopped on a usage limit; the main agent completed and reviewed
-the remaining work locally. The skill-creator guidance was used to validate both
-skill entrypoints and remove conflicting approval/invocation instructions.
+| B01 | Native guard hook for Codex | needs a verified Codex hook API; the command-level guard already covers Codex |
+| B02 | Lock against two agents editing one worktree at once | design decision (docs define handoff as sequential) |
+| B03 | Live handoff test with logged-in Claude → Codex / Gemini sessions | needs the user's authenticated CLIs |
 
 ## Verification log
 
-- Starting point: prior full suite 382 assertions plus copy-install suite;
-  fresh review reran flow 34, guard 33, Gemini hook 17. These passing tests did
-  not cover the newly identified cases.
-- Regression suite `test-review-fixes.sh`: 28 checks, including an actual local
-  bare-remote push race, combined-tree test fallback, no-jq Claude payloads,
-  canonical migration/user additions, custom/Codex shared instructions and
-  doctor JSON corruption checks. No authenticated provider sessions are used.
-- Copy-install suite additionally covers preserved sync selection/destinations,
-  copy upgrade retirement/backups, symlink slash aliases, and Python preflight.
-- Final local run (2026-09-25): flow **34**, planning reconciliation **137**,
-  worktree guard **33**, provider adapters **161**, Gemini hooks **17**,
-  fresh-review regressions **28**: **410 assertions passed, zero failures**.
-  The standalone copy-install suite also passed (including sync/no-fetch and
-  installation safety regressions; that suite does not count assertions).
-- All shell files passed `bash -n`; whole-tree ShellCheck, Python AST parsing,
-  both skill validators, and `git diff --check` passed. Provider suites exercised
-  doctor JSON in isolated Claude/Codex/Gemini/multi-provider repositories.
-- Rechecked provider references: adapters, compatibility paths, fixtures and
-  documentation only; classification recorded in `provider-audit.md`. Rendered
-  Claude/Codex/Gemini flow launch commands with a space-containing working path.
-- Main checkout remains clean. The feature worktree contains only intended
-  refactor/fix/test/documentation changes; no planning state or consumer repository
-  was changed. No toolkit commit, push, or merge was performed.
-
-## Operational changes and limits
-
-### Post-fix handoff smoke test (2026-09-25)
-
-Toolkit-level scenario passed in a disposable repository: initialized
-`providers = claude,codex` with strict flow, attached phase 7 with Claude's
-printed discuss command, recorded an explicitly simulated discussion fixture,
-then attached the same phase with Codex's printed flow command. The worktree,
-branch HEAD, discussion checksum and repository provider configuration were
-unchanged by handoff. The engine moved from discuss to plan; missing-discussion,
-wrong-phase, base-checkout and missing-review execution guards all blocked.
-
-**Live-agent validation remains pending.** Both installed CLIs report logged
-out under the temporary configuration directories. No Claude discussion or
-Codex planning model session ran; the discussion artifact was test data, not
-AI output. No credentials were copied or authentication settings changed.
-The fixture and logs are under `/tmp/gsd-handoff.DNCvjp/second` (ephemeral).
-Temporary Codex state isolation follows the [official configuration documentation](https://learn.chatgpt.com/docs/config-file/config-advanced#config-and-state-locations).
-Completing the live test requires user authentication in the isolated profiles.
-
-- Finish now validates combined code in the base checkout too. Its dependencies
-  must be installed there. Failures retain local merge commits and the phase
-  worktree; they do not push or automatically roll back user work.
-- External `gsd-review` supplies automatic reviewer delegation. This toolkit
-  validates/selects its known flags and prints a manual handoff when unsupported;
-  it does not implement a universal subprocess runner.
-- Copy installs without an older ownership inventory cannot safely auto-retire
-  historical obsolete files. New inventories cover command retirement; changed
-  files are backed up, and unrelated files are never pruned.
-- Linux/macOS CI is configured, but hosted runs require the normal later push/PR.
-  This task does not authorize a commit, push, or merge.
+- Every fix except R10, R11, R13 and R14 has a regression check in
+  `tests/test-review-round2.sh` (R01, R02, R04–R07, R09, R12) or
+  `tests/test-worktree-guard.sh` (R03). Against a copy of the pre-fix code
+  (`b88ea04`), all 13 fix checks in round 2 and the 2 new guard checks that
+  target the bug **fail**; on the fixed code they pass.
+- R08: `tests/test-list.sh` passes on old and new code alike. That is expected,
+  because it adds coverage to code that worked, not a fix.
+- R10 checked by hand: note shown with `.husky/` and no `core.hooksPath`; gone once
+  `core.hooksPath = .husky/_`.
+- Full local run (2026-09-25, macOS): planning reconcile 137, worktree guard 36,
+  Gemini hook 17, flow-next 34, providers 161, review-fixes 28, gsd-list 18,
+  review round 2 19 — **450 passed, 0 failed**; copy-install suite passed.
+  `bash -n` on every script, Python AST parse, whole-tree ShellCheck and
+  `git diff --check` clean. Both new suites wired into CI and README.
+- Hosted CI (Linux + macOS): pending push.

@@ -50,3 +50,7 @@ jobs:
         run: tests/test-install-copy.sh
       - name: fresh-review regression suite
         run: bash tests/test-review-fixes.sh
+      - name: gsd-list suite
+        run: tests/test-list.sh
+      - name: full-review regression suite (2026-09-25)
+        run: tests/test-review-round2.sh

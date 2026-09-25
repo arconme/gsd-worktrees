@@ -217,6 +217,11 @@ gsd_acquire_lock() {  # $1=MAIN checkout — serialize gsd commands on this chec
   trap gsd_release_lock EXIT INT TERM
 }
 
+gsd__npm_has_test() {  # $1=package.json — true when "scripts" defines "test"
+  # Scoped to the scripts object: a dependency named "test" must not count.
+  perl -0777 -ne 'exit((/"scripts"\s*:\s*\{[^}]*"test"\s*:/s) ? 0 : 1)' "$1" 2>/dev/null
+}
+
 gsd_test_cmd() {  # $1=repo root → pre-merge test command ('' = skip)
   # `test =` in .gsd.conf wins ('none' disables); otherwise the same detection
   # table gsd-core uses for workflow.test_command.
@@ -231,7 +236,7 @@ gsd_test_cmd() {  # $1=repo root → pre-merge test command ('' = skip)
   elif [ -f "$1/Justfile" ] || [ -f "$1/justfile" ];                then echo "just test"
   elif [ -f "$1/Cargo.toml" ];                                       then echo "cargo test"
   elif [ -f "$1/go.mod" ];                                           then echo "go test ./..."
-  elif [ -f "$1/package.json" ] && grep -q '"test"' "$1/package.json"; then echo "npm test"
+  elif [ -f "$1/package.json" ] && gsd__npm_has_test "$1/package.json"; then echo "npm test"
   elif [ -f "$1/pyproject.toml" ] || [ -f "$1/pytest.ini" ];         then echo "python -m pytest"
   fi
 }

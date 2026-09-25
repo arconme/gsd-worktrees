@@ -113,6 +113,9 @@ cmd=${cmd#/}
 case "$cmd" in gsd-*) ;; *) exit 0 ;; esac   # not a GSD command → allow
 
 N=$(printf '%s' "$args" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1 || true)
+# Phase dirs are zero-padded (08-slug), so users type "08"; branches are not
+# (phase-8-slug). Compare as numbers: drop leading zeros from the integer part.
+case "$N" in 0?*) int=${N%%.*}; N="$((10#$int))${N#"$int"}" ;; esac
 
 dir="${explicit_repo:-${CLAUDE_PROJECT_DIR:-${GEMINI_PROJECT_DIR:-$PWD}}}"
 dir=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$dir")
@@ -180,7 +183,7 @@ fi
 # Policy is read from the MAIN checkout's .gsd.conf, not the worktree's copy, so
 # turning it on takes effect for worktrees branched before the key existed.
 [ "$(gsd_conf_get "$(gsd_main "$dir" 2>/dev/null || echo "$dir")" flow)" = "strict" ] || exit 0
-case "$N" in *.*) P="$N" ;; *) P=$(printf '%02d' "$N") ;; esac
+case "$N" in *.*) P="$N" ;; *) P=$(printf '%02d' "$((10#$N))") ;; esac
 pdir=""; for d in "$dir/.planning/phases/$P"-*; do [ -d "$d" ] && { pdir="$d"; break; }; done
 need() {  # $1=artifact suffix  $2=step that produces it  $3=command that runs it
   [ -n "$pdir" ] && [ -f "$pdir/$P-$1" ] && return 0

@@ -18,7 +18,11 @@
 # Options:
 #   --repo <path>  repo to inspect (default: the checkout containing cwd)
 #   --quiet        print findings only, not the checks that passed
-#   --json         machine output: {"repo","findings":[{code,message,fix}],"count"}
+#   --json         machine output, one object: repo, gsd_repo (false = not a
+#                  GSD repo, setup checks skipped), session_model, configured
+#                  (provider list), provider {name, command, available,
+#                  instruction_file, instruction_integrated, skill_installed,
+#                  command_guard, native_hook}, count, findings [{code,message,fix}]
 #                  Codes shared with gsd-core's /gsd-health where they mean the
 #                  same thing (W017 orphan branch, W027 stale worktree record);
 #                  toolkit-only findings use T0xx.
@@ -284,6 +288,14 @@ case " $GSD_PLANNING_MISSING " in
   *" hook "*) fail "no post-merge hook — a plain 'git pull' is unguarded" "gsd-init" "T014" ;;
   *) pass "post-merge hook reconciles .planning after a plain git pull" ;;
 esac
+# A .husky/ dir alone counts as "husky owns the hook", but git only runs it
+# when core.hooksPath points there (husky sets that on npm install).
+if [ -d "$MAIN/.husky" ]; then
+  case "$(git -C "$MAIN" config --get core.hooksPath 2>/dev/null)" in
+    *.husky*) ;;
+    *) note ".husky/ exists but core.hooksPath does not point into it — git will not run .husky/post-merge until husky is installed (npm install)" ;;
+  esac
+fi
 
 fi  # IS_GSD_REPO
 
@@ -461,6 +473,9 @@ if [ "$JSON" = 1 ]; then
   command_guard=false; gsd_command_guards_active "$GSD_PKG" && command_guard=true
   configured_json=""; doctor_configured=$(gsd_conf_get "$MAIN" providers); doctor_configured=${doctor_configured:-$DOCTOR_PROVIDER}; oldifs=$IFS; IFS=,; for p in $doctor_configured; do configured_json="${configured_json:+$configured_json,}\"$(jstr "$p")\""; done; IFS=$oldifs
   printf '{"session_model":"%s",' "$(jstr "$DOCTOR_MODEL")"
+  # false = not a GSD repo: its setup/planning checks were skipped, so a zero
+  # count means "nothing to check", not "healthy".
+  printf '"gsd_repo":%s,' "$([ "$IS_GSD_REPO" = 1 ] && echo true || echo false)"
   printf '"repo":"%s","configured":[%s],"provider":{"name":"%s","command":"%s","available":%s,"instruction_file":"%s","instruction_integrated":%s,"skill_installed":%s,"command_guard":%s,"native_hook":"%s"},"count":%d,"findings":[%s]}\n' "$(jstr "$MAIN")" "$configured_json" "$(jstr "$DOCTOR_PROVIDER")" "$(jstr "$DOCTOR_COMMAND")" "$PROVIDER_AVAILABLE" "$(jstr "$instruction_file")" "$instruction_integrated" "$skill_installed" "$command_guard" "$native_hook" "$FINDINGS" "$JSON_ITEMS"
   [ "$FINDINGS" -eq 0 ]; exit $?
 fi

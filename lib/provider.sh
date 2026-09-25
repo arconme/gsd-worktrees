@@ -146,7 +146,7 @@ gsd_provider_validate() { # provider, executable override
 }
 
 gsd_provider_resolve() { # repo, cli provider, cli command
-  local repo=$1 cli_p=${2:-} cli_c=${3:-} conf_p conf_default conf_c provider_conf_c provider_env_c="" legacy configured
+  local repo=$1 cli_p=${2:-} cli_c=${3:-} conf_p conf_default conf_c provider_conf_c provider_env_c="" legacy legacy_c="" configured
   # The first entry in ordered `providers` is canonical. `provider` is read
   # only for repositories created before the provider-set configuration.
   configured=$(gsd_conf_get "$repo" providers)
@@ -161,7 +161,9 @@ gsd_provider_resolve() { # repo, cli provider, cli command
   if [ -z "$GSD_PROVIDER_RESOLVED" ] && [ -n "${GSD_AGENT:-}" ]; then
     legacy=$GSD_AGENT
     if gsd_provider_known "$legacy"; then GSD_PROVIDER_RESOLVED=$legacy
-    else GSD_PROVIDER_RESOLVED=custom; cli_c=$legacy; fi
+    # An unknown legacy name is a custom executable. It is the LOWEST-priority
+    # executable source: --agent-command and GSD_AGENT_COMMAND still win.
+    else GSD_PROVIDER_RESOLVED=custom; legacy_c=$legacy; fi
   fi
   # Compatibility default for repositories created before providers existed.
   GSD_PROVIDER_RESOLVED=${GSD_PROVIDER_RESOLVED:-claude}
@@ -175,7 +177,7 @@ gsd_provider_resolve() { # repo, cli provider, cli command
   provider_conf_c=$(gsd_conf_get "$repo" "${GSD_PROVIDER_RESOLVED}_command")
   conf_c=""
   [ "$GSD_PROVIDER_RESOLVED" != "$conf_default" ] || conf_c=$(gsd_conf_get "$repo" agent_command)
-  GSD_AGENT_COMMAND_RESOLVED=${cli_c:-${GSD_AGENT_COMMAND:-${provider_env_c:-${provider_conf_c:-$conf_c}}}}
+  GSD_AGENT_COMMAND_RESOLVED=${cli_c:-${GSD_AGENT_COMMAND:-${provider_env_c:-${provider_conf_c:-${conf_c:-$legacy_c}}}}}
   gsd_provider_validate "$GSD_PROVIDER_RESOLVED" "$GSD_AGENT_COMMAND_RESOLVED" || return
   if [ -z "$GSD_AGENT_COMMAND_RESOLVED" ]; then
     GSD_AGENT_COMMAND_RESOLVED=$(gsd_provider_default_command "$GSD_PROVIDER_RESOLVED") || return 64

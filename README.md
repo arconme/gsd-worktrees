@@ -346,6 +346,8 @@ tests/test-providers.sh
 bash tests/test-gemini-hook.sh
 tests/test-install-copy.sh
 bash tests/test-review-fixes.sh
+tests/test-list.sh
+tests/test-review-round2.sh
 ```
 
 The suites cover the two real planning corruptions from `medyour-platform`

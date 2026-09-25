@@ -184,7 +184,10 @@ if [ "$PR" = 1 ]; then
   HEAD_BR="$BR"
   git -C "$MAIN" show-ref --verify --quiet "refs/heads/$BR-pr" && HEAD_BR="$BR-pr"
   echo "▶ pushing '$HEAD_BR'…"
-  git -C "$MAIN" push -u origin "$HEAD_BR" --quiet || die "push failed"
+  # No retry loop here: a rejected push means origin has commits this branch
+  # lacks, and only the user can say how to integrate them.
+  git -C "$MAIN" push -u origin "$HEAD_BR" --quiet \
+    || die "push of '$HEAD_BR' failed — if origin has newer commits, run 'git pull --rebase origin $HEAD_BR' where that branch is checked out, then rerun gsd-finish --pr"
   N_RE=$(printf '%s' "${PHASE_N:-x}" | sed 's/\./\\./g')
   TITLE=$(grep -E "^### Phase $N_RE:" "$MAIN/.planning/ROADMAP.md" 2>/dev/null | head -1 | sed -E 's/^### //' || true)
   echo "▶ opening PR $HEAD_BR → $BASE…"

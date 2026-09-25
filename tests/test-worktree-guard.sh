@@ -82,6 +82,13 @@ allowed "fresh phase can still discuss" gsd-discuss-phase "8"
 GSD_SKIP_GUARD=1 allowed "GSD_SKIP_GUARD=1 bypasses"  gsd-plan-phase "8"
 GSD_SKIP_GUARD=0 blocked "GSD_SKIP_GUARD=0 does not bypass" gsd-plan-phase "8"
 
+section "flow = strict — zero-padded phase numbers (08/09 are not octal)"
+mkrepo strict phase-8-pad 08-pad; : > "$PDIR/08-CONTEXT.md"
+allowed "plan-phase 08 in phase-8 worktree passes"  gsd-plan-phase "08"
+allowed "plan-phase 8 finds the 08-* dir"           gsd-plan-phase "8"
+mkrepo strict phase-09-legacy 09-legacy; : > "$PDIR/09-CONTEXT.md"
+allowed "phase from a phase-09-* branch pads correctly" gsd-plan-phase ""
+
 section "flow = strict — policy comes from the MAIN checkout, not the worktree copy"
 mkrepo "" phase-7-thing 07-thing          # branch carries NO flow key
 git -C "$REPO" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1

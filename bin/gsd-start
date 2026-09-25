@@ -240,6 +240,9 @@ while [ $# -gt 0 ]; do
 done
 # --no-launch always wins, whatever order it appeared in.
 [ "$FORCE_NOLAUNCH" = 1 ] && LAUNCH=0
+if [ -n "$ATTACH" ] && [ -n "$DESC" ]; then
+  echo "⚠ ignoring \"$DESC\" — -p/--phase attaches to phase $ATTACH as titled in ROADMAP.md" >&2
+fi
 if [ -n "$ATTACH" ] && [ -n "$INSERT" ]; then
   die "--insert and -p/--phase are mutually exclusive (insert claims a NEW phase; -p attaches to an existing one)"
 fi
@@ -484,7 +487,7 @@ fi
 # the script re-detect it from HEAD (a commit landing in between would win).
 WT_ARGS=(--phase "$N")
 [ -n "$SLUG" ] && WT_ARGS+=("$SLUG")
-WT_OUT=$( cd "$MAIN" && GSD_WT_NEW_SUPPRESS_NEXT=1 "$GSD_PKG/bin/gsd-wt-new" ${WT_ARGS[@]+"${WT_ARGS[@]}"} )
+WT_OUT=$( cd "$MAIN" && GSD_LOCK_HELD=1 GSD_WT_NEW_SUPPRESS_NEXT=1 "$GSD_PKG/bin/gsd-wt-new" ${WT_ARGS[@]+"${WT_ARGS[@]}"} )
 printf '%s\n' "$WT_OUT"
 DEST=$(printf '%s\n' "$WT_OUT" | sed -n 's/^✅ worktree ready: \(.*\)   (phase.*/\1/p')
 if [ -z "$DEST" ] || [ ! -d "$DEST" ]; then

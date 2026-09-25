@@ -154,7 +154,13 @@ PREMERGE="${PREMERGE:-scripts/gsd-premerge-check.sh}"
 case "$PREMERGE" in /*) PREMERGE_PATH="$PREMERGE" ;; *) PREMERGE_PATH="$MAIN/$PREMERGE" ;; esac
 validate_finish() { # checkout whose code will be validated; before/after merge
 local validation_dir=$1 stage=$2
-if [ "$PREMERGE" != none ] && [ -x "$PREMERGE_PATH" ]; then
+if [ "$PREMERGE" != none ] && [ -e "$PREMERGE_PATH" ] && [ ! -x "$PREMERGE_PATH" ]; then
+  # Present but not runnable (executable bit lost in a copy or a checkout):
+  # falling through to tests — or to nothing under `test = none` — would merge
+  # code the repo meant to gate. Refuse instead.
+  echo "✗ $PREMERGE exists but is not executable — chmod +x it (or set premerge = none)." >&2
+  return 1
+elif [ "$PREMERGE" != none ] && [ -x "$PREMERGE_PATH" ]; then
   echo "▶ pre-merge check ($PREMERGE)…"
   if ! ( cd "$MAIN" && "$PREMERGE_PATH" "$BRANCH" "$BASE" ); then
     echo "✗ validation failed ($stage) — not pushing or removing the phase worktree." >&2
@@ -165,7 +171,7 @@ elif TEST_CMD=$(gsd_test_cmd "$MAIN") && [ -n "$TEST_CMD" ]; then
   # worktree (that is where the phase's code and node_modules are). `test =`
   # in .gsd.conf overrides the detection; 'none' skips.
   echo "▶ tests ($TEST_CMD, in $validation_dir; $stage)…"
-  if ! ( cd "$validation_dir" && $TEST_CMD ); then
+  if ! ( cd "$validation_dir" && bash -c "$TEST_CMD" ); then
     echo "✗ tests failed ($stage) — not pushing or removing the phase worktree. Any merge remains local." >&2
     echo "  (skip with 'test = none' in .gsd.conf, or provide $PREMERGE)" >&2
     return 1

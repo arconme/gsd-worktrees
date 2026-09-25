@@ -53,6 +53,9 @@ done
 
 MAIN=$(gsd_main .)
 [ -n "$MAIN" ] || { echo "error: not inside a git repository" >&2; exit 1; }
+# The existing-branch check below and `git worktree add` must not interleave
+# with another run for the same phase. Re-entrant: gsd-start already holds it.
+gsd_acquire_lock "$MAIN"
 ROADMAP="$MAIN/.planning/ROADMAP.md"
 [ -f "$ROADMAP" ] || { echo "error: $ROADMAP not found (is GSD initialized?)" >&2; exit 1; }
 BASE=$(gsd_base "$MAIN")
@@ -141,12 +144,12 @@ case "$INSTALL_MODE" in
   background)
     echo running > "$DEST/.gsd-install.status"
     ( cd "$DEST" \
-      && INSTALL_CMD="$INSTALL_CMD" nohup bash -c 'if $INSTALL_CMD >.gsd-install.log 2>&1; then echo ok >.gsd-install.status; else echo fail >.gsd-install.status; fi' </dev/null >/dev/null 2>&1 & )
+      && INSTALL_CMD="$INSTALL_CMD" nohup bash -c 'if bash -c "$INSTALL_CMD" >.gsd-install.log 2>&1; then echo ok >.gsd-install.status; else echo fail >.gsd-install.status; fi' </dev/null >/dev/null 2>&1 & )
     echo "▶ $INSTALL_CMD running in background → $DEST/.gsd-install.log (status: .gsd-install.status)" ;;
   foreground)
     echo "▶ installing dependencies ($INSTALL_CMD)…"
     echo running > "$DEST/.gsd-install.status"
-    if ( cd "$DEST" && $INSTALL_CMD ); then echo ok > "$DEST/.gsd-install.status"
+    if ( cd "$DEST" && bash -c "$INSTALL_CMD" ); then echo ok > "$DEST/.gsd-install.status"
     else echo fail > "$DEST/.gsd-install.status"; exit 1; fi ;;
   none)
     # Record the skip: without this the guard cannot tell "skipped" apart from

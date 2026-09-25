@@ -10,7 +10,7 @@ An extension to GSD, written as a bash toolkit (plus two Python modules and one 
 2. **Wraps repeated GSD steps in simple commands.** `gsd-start`, `gsd-list`, `gsd-finish`, `gsd-doctor`, and the others replace multi-step manual sequences (for example: claim phase → push → create worktree → open session).
 3. **Is agent-agnostic.** Claude Code, Codex, Gemini, and `custom` are adapters. Several providers can work in one project, and hand off one phase between them: `gsd-start -p <N> --provider <name>` reuses the phase's worktree and artifacts. Handoff is **sequential**. Concurrent writers in one worktree are not safe; run parallel providers on different phases. The cross-AI plan review uses a configurable `review_provider` (default `codex`).
 
-This repo is the **single source of truth**: target repos carry only `.gsd.conf`, the frozen shims, and generated instruction blocks. User docs: `README.md`, `docs/providers.md` (capability matrix + full `.gsd.conf` key reference), `docs/architecture.md`, `docs/migration.md`, `docs/gemini-hooks.md`, `docs/copy-install.md`, and `docs/command-order.html` (phase order).
+This repo is the **single source of truth**: target repos carry only `.gsd.conf`, the frozen shims, and generated instruction blocks. User docs: `README.md`, `docs/features.md` (full feature list), `docs/providers.md` (capability matrix + full `.gsd.conf` key reference), `docs/architecture.md`, `docs/migration.md`, `docs/gemini-hooks.md`, `docs/copy-install.md`, and `docs/command-order.html` (phase order).
 
 GSD itself (the `/gsd-*` planning skills, including `gsd-review`, and the `gsd-sdk` CLI) is upstream and **not** in this repo. `gsd-start` claims phases with `gsd-sdk query phase.add` / `phase.insert` — no LLM call. Other outside tools: `git`, Python 3.7+, `perl`, `gh` (for `gsd-finish --pr`), `jq` (optional; doctor hook checks), and the ClickUp API (token in `~/.config/gsd/clickup.env`).
 
@@ -29,6 +29,8 @@ tests/test-providers.sh               # provider adapters, bootstrap, doctor JSO
 bash tests/test-gemini-hook.sh        # Gemini BeforeTool payload adapter
 tests/test-install-copy.sh            # install.sh --copy runtime
 bash tests/test-review-fixes.sh       # regressions (finish push race, no-jq hooks, …)
+tests/test-list.sh                    # gsd-list PLANS/STAGE/WORKTREE derivation + layout
+tests/test-review-round2.sh           # regressions from the 2026-09-25 review (docs/fix-plan.md)
 
 # Lint / syntax (CI)
 for f in bin/* lib/*.sh install.sh shims/scripts/*.sh shims/scripts/hooks/*.sh tests/*.sh; do bash -n "$f"; done
