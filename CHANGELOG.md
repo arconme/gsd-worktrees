@@ -4,7 +4,10 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
-## 0.2.1
+## 0.2.2
+
+Same as 0.2.1, which was tagged but never released (a test needed a command on
+PATH that CI does not have):
 
 - `gsd-doctor` shows newer versions (gsd-worktrees and GSD itself) even with
   `--quiet`, and lists them under `updates` in `--json`. Still never a finding.

@@ -125,7 +125,8 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$(gsd_gsd_cache)" ] && break; sleep 0.5;
 GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2> "$WORK/err"
 has "a newer GSD on npm gets its own line" "GSD 1.2.0 is out (you have 1.0.0) — update: npm i -g get-shit-done-cc@latest" "$WORK/err"
 git init -qb main "$WORK/fresh"
-(cd "$WORK/fresh" && GSD_UPDATE_NOTICE=always "$BIN/gsd-init" --no-launch --no-commit) > /dev/null 2> "$WORK/err"
+# gsd-init needs gsd-bootstrap-repo on PATH (the installed one, as a user has it)
+(cd "$WORK/fresh" && PATH="$BIN:$PATH" GSD_UPDATE_NOTICE=always "$BIN/gsd-init" --no-launch --no-commit) > /dev/null 2> "$WORK/err"
 has "gsd-init tells about a newer gsd-worktrees" "gsd-worktrees 9.9.9 is out" "$WORK/err"
 has "…and a newer GSD"                  "GSD 1.2.0 is out" "$WORK/err"
 
