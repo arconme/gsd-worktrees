@@ -233,8 +233,8 @@ This downloads the latest GitHub release, checks its SHA256, and installs it to
 `~/.local/share/gsd-worktrees/releases/<version>/` with the commands linked in
 `~/.local/bin`. `--version X.Y.Z` installs a given release.
 
-**Updates:** `gsd-start`, `gsd-list` and `gsd-doctor` tell you when a newer
-release is out (at most one GitHub call a day; `GSD_NO_UPDATE_CHECK=1` turns it
+**Updates:** `gsd-start`, `gsd-list`, `gsd-init` and `gsd-doctor` tell you when
+a newer release (of this toolkit or of GSD itself) is out (at most one GitHub call a day; `GSD_NO_UPDATE_CHECK=1` turns it
 off). Then:
 
 ```sh

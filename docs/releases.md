@@ -32,13 +32,18 @@ and `GSD_UPDATE_REPO=owner/name` (a fork).
 
 ### Knowing about updates
 
-- `gsd-start` and `gsd-list` print one line on stderr when a newer release is
-  out — only when you run them in a terminal, so JSON, pipes and agent output
-  stay clean.
-- `gsd-doctor` always shows it (a note, not a finding).
-- The latest version is cached for a day in
-  `${XDG_CACHE_HOME:-~/.cache}/gsd-worktrees/latest-version`. Commands read
-  the cache and refresh it in the background, so they never wait on GitHub.
+Two versions are watched: gsd-worktrees (GitHub releases) and GSD itself
+(`get-shit-done-cc` on npm, compared with `gsd-sdk -v`).
+
+- `gsd-start`, `gsd-list` and `gsd-init` print one line on stderr per newer
+  version — only when you run them in a terminal, so JSON, pipes and agent
+  output stay clean.
+- `gsd-doctor` always shows them (`↑` lines, also with `--quiet`, and an
+  `updates` list in `--json`). They are not findings: the exit status is 0.
+- The latest versions are cached for a day in
+  `${XDG_CACHE_HOME:-~/.cache}/gsd-worktrees/` (`latest-version`,
+  `latest-gsd-version`). Commands read the cache and refresh it in the
+  background, so they never wait on the network.
 - `GSD_NO_UPDATE_CHECK=1` turns all of this off.
 
 ### Updating

@@ -1,11 +1,13 @@
 # shellcheck shell=bash
 # lib/version.sh — the toolkit's version, and the "a newer release is out" check.
 #
-# Releases are GitHub releases of $GSD_UPDATE_REPO (default below), tagged
-# v<X.Y.Z>. The latest version is cached for a day in
-# ${XDG_CACHE_HOME:-~/.cache}/gsd-worktrees/latest-version, so commands never
-# wait on the network: gsd_update_notice reads the cache and refreshes it in
-# the background. GSD_NO_UPDATE_CHECK=1 turns every check off.
+# Two things are checked:
+#   gsd-worktrees  GitHub releases of $GSD_UPDATE_REPO (default below), vX.Y.Z
+#   GSD itself     the get-shit-done-cc package on npm (gsd-sdk -v installed)
+# Each latest version is cached for a day in ${XDG_CACHE_HOME:-~/.cache}/
+# gsd-worktrees/ (latest-version, latest-gsd-version), so commands never wait
+# on the network: gsd_update_notice reads the caches and refreshes stale ones
+# in the background. GSD_NO_UPDATE_CHECK=1 turns every check off.
 # Sourced after lib/common.sh; needs GSD_PKG.
 
 GSD_UPDATE_REPO_DEFAULT=arconme/gsd-worktrees
@@ -52,20 +54,59 @@ gsd_latest_stale() {  # true when the cache is missing or older than a day
 
 gsd_latest_cached() { head -1 "$(gsd_update_cache)" 2>/dev/null | tr -d '[:space:]' || true; }
 
+# ── GSD itself (npm) ─────────────────────────────────────────────────────────
+gsd_gsd_cache() { printf '%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}/gsd-worktrees/latest-gsd-version"; }
+
+gsd_gsd_installed() {  # → installed gsd-sdk X.Y.Z ('' when not installed)
+  command -v gsd-sdk >/dev/null 2>&1 || return 0
+  gsd-sdk -v 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true
+}
+
+gsd_gsd_fetch() {  # → latest get-shit-done-cc on npm ('' when unreachable)
+  command -v npm >/dev/null 2>&1 || return 0
+  npm view get-shit-done-cc dist-tags.latest --fetch-retries=0 --fetch-timeout=5000 2>/dev/null \
+    | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true
+}
+
+gsd_gsd_refresh() {  # like gsd_latest_refresh, for npm
+  local f v; f=$(gsd_gsd_cache)
+  mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
+  v=$(gsd_gsd_fetch)
+  if [ -n "$v" ]; then printf '%s\n' "$v" > "$f.$$" && mv "$f.$$" "$f"
+  else touch "$f" 2>/dev/null || true; fi
+}
+
+gsd_gsd_stale() {
+  local f; f=$(gsd_gsd_cache)
+  [ ! -f "$f" ] || [ -z "$(find "$f" -mmin -1440 2>/dev/null)" ]
+}
+
+gsd_gsd_cached() { head -1 "$(gsd_gsd_cache)" 2>/dev/null | tr -d '[:space:]' || true; }
+
+GSD_GSD_UPDATE_CMD="npm i -g get-shit-done-cc@latest"
+
 gsd_update_how() {  # the command that updates THIS install
   if [ -e "$GSD_PKG/.git" ]; then echo gsd-sync; else echo gsd-update; fi
 }
 
-# One stderr line when a newer release is known. Only for a person at a
+# One stderr line per newer release known (this toolkit, GSD itself). Only for a person at a
 # terminal (stderr is a tty), so piped / JSON / agent output stays clean;
 # GSD_UPDATE_NOTICE=always forces it (tests). gsd-doctor always reports it.
 gsd_update_notice() {
   [ -z "${GSD_NO_UPDATE_CHECK:-}" ] || return 0
   [ -t 2 ] || [ "${GSD_UPDATE_NOTICE:-}" = always ] || return 0
   if gsd_latest_stale; then ( gsd_latest_refresh ) >/dev/null 2>&1 </dev/null & fi
+  if command -v gsd-sdk >/dev/null 2>&1 && gsd_gsd_stale; then ( gsd_gsd_refresh ) >/dev/null 2>&1 </dev/null & fi
   local new cur; new=$(gsd_latest_cached); cur=$(gsd_version)
   if [ -n "$new" ] && gsd_version_gt "$new" "$cur"; then
     printf '• gsd-worktrees %s is out (you have %s) — update: %s\n' "$new" "$cur" "$(gsd_update_how)" >&2
+  fi
+  new=$(gsd_gsd_cached)
+  if [ -n "$new" ]; then
+    cur=$(gsd_gsd_installed)
+    if [ -n "$cur" ] && gsd_version_gt "$new" "$cur"; then
+      printf '• GSD %s is out (you have %s) — update: %s\n' "$new" "$cur" "$GSD_GSD_UPDATE_CMD" >&2
+    fi
   fi
   return 0
 }

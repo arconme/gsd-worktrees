@@ -115,9 +115,32 @@ hasnt "GSD_NO_UPDATE_CHECK=1 → no notice" "is out" "$WORK/err"
 : > "$WORK/curl.log"
 GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2>&1; sleep 1
 is  "a fresh cache → no GitHub call"    "$(grep -c api.github.com "$WORK/curl.log")" 0
+# GSD itself (npm): stub gsd-sdk 1.0.0 installed, npm says 1.2.0
+printf '#!/usr/bin/env bash\necho "gsd-sdk v1.0.0"\n' > "$WORK/stub/gsd-sdk"
+printf '#!/usr/bin/env bash\necho 1.2.0\n' > "$WORK/stub/npm"
+chmod +x "$WORK/stub/gsd-sdk" "$WORK/stub/npm"
+rm -f "$(gsd_gsd_cache)"   # a real gsd-sdk on this machine may have filled it already
+GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2>&1
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$(gsd_gsd_cache)" ] && break; sleep 0.5; done
+GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2> "$WORK/err"
+has "a newer GSD on npm gets its own line" "GSD 1.2.0 is out (you have 1.0.0) — update: npm i -g get-shit-done-cc@latest" "$WORK/err"
+git init -qb main "$WORK/fresh"
+(cd "$WORK/fresh" && GSD_UPDATE_NOTICE=always "$BIN/gsd-init" --no-launch --no-commit) > /dev/null 2> "$WORK/err"
+has "gsd-init tells about a newer gsd-worktrees" "gsd-worktrees 9.9.9 is out" "$WORK/err"
+has "…and a newer GSD"                  "GSD 1.2.0 is out" "$WORK/err"
+
+section "gsd-doctor — updates"
 R="$WORK/proj"; mkdir -p "$R/.planning"; git -C "$R" init -qb main
 "$BIN/gsd-doctor" --repo "$R" > "$WORK/out" 2>&1
-has "gsd-doctor notes the newer release" "gsd-worktrees 9.9.7 installed, 9.9.9 released — update: gsd-update" "$WORK/out"
+has "gsd-doctor shows the newer release" "gsd-worktrees 9.9.7 installed, 9.9.9 available — update: gsd-update" "$WORK/out"
+"$BIN/gsd-doctor" --repo "$R" --quiet > "$WORK/out" 2>&1
+has "…even with --quiet (gsd-worktrees)" "gsd-worktrees 9.9.7 installed, 9.9.9 available" "$WORK/out"
+has "…even with --quiet (GSD)"          "GSD 1.0.0 installed, 1.2.0 available — update: npm i -g get-shit-done-cc@latest" "$WORK/out"
+"$BIN/gsd-doctor" --repo "$R" --json > "$WORK/out" 2>/dev/null
+if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); u={x["name"]:x["latest"] for x in d["updates"]}; sys.exit(0 if u=={"gsd-worktrees":"9.9.9","GSD":"1.2.0"} else 1)' "$WORK/out"; then
+  ok "--json lists both under updates (valid JSON)"; else bad "--json lists both under updates (valid JSON)" "$(head -c 300 "$WORK/out")"; fi
+GSD_NO_UPDATE_CHECK=1 "$BIN/gsd-doctor" --repo "$R" --quiet > "$WORK/out" 2>&1
+hasnt "GSD_NO_UPDATE_CHECK=1 → no update lines" "available — update" "$WORK/out"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

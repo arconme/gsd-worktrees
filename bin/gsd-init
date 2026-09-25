@@ -122,6 +122,8 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 . "$GSD_PKG/lib/common.sh"
 # shellcheck source=../lib/provider.sh
 . "$GSD_PKG/lib/provider.sh"
+# shellcheck source=../lib/version.sh
+. "$GSD_PKG/lib/version.sh"
 
 # Build bootstrap arguments only after validating the complete selection. This
 # prevents a typo or a launch provider outside the configured set from writing
@@ -153,6 +155,8 @@ if [ -n "$AGENT_COMMAND_CLI" ]; then
   else BOOT_ARGS+=(--agent-command "$AGENT_COMMAND_CLI")
   fi
 fi
+
+gsd_update_notice   # a newer gsd-worktrees / GSD? one stderr line each, terminal only
 
 # ── already initialized? (still repair/sync the workflow files below) ────────
 # Validate the prospective session model before bootstrap writes files.

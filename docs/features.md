@@ -120,7 +120,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | One-command upkeep: pull/push this repo, re-link, check the calling repo's shims; `--check` dry run | `gsd-sync` |
 | One-line install of a GitHub release, SHA256-checked, one folder per release (`--version`, `--agent`) | `get.sh` |
 | Update / go back: `gsd-update [--check \| --version X.Y.Z]`; keeps the previous release, prunes older ones | `gsd-update` |
-| "Newer release" notice in `gsd-start` / `gsd-list` (terminal only) and `gsd-doctor`; day-long cache, background refresh; `GSD_NO_UPDATE_CHECK=1` | `lib/version.sh` |
+| "Newer version" notice for gsd-worktrees and GSD (npm) in `gsd-start` / `gsd-list` / `gsd-init` (terminal only) and `gsd-doctor` (also `--quiet`, `updates` in `--json`); day-long cache, background refresh; `GSD_NO_UPDATE_CHECK=1` | `lib/version.sh`, `gsd-doctor` |
 | Reinstall replaces the toolkit's own links and skills in place (no `.bak` on PATH or in skill dirs) | `install.sh` |
 | Tag-driven releases: tests → tarball + `SHA256SUMS` → GitHub release; `tools/release.sh X.Y.Z --push` | `.github/workflows/release.yml`, `tools/release.sh` |
 

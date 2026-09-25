@@ -4,6 +4,13 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.2.1
+
+- `gsd-doctor` shows newer versions (gsd-worktrees and GSD itself) even with
+  `--quiet`, and lists them under `updates` in `--json`. Still never a finding.
+- `gsd-start`, `gsd-list` and now `gsd-init` also tell you about a newer GSD on
+  npm, not only a newer gsd-worktrees (terminal only, checked once a day).
+
 ## 0.2.0
 
 - **Install from GitHub releases.** One `curl … get.sh | bash` line; no git

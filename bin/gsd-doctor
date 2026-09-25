@@ -17,12 +17,14 @@
 #
 # Options:
 #   --repo <path>  repo to inspect (default: the checkout containing cwd)
-#   --quiet        print findings only, not the checks that passed
+#   --quiet        print findings and available updates only, not the checks that passed
 #   --json         machine output, one object: repo, gsd_repo (false = not a
 #                  GSD repo, setup checks skipped), session_model, configured
 #                  (provider list), provider {name, command, available,
 #                  instruction_file, instruction_integrated, skill_installed,
-#                  command_guard, native_hook}, count, findings [{code,message,fix}]
+#                  command_guard, native_hook}, count, findings [{code,message,fix}],
+#                  updates [{name,installed,latest,fix}] (newer gsd-worktrees /
+#                  GSD; shown with --quiet too, never a finding)
 #                  Codes shared with gsd-core's /gsd-health where they mean the
 #                  same thing (W017 orphan branch, W027 stale worktree record);
 #                  toolkit-only findings use T0xx.
@@ -82,6 +84,13 @@ FINDINGS=0
 FIXES=""        # the distinct commands to run, ONE PER LINE, in the order first needed
 pass() { [ "$QUIET" = 1 ] || printf '  \033[32m✔\033[0m %s\n' "$1"; }
 note() { [ "$QUIET" = 1 ] || printf '  • %s\n' "$1"; }
+# A newer version: shown even with --quiet, listed under "updates" in --json,
+# but not a finding (the exit status stays 0 — updating is the user's call).
+UPDATES_JSON=""
+update() {  # $1=name $2=installed $3=latest $4=command
+  [ "$JSON" = 1 ] || printf '  \033[33m↑\033[0m %s %s installed, %s available — update: %s\n' "$1" "$2" "$3" "$4"
+  UPDATES_JSON="${UPDATES_JSON:+$UPDATES_JSON,}{\"name\":\"$(jstr "$1")\",\"installed\":\"$(jstr "$2")\",\"latest\":\"$(jstr "$3")\",\"fix\":\"$(jstr "$4")\"}"
+}
 JSON_ITEMS=""
 jstr() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\033' ; }
 fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)  $3=code
@@ -151,7 +160,7 @@ if [ -z "${GSD_NO_UPDATE_CHECK:-}" ]; then
   gsd_latest_stale && gsd_latest_refresh
   tk_new=$(gsd_latest_cached); tk_cur=$(gsd_version)
   if [ -n "$tk_new" ] && gsd_version_gt "$tk_new" "$tk_cur"; then
-    note "gsd-worktrees $tk_cur installed, $tk_new released — update: $(gsd_update_how)"
+    update gsd-worktrees "$tk_cur" "$tk_new" "$(gsd_update_how)"
   elif [ -n "$tk_new" ]; then
     pass "gsd-worktrees $tk_cur (latest release: $tk_new)"
   else
@@ -161,15 +170,15 @@ fi
 
 # GSD itself: is a newer release on npm? A note, never a finding — the parsers
 # in lib/ track the installed version, and upgrading is the user's call.
-if command -v gsd-sdk >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-  have=$(gsd-sdk -v 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-  want=$(npm view get-shit-done-cc dist-tags.latest --fetch-retries=0 --fetch-timeout=5000 2>/dev/null || true)
+if [ -z "${GSD_NO_UPDATE_CHECK:-}" ] && command -v gsd-sdk >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+  have=$(gsd_gsd_installed)
+  gsd_gsd_refresh; want=$(gsd_gsd_cached)
   if [ -z "$have" ] || [ -z "$want" ]; then
     note "gsd-sdk ${have:-?} installed (npm not reachable — latest unknown)"
   elif [ "$have" = "$want" ]; then
     pass "gsd-sdk $have is the latest on npm"
-  elif [ "$(printf '%s\n%s\n' "$have" "$want" | sort -V | tail -1)" = "$want" ]; then
-    note "gsd-sdk $have installed, $want on npm — npm i -g get-shit-done-cc@latest (then re-check gsd-list/gsd-planning-repair)"
+  elif gsd_version_gt "$want" "$have"; then
+    update GSD "$have" "$want" "$GSD_GSD_UPDATE_CMD (then re-check gsd-list/gsd-planning-repair)"
   else
     note "gsd-sdk $have installed, ahead of npm latest ($want)"
   fi
@@ -519,7 +528,7 @@ if [ "$JSON" = 1 ]; then
   # false = not a GSD repo: its setup/planning checks were skipped, so a zero
   # count means "nothing to check", not "healthy".
   printf '"gsd_repo":%s,' "$([ "$IS_GSD_REPO" = 1 ] && echo true || echo false)"
-  printf '"repo":"%s","configured":[%s],"provider":{"name":"%s","command":"%s","available":%s,"instruction_file":"%s","instruction_integrated":%s,"skill_installed":%s,"command_guard":%s,"native_hook":"%s"},"count":%d,"findings":[%s]}\n' "$(jstr "$MAIN")" "$configured_json" "$(jstr "$DOCTOR_PROVIDER")" "$(jstr "$DOCTOR_COMMAND")" "$PROVIDER_AVAILABLE" "$(jstr "$instruction_file")" "$instruction_integrated" "$skill_installed" "$command_guard" "$native_hook" "$FINDINGS" "$JSON_ITEMS"
+  printf '"repo":"%s","configured":[%s],"provider":{"name":"%s","command":"%s","available":%s,"instruction_file":"%s","instruction_integrated":%s,"skill_installed":%s,"command_guard":%s,"native_hook":"%s"},"count":%d,"findings":[%s],"updates":[%s]}\n' "$(jstr "$MAIN")" "$configured_json" "$(jstr "$DOCTOR_PROVIDER")" "$(jstr "$DOCTOR_COMMAND")" "$PROVIDER_AVAILABLE" "$(jstr "$instruction_file")" "$instruction_integrated" "$skill_installed" "$command_guard" "$native_hook" "$FINDINGS" "$JSON_ITEMS" "$UPDATES_JSON"
   [ "$FINDINGS" -eq 0 ]; exit $?
 fi
 echo ""
