@@ -65,10 +65,16 @@ is "a *-pr branch is not the phase branch" "$(cell 6 5)" "—"
 section "layout"
 is "--compact: one line per phase"   "$(grep -c '^│' "$OUT")" "10"
 COLUMNS=70 "$LIST" --repo "$R" > "$OUT" 2>&1
-if grep -q 'across several lines' "$OUT"; then ok "default wraps long titles without truncating"
-else bad "default wraps long titles without truncating" "$(cat "$OUT")"; fi
+# Phase 7's PHASE cell: its row plus the continuation rows below it, joined.
+title7=$(awk -F'│' '{ k=$2; gsub(/^ +| +$/, "", k) }
+  k=="7" { on=1 } on && k!="" && k!="7" { exit }
+  on && /^│/ { v=$3; gsub(/^ +| +$/, "", v); printf "%s ", v }' "$OUT" | sed 's/ $//')
+is "default wraps long titles without truncating" "$title7" \
+  "in flight in its worktree with a very long description that must wrap across several lines"
 if [ "$(grep -c '^│' "$OUT")" -gt 10 ]; then ok "wrapped title spans several lines"
 else bad "wrapped title spans several lines"; fi
+unset COLUMNS; "$LIST" --repo "$R" < /dev/null > "$OUT" 2>&1
+if [ -s "$OUT" ]; then ok "renders without a terminal or COLUMNS"; else bad "renders without a terminal or COLUMNS"; fi
 if "$LIST" --repo "$WORK" > "$OUT" 2>&1; then bad "a repo without ROADMAP.md is refused"
 else ok "a repo without ROADMAP.md is refused"; fi
 

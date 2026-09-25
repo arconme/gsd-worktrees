@@ -86,7 +86,8 @@ ROADMAP="$MAIN/.planning/ROADMAP.md"
 BRANCHES=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' 'refs/heads/phase-*' || true)
 WTMAP=$(git -C "$MAIN" worktree list --porcelain \
           | awk '/^worktree /{w=substr($0,10)} /^branch /{b=substr($0,8); sub("refs/heads/","",b); print b "\t" w}')
-TERMCOLS=$( tput cols 2>/dev/null || echo 120 )
+# COLUMNS first: without a terminal (pipes, CI) tput cannot know the width.
+TERMCOLS=${COLUMNS:-$( tput cols 2>/dev/null || echo 120 )}
 PHASESROOT="$MAIN/.planning/phases"
 
 export BRANCHES WTMAP TERMCOLS FULL PHASESROOT
