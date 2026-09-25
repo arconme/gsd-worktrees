@@ -18,7 +18,7 @@ reject() { if "$@" > "$WORK/rejected" 2>&1; then echo "unexpected success: $*" >
 R="$WORK/project with spaces"; repo "$R"
 git -C "$R" checkout -qb phase-7-test
 PD="$R/.planning/phases/07-test"; mkdir -p "$PD"
-for name in STORY CONTEXT REVIEWS 01-PLAN 01-SUMMARY; do touch "$PD/07-$name.md"; done
+for name in TICKET CONTEXT REVIEWS 01-PLAN 01-SUMMARY; do touch "$PD/07-$name.md"; done
 git -C "$R" add .; git -C "$R" commit -qm artifacts
 flow=$(gsd-flow-next 7 --repo "$R" --no-ui); grep -q '^step=verifier$' <<< "$flow"
 ok 'space-containing paths recognize completed plans'

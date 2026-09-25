@@ -9,11 +9,12 @@ GSD itself provides the planning skills (`/gsd-phase`, `/gsd-discuss-phase`,
 `/gsd-plan-phase`, `/gsd-execute-phase`, …) and the `gsd-sdk` CLI. This repo
 provides everything around them: one-command feature start/finish, per-phase
 git worktrees, claim races resolved automatically, a checkout lock, per-worktree
-dev ports, ClickUp write-back, and mandatory command-level guards. Native agent
-hooks are additional early feedback, not the safety boundary.
+dev ports, ticket write-back (ClickUp, or any tracker through a script), and
+mandatory command-level guards. Native agent hooks are additional early
+feedback, not the safety boundary.
 
 `gsd-start` validates the target worktree before printing or opening a session.
-`gsd-flow-next` checks location even without `.gsd.conf`, including story and
+`gsd-flow-next` checks location even without `.gsd.conf`, including ticket and
 decision steps; normal calls also validate the current phase action. A running
 or failed install cannot be bypassed by partially created `node_modules`.
 Nested agent workers retain these checks. Only `GSD_SKIP_GUARD=1` explicitly
@@ -49,6 +50,7 @@ gemini_model = MODEL_ID
 flow = strict
 review_provider = codex
 start_mode = flow
+tracker = clickup
 ```
 
 The provider-specific `*_model` keys are optional. `gsd-init --model MODEL_ID`
@@ -124,7 +126,7 @@ are marked and repeated bootstrap updates only those blocks. See
 |---|---|---|
 | `gsd-bootstrap-repo` | Writes neutral config/shims/instructions plus selected provider adapters | Usually called by `gsd-init`. Re-running is safe |
 | `gsd-planning-repair` | Fixes `ROADMAP.md` / `STATE.md` after a merge scrambles them | When `gsd-doctor` tells you to |
-| `gsd-clickup` | Moves a ClickUp story to "in progress" / "in testing" | Only if you wired ClickUp up |
+| `gsd-tracker` | Moves the phase's ticket to "in progress" / "in testing"; saves it as `<P>-TICKET.md` | Only with `tracker =` set — see [docs/trackers.md](docs/trackers.md) |
 
 **Lower-level APIs — usually called by other commands or skills:**
 
@@ -146,12 +148,12 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 
 | Command | What it does |
 |---|---|
-| `gsd-start` | Start a feature in one step: claim the phase (deterministic, parallel-safe with auto-renumber), push, create the `phase-<N>-<slug>` worktree, open/print the session. `-n` is required to claim a new phase (a bare description is refused, so nobody — human or agent — opens a duplicate by accident); `-p <N>` re-attaches, `--insert <N>` claims a decimal hotfix phase, `--cu <id>` drives a ClickUp story (and a phase already carrying that id is refused, whatever the wording). |
-| `gsd-finish` | Finish from anywhere: merge the phase branch back into the base branch, push (with retry on parallel pushes), remove the worktree + branch, move the ClickUp story to its list's testing/review status (resolved per list, so differently-named statuses all work). Runs the pre-merge check or the project's tests first. `--pr` (with `--draft`) skips the merge: pushes the branch — the `*-pr` one from `/gsd-pr-branch` when present — and opens a GitHub PR via `gh`; run `gsd-finish` again after it lands to clean up. |
+| `gsd-start` | Start a feature in one step: claim the phase (deterministic, parallel-safe with auto-renumber), push, create the `phase-<N>-<slug>` worktree, open/print the session. `-n` is required to claim a new phase (a bare description is refused, so nobody — human or agent — opens a duplicate by accident); `-p <N>` re-attaches, `--insert <N>` claims a decimal hotfix phase, `--ticket <id>` links a tracker ticket: the title and slug end in `tk-<id>`, and a phase already tagged with that ticket is refused, whatever the wording (`--cu` is the old name). |
+| `gsd-finish` | Finish from anywhere: merge the phase branch back into the base branch, push (with retry on parallel pushes), remove the worktree + branch, move the phase's ticket to its testing/review status when a tracker is set. Runs the pre-merge check or the project's tests first. `--pr` (with `--draft`) skips the merge: pushes the branch — the `*-pr` one from `/gsd-pr-branch` when present — and opens a GitHub PR via `gh`; run `gsd-finish` again after it lands to clean up. |
 | `gsd-list` | Read-only table of all phases: number, description, plan progress, lifecycle stage (live from the phase's worktree), worktree state. |
 | `gsd-init` | Take a repo with no GSD to "ready for gsd-start": bootstrap one or more providers, then print or open the right provider-specific initialization prompt. |
 | `gsd-bootstrap-repo` | Fit a repo with shared workflow files and explicitly selected provider adapters. Marked blocks preserve unrelated instructions. |
-| `gsd-clickup` | Minimal ClickUp write-back helper (status + comment + subtask cascade); token in `~/.config/gsd/clickup.env`. |
+| `gsd-tracker` | Ticket write-back: `start` / `finish` / `comment` / `status` / `snapshot` / `extract` / `check`. Tracker from `tracker =` in `.gsd.conf`: `none` (default), `clickup`, or `custom` (your script). See [docs/trackers.md](docs/trackers.md). `gsd-clickup` is the old name, fixed to ClickUp. |
 | `gsd-sync` | Toolkit maintenance in one command: pull + push this repo, re-link `bin/`, and verify the shims of the repo you run it from are current. `--check` for a dry run. |
 | `gsd-wt-new` / `gsd-wt-finish` | The worktree workers behind `gsd-start`/`gsd-finish` (create with config-copy + background install; merge back locked and conflict-safe). Callable standalone. |
 | `gsd-planning-repair` | Reconcile `.planning/ROADMAP.md` + `STATE.md` after a union merge and recompute their progress counters from the roadmap and the plan files on disk. `--check` is the CI guard (exit 1 on union-merge damage); `--commit` lands the repair. Run automatically by `gsd-finish` and the `post-merge` hook. |
@@ -173,7 +175,8 @@ GSD. `./install.sh` links it; `gsd-sync` keeps it current.
 All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
 
 - **`.gsd.conf`** (committed) — `providers`, provider commands/models, `review_provider`,
-  `start_mode`, `base`, `wtdir`, `install`, `premerge`, `test`, `flow`; keys are optional,
+  `start_mode`, `base`, `wtdir`, `install`, `premerge`, `test`, `flow`, `tracker`
+  (+ `tracker_command`, `tracker_status_start` / `_finish`); keys are optional,
   falling back to auto-detection (develop/main, `<repo>-worktrees`, lockfile).
   `flow = strict` turns on the guard's phase-flow rule (below) and gsd-doctor's
   phase-flow debt report (T040); `flow_since = <N>` limits that report to phases >= N.
@@ -238,7 +241,7 @@ to Claude. Repeat all desired `--agent` flags when changing the installation set
 ## The loop per feature
 
 ```sh
-gsd-start -n "customer terms rework" --cu 869e33cv4 --flow
+gsd-start -n "customer terms rework" --ticket 869e33cv4 --flow
 # Run the printed session command; follow gsd-flow-next N through every gate.
 # After step=done, only with explicit user intent, as the session's final action:
 gsd-finish
@@ -349,6 +352,7 @@ bash tests/test-review-fixes.sh
 tests/test-list.sh
 tests/test-review-round2.sh
 tests/test-commands.sh
+tests/test-tracker.sh    # tickets: id parsing, none/custom/fake-ClickUp, start/finish/doctor paths
 tests/test-e2e.sh        # whole journey in a fake project; needs gsd-sdk (skips without it)
 ```
 

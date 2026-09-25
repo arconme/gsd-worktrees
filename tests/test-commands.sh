@@ -3,7 +3,7 @@
 # gsd-start's refusals / --insert / -p / --flow, a conflicting finish, stale
 # lock reclaim, gsd-init's docs detection, and gsd-finish --pr.
 # CI-safe: gsd-sdk and gh are stubbed; remotes are local bare repos.
-# (gsd-clickup is deliberately not covered here — it is due for a redesign.)
+# (gsd-tracker has its own suite: tests/test-tracker.sh.)
 set -uo pipefail
 PKG=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT

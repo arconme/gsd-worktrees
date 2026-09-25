@@ -18,8 +18,13 @@ step() { "$NEXT" 7 --repo "$REPO" "$@" | sed -n 's/^step=//p'; }
 fm() { printf -- '---\nstatus: %s\n%s\n---\n' "$2" "${3:-}" > "$PD/07-$1"; }
 
 section "walks the order as artifacts appear"
-is "empty folder → story"            "$(step)" story
-: > "$PD/07-STORY.md";      is "story → discuss"               "$(step)" discuss
+is "tracker = none (default): no ticket step" "$(step)" discuss
+is "…and discuss has no ticket then=" "$("$NEXT" 7 --repo "$REPO" | grep -c '^then=')" 0
+export GSD_TRACKER=clickup
+is "tracker set, empty folder → ticket" "$(step)" ticket
+is "…untagged: no run=, asks the user" "$("$NEXT" 7 --repo "$REPO" | grep -c '^run=')" 0
+: > "$PD/07-TICKET.md";     is "TICKET.md → discuss"           "$(step)" discuss
+is "…discuss then= updates the ticket" "$("$NEXT" 7 --repo "$REPO" | sed -n 's/^then=//p')" "update the clickup ticket to the agreed scope"
 : > "$PD/07-CONTEXT.md";    is "discuss → ui-decision"         "$(step)" ui-decision
 is "ui-decision --no-ui → plan"       "$(step --no-ui)" plan
 is "ui-decision --ui → ui-phase"      "$(step --ui)" ui-phase
@@ -54,15 +59,22 @@ is "--all with two gaps lists 3 (review, ui-review, done)" "$("$NEXT" 7 --repo "
 is "--json emits one object" "$("$NEXT" 7 --repo "$REPO" --json | head -1 | grep -c '"step":"review"')" 1
 is "review has a then= replan" "$("$NEXT" 7 --repo "$REPO" | sed -n 's/^then=//p')" "/gsd-plan-phase 7 --reviews"
 git -C "$REPO" checkout -q -b phase-8-thing
-is "story via cu_ in dir name counts" "$(mkdir -p "$REPO/.planning/phases/08-x-cu_abc" && "$NEXT" 8 --repo "$REPO" | sed -n 's/^step=//p')" discuss
+is "legacy cu_ in dir name counts as the ticket" "$(mkdir -p "$REPO/.planning/phases/08-x-cu_abc" && "$NEXT" 8 --repo "$REPO" | sed -n 's/^step=//p')" discuss
 git -C "$REPO" checkout -q -b phase-7.1-fix
-is "decimal phase dir" "$(mkdir -p "$REPO/.planning/phases/7.1-fix" && "$NEXT" 7.1 --repo "$REPO" | sed -n 's/^step=//p')" story
+is "decimal phase dir" "$(mkdir -p "$REPO/.planning/phases/7.1-fix" && "$NEXT" 7.1 --repo "$REPO" | sed -n 's/^step=//p')" ticket
+git -C "$REPO" checkout -q -b phase-11-cart
+mkdir -p "$REPO/.planning/phases/11-cart-tk-proj-42"
+printf '# Roadmap\n\n### Phase 11: cart tk-PROJ-42\n' > "$REPO/.planning/ROADMAP.md"
+is "tagged title → run= snapshot (id case from the title)" "$("$NEXT" 11 --repo "$REPO" | sed -n 's/^run=//p')" \
+  "gsd-tracker snapshot PROJ-42 --out .planning/phases/11-cart-tk-proj-42/11-TICKET.md"
+: > "$REPO/.planning/phases/11-cart-tk-proj-42/11-STORY.md"
+is "legacy STORY.md counts as the ticket" "$("$NEXT" 11 --repo "$REPO" | sed -n 's/^step=//p')" discuss
 git -C "$REPO" checkout -q -b phase-9-missing
 "$NEXT" 9 --repo "$REPO" >/dev/null 2>&1; is "missing phase dir → exit 1" "$?" 1
 
 section "unconditional location guard without configuration"
 "$NEXT" 7 --repo "$REPO" >/dev/null 2>&1; is "wrong phase without config is blocked" "$?" 2
-"$NEXT" 7.1 --repo "$REPO" >/dev/null 2>&1; is "story step on wrong phase is blocked" "$?" 2
+"$NEXT" 7.1 --repo "$REPO" >/dev/null 2>&1; is "ticket step on wrong phase is blocked" "$?" 2
 git -C "$REPO" checkout -q develop
 "$NEXT" 7 --repo "$REPO" --all >/dev/null 2>&1; is "preview on base is blocked" "$?" 2
 git -C "$REPO" checkout -q phase-7-thing

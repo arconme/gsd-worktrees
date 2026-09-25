@@ -108,7 +108,7 @@ assert 'start prints selected session model' '[[ "$out" == *"codex --model model
 echo 'flow launch guard for every provider'
 WT=$(git -C "$R" worktree list --porcelain | sed -n 's/^worktree //p' | tail -1)
 mkdir -p "$WT/.planning/phases/07-test"
-for artifact in STORY CONTEXT REVIEWS; do : > "$WT/.planning/phases/07-test/07-$artifact.md"; done
+for artifact in TICKET CONTEXT REVIEWS; do : > "$WT/.planning/phases/07-test/07-$artifact.md"; done
 : > "$WT/.planning/phases/07-test/07-01-PLAN.md"
 git -C "$WT" add .planning
 git -C "$WT" -c user.name=t -c user.email=t@t commit -qm ready

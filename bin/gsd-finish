@@ -69,10 +69,10 @@ BEHAVIOR
   - Validates the phase and combined base tree, including remote push retries.
     Failed sync/validation prevents push and cleanup; any merge remains local.
   - ROADMAP.md/STATE.md use the reconciling gsd-planning merge driver.
-  - ClickUp: when the branch name or ROADMAP phase title carries cu_<id>, the
-    story is moved to its list's testing/review status with a merge comment
-    (status name resolved against the list's own statuses; best-effort, via
-    gsd-clickup — needs a token in ~/.config/gsd/clickup.env).
+  - Ticket: when the ROADMAP phase title (or the branch name) carries a
+    tk-<id> tag and .gsd.conf sets `tracker = clickup|custom`, the ticket is
+    moved to its testing/review status with a merge comment (best-effort, via
+    gsd-tracker). --pr does the same when the PR opens.
 
 RELATED
   gsd-start             start a phase (claim + worktree + session) in one step
@@ -112,6 +112,8 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 [ -f "$GSD_PKG/lib/common.sh" ] || die "gsd-worktrees toolkit lib not found (looked in $GSD_PKG/lib) — reinstall with install.sh"
 # shellcheck source=../lib/common.sh
 . "$GSD_PKG/lib/common.sh"
+# shellcheck source=../lib/tracker.sh
+. "$GSD_PKG/lib/tracker.sh"
 
 MAIN=$(gsd_main .)
 FINISH="$GSD_PKG/bin/gsd-wt-finish"
@@ -148,25 +150,25 @@ if [ "$cur" != "$BASE" ]; then
   git -C "$MAIN" checkout -q "$BASE"
 fi
 
-# ── resolve the ClickUp story BEFORE the branch is deleted ───────────────────
-# Convention: the story id rides in the branch name (phase-N-slug-cu_<id>) or,
-# failing that, in the phase's ROADMAP.md title. Captured here, acted on after
+# ── resolve the ticket BEFORE the branch is deleted ──────────────────────────
+# The id rides in the phase's ROADMAP title (tk-<id>, exact case) or, failing
+# that, the branch name (lowercased by the slug). Captured here, acted on after
 # the merge succeeds. Best-effort throughout — never blocks the finish.
-CU_ID=""
+TICKET_ID=""
 PHASE_N=""
-if command -v gsd-clickup >/dev/null 2>&1; then
-  case "$ID" in
-    phase-*) BR="$ID"; PHASE_N=$(printf '%s' "$ID" | sed -E 's/^phase-([0-9]+(\.[0-9]+)?)-.*/\1/') ;;
-    *)       PHASE_N="$ID"
-             BR=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$ID-*" \
-                    | grep -v -- '-pr$' | head -1 || true) ;;
-  esac
-  CU_ID=$(gsd-clickup extract "${BR:-}" 2>/dev/null || true)
-  if [ -z "$CU_ID" ] && [ -n "$PHASE_N" ] && [ -f "$MAIN/.planning/ROADMAP.md" ]; then
+case "$ID" in
+  phase-*) BR="$ID"; PHASE_N=$(printf '%s' "$ID" | sed -E 's/^phase-([0-9]+(\.[0-9]+)?)-.*/\1/') ;;
+  *)       PHASE_N="$ID"
+           BR=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$ID-*" \
+                  | grep -v -- '-pr$' | head -1 || true) ;;
+esac
+if [ "$(gsd_tracker "$MAIN")" != none ]; then
+  if [ -n "$PHASE_N" ] && [ -f "$MAIN/.planning/ROADMAP.md" ]; then
     N_RE=$(printf '%s' "$PHASE_N" | sed 's/\./\\./g')
     TITLE=$(grep -E "^### Phase $N_RE:" "$MAIN/.planning/ROADMAP.md" | head -1 || true)
-    CU_ID=$(gsd-clickup extract "${TITLE:-}" 2>/dev/null || true)
+    TICKET_ID=$(gsd_ticket_extract "${TITLE:-}")
   fi
+  [ -n "$TICKET_ID" ] || TICKET_ID=$(gsd_ticket_extract "${BR:-}")
 fi
 
 # ── --pr: push + open a PR instead of merging ────────────────────────────────
@@ -195,8 +197,9 @@ if [ "$PR" = 1 ]; then
      --title "${TITLE:-$HEAD_BR}" --fill-verbose ${DRAFT:+--draft} 2>/dev/null \
   || gh pr create --base "$BASE" --head "$HEAD_BR" --title "${TITLE:-$HEAD_BR}" --body "" ${DRAFT:+--draft} \
   || die "gh pr create failed (is origin a GitHub repo and gh authenticated?)"
-  [ -z "$CU_ID" ] || gsd-clickup finish "$CU_ID" "🔀 GSD phase ${PHASE_N:-?}: PR opened $HEAD_BR → $BASE" \
-     || echo "• ClickUp story $CU_ID not updated (non-fatal)"
+  [ -z "$TICKET_ID" ] || "$GSD_PKG/bin/gsd-tracker" --repo "$MAIN" finish "$TICKET_ID" \
+     "🔀 GSD phase ${PHASE_N:-?}: PR opened ${HEAD_BR} → ${BASE}" \
+     || echo "• ticket $TICKET_ID not updated (non-fatal) — check: gsd-tracker check"
   echo ""
   echo "Worktree kept. After the PR merges:  gsd-finish $BR"
   exit 0
@@ -207,12 +210,12 @@ fi
 cd "$MAIN"
 "$FINISH" "$ID" "$BASE"
 
-# ── ClickUp write-back (best-effort): story → "in testing" + merge comment ───
-if [ -n "$CU_ID" ]; then
+# ── ticket write-back (best-effort): ticket → "in testing" + merge comment ──
+if [ -n "$TICKET_ID" ]; then
   SHA=$(git -C "$MAIN" rev-parse --short "$BASE" 2>/dev/null || echo "?")
-  gsd-clickup finish "$CU_ID" \
-    "✅ GSD phase ${PHASE_N:-?} merged to $BASE — commit $SHA in $(basename "$MAIN"). Ready for testing." \
-    || echo "• ClickUp story $CU_ID not updated (non-fatal) — check gsd-clickup check / your token"
+  "$GSD_PKG/bin/gsd-tracker" --repo "$MAIN" finish "$TICKET_ID" \
+    "✅ GSD phase ${PHASE_N:-?} merged to ${BASE} — commit ${SHA} in $(basename "$MAIN"). Ready for testing." \
+    || echo "• ticket $TICKET_ID not updated (non-fatal) — check: gsd-tracker check"
 fi
 
 # ── roadmap bookkeeping (best-effort, never blocks) ──────────────────────────

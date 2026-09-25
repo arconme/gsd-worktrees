@@ -35,7 +35,7 @@ jobs:
         # BSD-vs-GNU RUNTIME differences the suite exercises.
         if: matrix.os == 'ubuntu-latest'
         # Policy (intentional-pattern exclusions, with reasons): .shellcheckrc
-        run: shellcheck -x bin/* lib/*.sh shims/scripts/*.sh shims/scripts/hooks/*.sh install.sh tests/*.sh
+        run: shellcheck -x bin/* lib/*.sh lib/trackers/*.sh shims/scripts/*.sh shims/scripts/hooks/*.sh install.sh tests/*.sh
       - name: planning reconcile suite
         run: tests/test-planning-reconcile.sh
       - name: worktree guard suite
@@ -56,5 +56,7 @@ jobs:
         run: tests/test-review-round2.sh
       - name: command paths suite
         run: tests/test-commands.sh
+      - name: ticket tracker suite
+        run: tests/test-tracker.sh
       - name: end-to-end suite (skips without gsd-sdk)
         run: tests/test-e2e.sh

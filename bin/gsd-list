@@ -146,7 +146,7 @@ my $scan = sub {
     $r{planning}++ if /RESEARCH\.md$/i || /PATTERNS\.md$/i || /PLAN-OUTLINE\.md$/i;
     $r{ui}++       if /UI-SPEC\.md$/i;
     $r{discuss}++  if /CONTEXT\.md$/i || /DISCUSSION-LOG\.md$/i
-                   || /STORY\.md$/i   || /DISCUSS-CHECKPOINT\.json$/i;
+                   || /(TICKET|STORY)\.md$/i || /DISCUSS-CHECKPOINT\.json$/i;
     $r{spec}++     if /SPEC\.md$/i && !/UI-SPEC\.md$/i;
   }
   closedir $dh;

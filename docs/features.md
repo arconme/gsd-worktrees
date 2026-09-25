@@ -28,7 +28,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Parallel-safe claim: pull, push with rebase-and-retry, auto-renumber the loser | `gsd-start` |
 | Duplicate-description guard (case-insensitive) | `gsd-start` |
 | Claim bookkeeping: checklist + Progress rows and STATE.md counters land in the claim commit | `gsd-start`, `lib/roadmap-rows.pl` |
-| ClickUp story link (`--cu <id|url>`): id folded into title/slug, duplicate-story guard, story → "in progress" | `gsd-start`, `gsd-clickup` |
+| Ticket link (`--ticket <id|url>`, old `--cu`): `tk-<id>` at the end of title/slug, duplicate-ticket guard, ticket → "in progress" when a tracker is set | `gsd-start`, `gsd-tracker` |
 | Print-only by default; `--launch` / `--agent-command` / `--provider` open the session | `gsd-start` |
 | `--flow` / `--no-flow` / `start_mode`: open discuss-phase only, or resume the full flow | `gsd-start`, `lib/provider.sh` |
 | Guard check before a session is printed or launched | `gsd-start` |
@@ -48,7 +48,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | `--no-ff` merge; a conflict aborts and leaves the base branch clean with resolution steps | `gsd-wt-finish` |
 | Planning repair after every merge point; never pushes contradictory `.planning` | `gsd-wt-finish` |
 | Push with up to 3 retries (pull + repair + re-validate between) | `gsd-wt-finish` |
-| Removes worktree + branch; ClickUp story → "in testing" (status name resolved per list) | `gsd-wt-finish`, `gsd-finish`, `gsd-clickup` |
+| Removes worktree + branch; ticket → "in testing" when a tracker is set (also on `--pr`) | `gsd-wt-finish`, `gsd-finish`, `gsd-tracker` |
 | `--pr [--draft]`: push (prefers the `*-pr` branch) and open a GitHub PR instead of merging | `gsd-finish` |
 | Post-finish warning if the roadmap ticks look wrong | `gsd-finish` |
 
@@ -81,7 +81,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 
 | Feature | Where |
 |---|---|
-| Resumable step engine: story → discuss → ui-decision → ui-phase → plan → review → replan → execute → verifier → gaps → verify-work → code-review → ui-review → secure → done | `gsd-flow-next` |
+| Resumable step engine: ticket (only with a tracker) → discuss → ui-decision → ui-phase → plan → review → replan → execute → verifier → gaps → verify-work → code-review → ui-review → secure → done | `gsd-flow-next` |
 | Reads artifacts only, so it survives crashes and `/clear` | `gsd-flow-next` |
 | Detects an unfolded review (`replan`) from commit times of REVIEWS vs PLAN | `gsd-flow-next` |
 | `--all` preview, `--json`, `--ui` / `--no-ui` | `gsd-flow-next` |
@@ -107,7 +107,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 |---|---|
 | Phase table: number, title, plans done/total, stage, worktree; wraps to the terminal (`--compact` for one line) | `gsd-list` |
 | Read-only health check, every finding names its fix command; `--quiet`, `--json` | `gsd-doctor` |
-| Finding codes: T001–T003 toolkit, T010–T014 repo setup, T020–T024 planning, T030–T031 hygiene, T040 flow debt, T050–T060 providers, W017 / W027 shared with `/gsd-health` | `gsd-doctor` |
+| Finding codes: T001–T003 toolkit, T010–T014 repo setup, T020–T024 planning, T030–T031 hygiene, T040 flow debt, T050–T060 providers, T070–T072 tracker, W017 / W027 shared with `/gsd-health` | `gsd-doctor` |
 | Checks for a newer GSD on npm and branches whose upstream is gone | `gsd-doctor` |
 
 ## 9. Install and maintenance
@@ -119,13 +119,18 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Install manifest + `--reuse-install-config` | `install.sh` |
 | One-command upkeep: pull/push this repo, re-link, check the calling repo's shims; `--check` dry run | `gsd-sync` |
 
-## 10. ClickUp
+## 10. Tickets and trackers ([trackers.md](trackers.md))
 
 | Feature | Where |
 |---|---|
-| `start` / `finish` / `status` / `comment` / `extract` / `check` | `gsd-clickup` |
-| Status names matched per list (case/format-insensitive), env overrides, subtask cascade, idempotent | `gsd-clickup` |
-| Token from `CLICKUP_API_TOKEN` or `~/.config/gsd/clickup.env` | `gsd-clickup` |
+| `start` / `finish` / `comment` / `status` / `snapshot [--out]` / `extract` / `check` / `which` | `gsd-tracker` |
+| `tracker = none` (default) / `clickup` / `custom`; `GSD_TRACKER` override | `gsd-tracker`, `lib/tracker.sh` |
+| Id parsing: bare, `tk-<id>`, `#<id>`, URL; tags read back from title, then branch | `lib/tracker.sh` |
+| Status names from `tracker_status_start` / `_finish` (env `GSD_TRACKER_STATUS_*` wins) | `gsd-tracker` |
+| ClickUp: status matched per list, subtask cascade, idempotent, markdown snapshot; token from `CLICKUP_API_TOKEN` or `~/.config/gsd/clickup.env` | `lib/trackers/clickup.sh` |
+| Custom: `tracker_command` gets `start` / `finish` / `comment` / `status` / `snapshot` / `check` + `<id> [text]` | `lib/trackers/custom.sh` |
+| Snapshot `--out` writes only on success (the file marks the flow step done) | `gsd-tracker` |
+| Legacy read-only: `--cu`, `cu_<id>` tags, `STORY.md`, `gsd-clickup` alias | `lib/tracker.sh`, `gsd-clickup` |
 
 ## 11. Shared library (`lib/`)
 
@@ -137,3 +142,5 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | `lib/gsd_hook_payload.py` | Claude/Gemini hook JSON → guard input |
 | `lib/roadmap-audit.pl` | read-only ROADMAP bookkeeping audit |
 | `lib/roadmap-rows.pl` | adds a claimed phase's missing checklist + Progress rows (the ones `gsd-sdk` leaves out) |
+| `lib/tracker.sh` | tracker choice, ticket id parsing, tag extraction and matching |
+| `lib/trackers/*.sh` | one adapter per tracker (`clickup`, `custom`), sourced by `gsd-tracker` |

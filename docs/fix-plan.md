@@ -76,7 +76,7 @@ removes the one known trigger; CI's macOS runner exercises bash 3.2.
 | B01 | Native guard hook for Codex | needs a verified Codex hook API; the command-level guard already covers Codex |
 | B02 | Lock against two agents editing one worktree at once | design decision (docs define handoff as sequential) |
 | B03 | Live handoff test with logged-in Claude → Codex / Gemini sessions | done by the user (2026-09-25) |
-| B04 | `gsd-clickup`: redesign to be tracker-generic, then test | user wants to discuss the design first |
+| B04 | `gsd-clickup`: redesign to be tracker-generic, then test | **done** (branch `feature/tracker`): `gsd-tracker` + adapters, `--ticket` / `tk-<id>`, `tracker = none` default, `ticket` flow step, T070–T072; `tests/test-tracker.sh`. See [trackers.md](trackers.md) |
 
 ## Verification log
 

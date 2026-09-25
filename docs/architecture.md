@@ -47,7 +47,7 @@ shell commands directly. The supported boundary is the `gsd-*` launch/flow
 route plus optional provider hooks. `gsd-start` validates the destination before
 printing or launching a session; flow launches also check the current step when
 phase artifacts exist. `gsd-flow-next` always checks phase identity, including
-story, UI decisions, and done, even without `.gsd.conf`. Its `--all` preview
+ticket, UI decisions, and done, even without `.gsd.conf`. Its `--all` preview
 checks location but does not authorize future steps. The flow skill checks
 `then=` commands immediately before running them.
 

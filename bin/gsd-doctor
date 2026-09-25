@@ -29,6 +29,7 @@
 #                  T040 = a merged phase skipped a mandatory flow step (only
 #                  in repos with `flow = strict`; `flow_since = <N>` in .gsd.conf
 #                  limits it to phases >= N).
+#                  T070–T072 = ticket tracker config (`tracker =` in .gsd.conf).
 #   -h, --help     show this help
 #
 # Exit status: 0 when everything checks out, 1 when there is a finding.
@@ -52,6 +53,8 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 # shellcheck source=../lib/common.sh
 . "$GSD_PKG/lib/common.sh"
 . "$GSD_PKG/lib/provider.sh"
+# shellcheck source=../lib/tracker.sh
+. "$GSD_PKG/lib/tracker.sh"
 
 REPO=""
 QUIET=0
@@ -255,6 +258,25 @@ done
   && pass ".gsd.conf (base $(gsd_base "$MAIN"), worktrees $(gsd_wtdir "$MAIN"))" \
   || note "no .gsd.conf — settings are auto-detected (base $(gsd_base "$MAIN"))"
 
+# ── ticket tracker ───────────────────────────────────────────────────────────
+TRACKER=$(gsd_tracker "$MAIN")
+if ! gsd_tracker_known "$TRACKER"; then
+  fail "unknown tracker '$TRACKER'" "set tracker = none, clickup, or custom in .gsd.conf" "T071"
+elif [ "$TRACKER" = custom ]; then
+  tc=$(gsd_tracker_command "$MAIN")
+  if [ -n "$tc" ] && [ -x "$tc" ]; then pass "tracker: custom ($tc)"
+  else fail "tracker = custom but tracker_command '${tc:-<unset>}' is not an executable file" "set tracker_command = <script> in .gsd.conf and chmod +x it (see docs/trackers.md)" "T072"; fi
+elif [ "$TRACKER" = clickup ]; then
+  pass "tracker: clickup (token check: gsd-tracker check)"
+  command -v jq >/dev/null 2>&1 || note "tracker = clickup needs jq for start/finish/snapshot — brew install jq"
+else
+  # Old phases tagged cu_<id> were written for ClickUp write-back; with the
+  # default tracker = none those tickets would silently stop moving.
+  if grep -qiE '^#{2,4} Phase [0-9.]+:.*(^|[^a-z0-9])cu[-_][a-z0-9]{6,}' "$MAIN/.planning/ROADMAP.md" 2>/dev/null; then
+    fail "ROADMAP has ClickUp-tagged phases (cu_<id>) but tracker = none — their tickets are not updated" "add 'tracker = clickup' to .gsd.conf" "T070"
+  fi
+fi
+
 drift=0
 missing=0
 while IFS= read -r rel; do
@@ -389,7 +411,12 @@ if [ "$(gsd_conf_get "$MAIN" flow)" = "strict" ] && [ -f "$MAIN/.planning/ROADMA
     # cross-AI plan review shape the plan; redoing them on built code changes
     # nothing (plan-phase --reviews refuses closed phases). The guard and the
     # pre-merge gate hold those going forward.
-    if ! flow_has STORY.md; then case "$pd" in *cu_*) ;; *) miss="$miss story"; fix="$fix ClickUp story → $p-STORY.md;" ;; esac; fi
+    if [ "$TRACKER" != none ] && ! flow_has TICKET.md && ! flow_has STORY.md; then
+      case "$pd" in *cu_*) ;; *)
+        tk=$(gsd_ticket_extract "$(basename "$pd")")
+        miss="$miss ticket"; fix="$fix gsd-tracker snapshot ${tk:-<id>} --out ${pd#"$MAIN"/}/$p-TICKET.md;" ;;
+      esac
+    fi
     flow_has REVIEW.md       || { miss="$miss code-review";     fix="$fix /gsd-code-review $n;"; }
     if flow_has SECURITY.md; then
       open=$(sed -n '/^---$/,/^---$/p' "$pd/$p-SECURITY.md" | sed -n 's/^threats_open:[[:space:]]*//p' | head -1 | tr -d '[:space:]')

@@ -29,8 +29,8 @@ decide:
 description used to claim, which made it far too easy to restate existing work
 in fresh words and get a second phase for it. State the intent explicitly.
 
-With `--cu <id>`, a phase already carrying that ClickUp id is also refused
-however differently it was worded — that phase *is* this work.
+With `--ticket <id>`, a phase already tagged with that ticket (`tk-<id>`) is
+also refused however differently it was worded — that phase *is* this work.
 
 ## The loop per feature
 
@@ -53,7 +53,7 @@ however differently it was worded — that phase *is* this work.
 | Command | Use |
 |---|---|
 | `gsd-list [--compact]` | Read-only table of every phase: number, description, plan progress, lifecycle stage, worktree state. **Run this before starting anything.** |
-| `gsd-start` | `-n "<desc>"` new · `-p <N>` attach · `--insert <N> "<desc>"` decimal hotfix · `--cu <id>` ClickUp story · `--slug` · `--repo <path>` · `--provider <name>` · `--agent-command <path>` · `--model <id>` · `--flow` / `--no-flow` · `--launch` / `--no-launch` (print-only is the default) · `--no-push` |
+| `gsd-start` | `-n "<desc>"` new · `-p <N>` attach · `--insert <N> "<desc>"` decimal hotfix · `--ticket <id>` tracker ticket (tags `tk-<id>`) · `--slug` · `--repo <path>` · `--provider <name>` · `--agent-command <path>` · `--model <id>` · `--flow` / `--no-flow` · `--launch` / `--no-launch` (print-only is the default) · `--no-push` |
 | `gsd-finish [<N>]` | Land the phase. No argument = infer from the current worktree branch. Runs the repo's pre-merge check or its test suite first. `--pr` opens a GitHub PR instead of merging (worktree stays; re-run after it lands). |
 | `gsd-doctor` | Read-only health check: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene. Diagnoses only — each finding names the command that fixes it, with a code; `--json` for scripts. No `--fix`, by design. |
 | `gsd-init` | Repo with no GSD → ready for `gsd-start`. Use `--providers claude,codex,gemini` for a provider set and `--provider codex` to choose the initialization session. |

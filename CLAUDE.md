@@ -12,7 +12,7 @@ An extension to GSD, written as a bash toolkit (plus two Python modules and one 
 
 This repo is the **single source of truth**: target repos carry only `.gsd.conf`, the frozen shims, and generated instruction blocks. User docs: `README.md`, `docs/features.md` (full feature list), `docs/providers.md` (capability matrix + full `.gsd.conf` key reference), `docs/architecture.md`, `docs/migration.md`, `docs/gemini-hooks.md`, `docs/copy-install.md`, and `docs/command-order.html` (phase order).
 
-GSD itself (the `/gsd-*` planning skills, including `gsd-review`, and the `gsd-sdk` CLI) is upstream and **not** in this repo. `gsd-start` claims phases with `gsd-sdk query phase.add` / `phase.insert` — no LLM call. Other outside tools: `git`, Python 3.7+, `perl`, `gh` (for `gsd-finish --pr`), `jq` (optional; doctor hook checks), and the ClickUp API (token in `~/.config/gsd/clickup.env`).
+GSD itself (the `/gsd-*` planning skills, including `gsd-review`, and the `gsd-sdk` CLI) is upstream and **not** in this repo. `gsd-start` claims phases with `gsd-sdk query phase.add` / `phase.insert` — no LLM call. Other outside tools: `git`, Python 3.7+, `perl`, `gh` (for `gsd-finish --pr`), `jq` (optional; doctor hook checks and the ClickUp tracker), and — only with `tracker = clickup` — the ClickUp API (token in `~/.config/gsd/clickup.env`).
 
 ## Commands
 
@@ -32,6 +32,7 @@ bash tests/test-review-fixes.sh       # regressions (finish push race, no-jq hoo
 tests/test-list.sh                    # gsd-list PLANS/STAGE/WORKTREE derivation + layout
 tests/test-review-round2.sh           # regressions from the 2026-09-25 review (docs/fix-plan.md)
 tests/test-commands.sh                # derive-port, start refusals/insert/-p/--flow, conflict abort, stale lock, init docs detection, finish --pr, bash-3.2 lint
+tests/test-tracker.sh                 # tickets: ids, gsd-tracker none/custom/fake ClickUp (curl stub), --ticket through start/finish, doctor T070–T072
 tests/test-e2e.sh                     # END-TO-END: fake project + real gsd-sdk (skips without it), ~15s.
                                       # Run it after ANY change to start/finish/guard/flow/planning code —
                                       # it caught 4 bugs the unit suites missed (fix-plan R15–R18).
@@ -47,12 +48,13 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 
 **Core vs adapters.** The core is `bin/`, `lib/common.sh`, the planning reconciler, the worktree rules, and `gsd-flow-next`. It may call `lib/provider.sh`, but adapters must never hold phase state, merge, claim, or safety policy. To add a provider, extend `lib/provider.sh` (identity, instruction file, skill root, argv renderer, review flag, hook metadata), the CLI allowlists/help, docs, and `tests/test-providers.sh` — see `docs/architecture.md`.
 
-- **`bin/`** — user-facing: `gsd-init`, `gsd-start`, `gsd-list`, `gsd-finish`, `gsd-doctor`, `gsd-sync`, `gsd-bootstrap-repo`, `gsd-planning-repair`, `gsd-clickup`. Internal: `gsd-wt-new` / `gsd-wt-finish` (worker halves of start/finish), `gsd-worktree-guard`, `gsd-flow-next`, `gsd-planning-merge` (git merge driver), `gsd-derive-port`. Each script finds its package via `GSD_PKG` (from its own resolved path) and sources `lib/`.
+- **`bin/`** — user-facing: `gsd-init`, `gsd-start`, `gsd-list`, `gsd-finish`, `gsd-doctor`, `gsd-sync`, `gsd-bootstrap-repo`, `gsd-planning-repair`, `gsd-tracker` (`gsd-clickup` = old alias). Internal: `gsd-wt-new` / `gsd-wt-finish` (worker halves of start/finish), `gsd-worktree-guard`, `gsd-flow-next`, `gsd-planning-merge` (git merge driver), `gsd-derive-port`. Each script finds its package via `GSD_PKG` (from its own resolved path) and sources `lib/`.
 - **`lib/common.sh`** — config (`gsd_conf_get` reads `.gsd.conf`; keys fall back to detection), `gsd_main`, base branch, worktree dir, the checkout lock (`.git/gsd-cmd.lock`, dead-PID reclaim), merge-driver registration, and `gsd_planning_status`/`gsd_planning_apply` — the one definition of "installed" shared by doctor and bootstrap.
 - **`lib/provider.sh`** — the provider adapters. No workflow logic. Resolves provider, executable, model and start mode (precedence tables in `docs/providers.md`); renders argv safely (never `eval`); owns the marked-block helpers for generated instruction files.
 - **`lib/gsd_hook_payload.py`** — turns native hook JSON (Claude, Gemini) into the guard's NUL-delimited input. It rejects any compound/wrapped shell command that mentions a `gsd-` name instead of guessing.
 - **`lib/gsd_planning.py`** — `reconcile` (one file, structural only, run mid-merge by the driver) and `repair` (both files + recompute counters from `.planning/phases/*/*-PLAN.md`/`*-SUMMARY.md`; `--check` for CI).
 - **`lib/roadmap-rows.pl`** — run by `gsd-start` after each claim: adds the checklist + Progress rows `gsd-sdk` omits, so the new phase passes `roadmap-audit.pl`.
+- **`lib/tracker.sh`** + **`lib/trackers/<name>.sh`** — tickets (see `docs/trackers.md`). `tracker =` in `.gsd.conf` picks `none` (default), `clickup`, or `custom` (a repo script). A phase links to a ticket by the tag `tk-<id>` at the end of its title and slug; the id is read back from the ROADMAP title first (the slug is lowercased). Legacy `cu_<id>` tags, `--cu`, and `STORY.md` are read, never written. Tracker calls are best-effort: failures print a note and never block start/finish. To add a tracker, add `lib/trackers/<name>.sh` defining `tracker_run`, then extend `gsd_tracker_known`.
 - **`lib/roadmap-audit.pl`** — read-only ROADMAP audit for `gsd-doctor`. It catches two upstream `gsd-sdk` bugs (`phase.insert` writes no checklist row; `phase.complete` can tick another phase's row).
 - **`shims/`** — frozen 7-line delegators that bootstrap copies into target repos as `scripts/gsd-*.sh`. Keep them unchanged.
 - **`skills/`** — `gsd-worktrees` and `gsd-flow`, installed per agent. They must stay provider-neutral: no literal `Skill()` calls. The flow skill only interprets `gsd-flow-next` output; it is not a second state machine.
@@ -61,7 +63,7 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 
 **Generated instructions (in target repos).** `.gsd/INSTRUCTIONS.md` is canonical, between `canonical:start`/`end` markers. `CLAUDE.md` / `AGENTS.md` (Codex + custom share it) / `GEMINI.md` get only a marked `gsd-worktrees:provider:start`/`end` entrypoint. Bootstrap validates markers before writing and never touches text outside them.
 
-**Finish path.** `gsd-finish` → `gsd-wt-finish`: sync origin (abort on failure) → validate the phase (`scripts/gsd-premerge-check.sh`, else the project's tests) → merge → `gsd-planning-repair` → validate the combined tree → push with retry (repair and validate again after each retry's pull) → remove worktree + branch → move the ClickUp story. A failed validation keeps local commits and the worktree, and never pushes.
+**Finish path.** `gsd-finish` → `gsd-wt-finish`: sync origin (abort on failure) → validate the phase (`scripts/gsd-premerge-check.sh`, else the project's tests) → merge → `gsd-planning-repair` → validate the combined tree → push with retry (repair and validate again after each retry's pull) → remove worktree + branch → `gsd-tracker finish` (only with a tracker set). A failed validation keeps local commits and the worktree, and never pushes.
 
 ## Invariants to keep
 
@@ -72,5 +74,5 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 - Planning reconcile: keyed lines keep the **first** occurrence's position and the **best** occurrence's content (`[x]` beats `[ ]`, longer wins among equals). Single-value lines keep the last copy (the incoming branch). STATE.md's `## Session Continuity` must stay byte-identical — a test asserts it.
 - `gsd-doctor` is read-only by design (no `--fix`). Finding codes: `W0xx` are shared with `/gsd-health`, `T0xx` are toolkit-only (e.g. `T050` bad providers list, `T059` bad model).
 - Legacy configs keep working: a singular `provider` key, `agent_command`, `--agent`, and `GSD_AGENT` are read-only compatibility inputs. With no provider configured, the default is Claude.
-- macOS runs bash 3.2. There, `"$VAR…"` (a variable touching a non-ASCII character) is read as an unknown variable, and with the lock's EXIT trap an "unbound variable" crash **exits 0**. Always brace: `${VAR}…`. `tests/test-commands.sh` lints for it. Phase numbers may be zero-padded (`08`, `02.1` from gsd-sdk): never feed them to `$(( ))` without `10#`, and compare them numerically, not as strings.
+- macOS runs bash 3.2. There, `"$VAR…"` (a variable touching a non-ASCII character) is read as an unknown variable, and with the lock's EXIT trap an "unbound variable" crash **exits 0**. Always brace: `${VAR}…`. `tests/test-commands.sh` lints for it. Bash 3.2 also brace-expands `{2,4}` inside nested `"$( … "$( … )" )"` quotes: put such a regex in a variable first. Phase numbers may be zero-padded (`08`, `02.1` from gsd-sdk): never feed them to `$(( ))` without `10#`, and compare them numerically, not as strings.
 - Scripts must work on both BSD (macOS) and GNU userlands. Shellcheck exceptions go in `.shellcheckrc` with a reason.

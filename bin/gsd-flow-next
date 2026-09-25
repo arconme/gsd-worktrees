@@ -11,7 +11,8 @@
 # rule and a repo's pre-merge gate, so what this considers done, they accept.
 #
 # Order:
-#   story        <P>-STORY.md (or cu_<id> in the dir name)  — ClickUp story
+#   ticket       <P>-TICKET.md (legacy: STORY.md, cu_<id>)   gsd-tracker snapshot
+#                only when .gsd.conf sets tracker = clickup|custom
 #   discuss      <P>-CONTEXT.md                             /gsd-discuss-phase
 #   ui-decision  no UI-SPEC and no PLAN yet → the skill asks "screens?"
 #   ui-phase     <P>-UI-SPEC.md (screens only)              /gsd-ui-phase
@@ -49,6 +50,8 @@ while [ -L "$SELF" ]; do t=$(readlink "$SELF"); case "$t" in /*) SELF=$t ;; *) S
 GSD_PKG=$(cd "$(dirname "$SELF")/.." && pwd)
 . "$GSD_PKG/lib/common.sh"
 . "$GSD_PKG/lib/provider.sh"
+# shellcheck source=../lib/tracker.sh
+. "$GSD_PKG/lib/tracker.sh"
 
 usage() { awk 'NR>1 && /^set -uo/{exit} NR>1 {sub(/^# ?/,""); print}' "$0"; }
 N=""; REPO=""; UI=""; ALL=0; JSON=0
@@ -107,12 +110,28 @@ emit() {  # $1=step $2=run $3=then $4=stop $5=note
 # screens? UI-SPEC on disk settles it; otherwise the caller's --ui/--no-ui.
 if has UI-SPEC.md; then UI=yes; fi
 
-# 1 story
-if ! has STORY.md; then
-  case "$pd" in *cu_*) ;; *) emit story "create the ClickUp story (product words, no tech), then snapshot it as $P-STORY.md" "" "the story needs the user's product intent" "gsd-start --cu <id> writes the snapshot; if the phase was claimed without --cu, write $P-STORY.md by hand" ;; esac
+# 1 ticket — the tracker's issue/task, saved in the phase folder. The tag
+# tk-<id> in the ROADMAP title (or dir name) says which one.
+TRACKER=$(gsd_tracker "$REPO")
+if [ "$TRACKER" != none ] && ! has TICKET.md && ! has STORY.md; then
+  case "$pd" in *cu_*) ;; *)
+    rel="${pd#"$REPO"/}/$P-TICKET.md"
+    N_RE=$(printf '%s|%s' "$N" "$P" | sed 's/\./\\./g')
+    # (pattern in a variable: bash 3.2 brace-expands {2,4} inside nested "$( … )")
+    head_re="^#{2,4} Phase ($N_RE):"
+    heading=$(grep -E "$head_re" "$REPO/.planning/ROADMAP.md" 2>/dev/null | head -1)
+    tk=$(gsd_ticket_extract "$heading")
+    [ -n "$tk" ] || tk=$(gsd_ticket_extract "$(basename "$pd")")
+    if [ -n "$tk" ]; then
+      emit ticket "gsd-tracker snapshot $tk --out $rel" "commit $rel" "" "saves $TRACKER ticket $tk (description + comments) for discuss and planning"
+    else
+      emit ticket "" "" "phase $N has no ticket: ask the user for its $TRACKER id, then run gsd-tracker snapshot <id> --out $rel and commit it (or write $rel by hand)" "a ticket holds the product intent, in product words"
+    fi ;;
+  esac
 fi
 # 2 discuss
-has CONTEXT.md || emit discuss "/gsd-discuss-phase $N" "update the ClickUp story to the agreed scope" "discuss asks the user the open questions" "run it live — never auto-answer"
+discuss_then=""; [ "$TRACKER" = none ] || discuss_then="update the $TRACKER ticket to the agreed scope"
+has CONTEXT.md || emit discuss "/gsd-discuss-phase $N" "$discuss_then" "discuss asks the user the open questions" "run it live — never auto-answer"
 # 3 screens?
 PLANS=""
 for f in "$pd/$P"-[0-9]*-PLAN.md; do [ ! -f "$f" ] || PLANS=yes; done

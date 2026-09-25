@@ -29,10 +29,10 @@
 #   --insert <N>   claim a FRACTIONAL phase after phase N (11 → 11.1, then
 #   --after <N>    11.2, …) via gsd-sdk phase.insert, instead of the next
 #                  integer. Requires a description. (alias: --after)
-#   --cu <id>      ClickUp task id driving this phase (with or without the
-#                  cu_ prefix). Appends cu_<id> to the phase title/slug so
-#                  discuss-phase snapshots the story, and moves the story to
-#                  "in progress" (best-effort, via gsd-clickup).
+#   --ticket <id>  the tracker ticket driving this phase (id, tk-<id> or URL).
+#                  Tags the phase title/slug with tk-<id>; with a tracker set
+#                  in .gsd.conf, moves the ticket to "in progress" (best-effort,
+#                  via gsd-tracker). --cu <id> is the old name, still accepted.
 #   --slug <slug>  worktree/branch slug (default: slugified description)
 #   --repo <path>  main checkout of the target repo (default: derived from cwd)
 #   --provider <p> provider identity; --agent-command overrides its executable
@@ -58,6 +58,8 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 . "$GSD_PKG/lib/common.sh"
 # shellcheck source=../lib/provider.sh
 . "$GSD_PKG/lib/provider.sh"
+# shellcheck source=../lib/tracker.sh
+. "$GSD_PKG/lib/tracker.sh"
 
 usage() {
   cat <<'HELP'
@@ -94,14 +96,14 @@ OPTIONS
   --after <N>     next integer: 11 → 11.1, a second insert → 11.2, and so on
                   (delegates to gsd-sdk phase.insert). Needs a description;
                   cannot be combined with -p. (alias: --after)
-  --cu <id>       ClickUp task id driving this phase (accepts 869e33cv4,
-                  cu_869e33cv4, or a task URL). The id is appended to the
-                  phase title and slug (convention: cu_<id>) so
-                  /gsd-discuss-phase snapshots the story, and the story is
-                  moved to "in progress" with a comment (best-effort — needs
-                  gsd-clickup + a token in ~/.config/gsd/clickup.env).
-                  Without --cu, an id already embedded in the description
-                  (… cu_<id>) is picked up the same way.
+  --ticket <id>   the ticket driving this phase: an issue/task in your
+                  tracker (accepts 869e33cv4, PROJ-42, tk-<id>, or its URL).
+                  The phase title and slug get the tag tk-<id> at the end.
+                  With `tracker = clickup|custom` in .gsd.conf the ticket is
+                  moved to "in progress" with a comment (best-effort, via
+                  gsd-tracker); with the default `tracker = none` it is only
+                  tagged. A tag already in the description (… tk-<id>) is
+                  picked up the same way. --cu <id> is the old name.
   --slug <slug>   worktree/branch slug → phase-<N>-<slug>
                   (default: slugified phase description)
   --repo <path>   main checkout of the target repo
@@ -183,7 +185,7 @@ NOTES
     with --insert/--after, gsd-sdk query phase.insert (next decimal after N),
     the same CLIs the /gsd-phase skill uses; no LLM call is made.
   - A claim is refused when the roadmap already has a phase with this exact
-    description, or (with --cu) a phase already carrying the same ClickUp id
+    description, or (with --ticket) a phase already tagged with the same ticket
     however it was worded — the error names the phase to attach to instead.
   - --insert needs a description and cannot be combined with -p/--phase. The
     anchor phase N must already exist in ROADMAP.md (else it errors, claiming
@@ -205,7 +207,7 @@ HELP
 DESC=""
 REPO=""
 SLUG=""
-CU=""
+TICKET=""; TICKET_CU=0
 ATTACH=""
 INSERT=""
 NEW=0
@@ -224,7 +226,8 @@ while [ $# -gt 0 ]; do
     --insert|--after) [ $# -ge 2 ] || die "$1 needs a value"; INSERT="$2"; shift 2 ;;
     --repo)  [ $# -ge 2 ] || die "--repo needs a value";  REPO="$2"; shift 2 ;;
     --slug)  [ $# -ge 2 ] || die "--slug needs a value";  SLUG="$2"; shift 2 ;;
-    --cu)    [ $# -ge 2 ] || die "--cu needs a value (ClickUp task id)"; CU="$2"; shift 2 ;;
+    --ticket) [ $# -ge 2 ] || die "--ticket needs a ticket id"; TICKET="$2"; shift 2 ;;
+    --cu)    [ $# -ge 2 ] || die "--cu needs a value (ClickUp task id)"; TICKET="$2"; TICKET_CU=1; shift 2 ;;
     --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, gemini, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
     --model) [ $# -ge 2 ] && [ -n "$2" ] || die "--model needs a model ID or default"; MODEL_CLI="$2"; shift 2 ;;
     --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND_CLI="$2"; LAUNCH=1; shift 2 ;;
@@ -275,22 +278,6 @@ if [ -n "$INSERT" ]; then
     || die "--insert must be the phase number to insert after (e.g. 11), got: $INSERT"
 fi
 
-# ── normalize --cu and fold it into the phase title/slug convention ──────────
-if [ -n "$CU" ]; then
-  CU="${CU##*/}"                                    # accept a full task URL
-  CU=$(printf '%s' "$CU" | sed -E 's/^[Cc][Uu][-_]//')  # accept cu_/CU- prefix
-  printf '%s' "$CU" | grep -qE '^[A-Za-z0-9]{6,}$' \
-    || die "--cu doesn't look like a ClickUp task id: $CU"
-  # Claim modes carry the id in the description → ROADMAP phase title, which is
-  # what /gsd-discuss-phase's story snapshot and later gsd-finish key off.
-  if [ -n "$DESC" ] && ! printf '%s' "$DESC" | grep -qiE "cu[-_]$CU"; then
-    DESC="$DESC cu_$CU"
-  fi
-  if [ -n "$SLUG" ] && ! printf '%s' "$SLUG" | grep -qiE "cu[-_]$CU"; then
-    SLUG="$SLUG-cu_$CU"
-  fi
-fi
-
 # ── locate the main checkout ─────────────────────────────────────────────────
 if [ -n "$REPO" ]; then
   MAIN="$(cd "$REPO" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)" \
@@ -309,6 +296,17 @@ BASE=$(gsd_base "$MAIN")
 gsd_provider_resolve "$MAIN" "$PROVIDER_CLI" "$AGENT_COMMAND_CLI" || exit $?
 gsd_model_resolve "$MAIN" "$GSD_PROVIDER_RESOLVED" "$MODEL_CLI" || exit $?
 gsd_start_mode_resolve "$MAIN" "$START_MODE_CLI" || exit $?
+
+# ── --ticket: normalize the id and tag the phase title/slug with tk-<id> ─────
+# The ROADMAP title is what gsd-finish and /gsd-flow read the id back from.
+TRACKER=$(gsd_tracker "$MAIN")
+if [ -n "$TICKET" ]; then
+  norm_as=$TRACKER; [ "$TICKET_CU" = 0 ] || norm_as=clickup
+  TICKET=$(gsd_ticket_norm "$TICKET" "$norm_as") \
+    || die "--ticket doesn't look like a ticket id (letters/digits, '-' between): $TICKET"
+  if [ -n "$DESC" ] && ! gsd_ticket_tagged "$DESC" "$TICKET"; then DESC="$DESC tk-$TICKET"; fi
+  if [ -n "$SLUG" ] && ! gsd_ticket_tagged "$SLUG" "$TICKET"; then SLUG="$SLUG-tk-$TICKET"; fi
+fi
 
 # ── local lock: serialize gsd commands touching this checkout ────────────────
 # The push-retry protects against other machines; this lock protects against
@@ -429,17 +427,17 @@ else
   # (Skipped for --insert: inserting a decimal beside a same-named phase is
   # an explicit, intentional act — e.g. a hotfix under an existing feature.)
   if [ -z "$INSERT" ]; then
-    # Same story, reworded: a ClickUp id is the identity of the work, so a
-    # phase already carrying cu_<id> IS this phase however the description
-    # was phrased this time. Checked before the exact-title match, which only
+    # Same ticket, reworded: the ticket is the identity of the work, so a
+    # phase already tagged with it IS this phase however the description was
+    # phrased this time. Checked before the exact-title match, which only
     # catches a verbatim repeat.
-    if [ -n "$CU" ]; then
-      cu_n=$(grep -iE "^### Phase [0-9]+(\.[0-9]+)?:.*cu[-_]$CU([^A-Za-z0-9]|$)" \
-        "$MAIN/.planning/ROADMAP.md" | head -1 \
-        | sed -E 's/^### Phase ([0-9]+(\.[0-9]+)?):.*/\1/' || true)
-      [ -z "${cu_n:-}" ] \
-        || die "phase $cu_n already tracks ClickUp story cu_$CU — attach to it instead: gsd-start -p $cu_n
-  (to add a hotfix under it anyway: gsd-start --insert $cu_n \"<desc>\")"
+    if [ -n "$TICKET" ]; then
+      tk_n=$(grep -E '^### Phase [0-9]+(\.[0-9]+)?:' "$MAIN/.planning/ROADMAP.md" \
+        | while IFS= read -r h; do gsd_ticket_tagged "$h" "$TICKET" && printf '%s\n' "$h"; done \
+        | head -1 | sed -E 's/^### Phase ([0-9]+(\.[0-9]+)?):.*/\1/' || true)
+      [ -z "${tk_n:-}" ] \
+        || die "phase $tk_n already tracks ticket $TICKET — attach to it instead: gsd-start -p $tk_n
+  (to add a hotfix under it anyway: gsd-start --insert $tk_n \"<desc>\")"
     fi
 
     desc_lc=$(printf '%s' "$DESC" | tr '[:upper:]' '[:lower:]')
@@ -529,27 +527,26 @@ if [ "$GSD_START_MODE_RESOLVED" = flow ]; then
   done
 fi
 
-# ── ClickUp write-back (best-effort — never blocks the phase) ────────────────
-# When the phase is driven by a ClickUp story (--cu, or cu_<id> embedded in the
-# description / ROADMAP title / worktree name), move it to "in progress" and
-# leave a trace comment. Any failure (no gsd-clickup, no token, API down) only
-# prints a note.
-CU_ID="$CU"
-if command -v gsd-clickup >/dev/null 2>&1; then
-  if [ -z "$CU_ID" ]; then
-    for src in "$DESC" "${TITLE:-}" "$(basename "$DEST")"; do
-      [ -n "$src" ] || continue
-      CU_ID=$(gsd-clickup extract "$src" 2>/dev/null || true)
-      [ -n "$CU_ID" ] && break
-    done
-  fi
-  if [ -n "$CU_ID" ]; then
-    gsd-clickup start "$CU_ID" \
+# ── ticket write-back (best-effort — never blocks the phase) ─────────────────
+# The ticket comes from --ticket or a tag in the description / ROADMAP title /
+# worktree name (title first: the slug is lowercased). With a tracker set, it
+# moves to "in progress" with a trace comment; any failure only prints a note.
+TICKET_ID="$TICKET"
+if [ -z "$TICKET_ID" ]; then
+  for src in "$DESC" "${TITLE:-}" "$(basename "$DEST")"; do
+    [ -n "$src" ] || continue
+    TICKET_ID=$(gsd_ticket_extract "$src")
+    [ -n "$TICKET_ID" ] && break
+  done
+fi
+if [ -n "$TICKET_ID" ]; then
+  if [ "$TRACKER" = none ]; then
+    [ -z "$TICKET" ] || echo "• tracker = none — phase tagged tk-$TICKET_ID only (set tracker = clickup|custom in .gsd.conf to update the ticket)"
+  else
+    "$GSD_PKG/bin/gsd-tracker" --repo "$MAIN" start "$TICKET_ID" \
       "🚧 GSD phase $N started — branch \`$(basename "$DEST")\` in $(basename "$MAIN")." \
-      || echo "• ClickUp story $CU_ID not updated (non-fatal) — check gsd-clickup check / your token"
+      || echo "• ticket $TICKET_ID not updated (non-fatal) — check: gsd-tracker check"
   fi
-elif [ -n "$CU_ID" ]; then
-  echo "• --cu given but gsd-clickup is not on PATH — story $CU_ID not updated"
 fi
 
 # ── open the session ─────────────────────────────────────────────────────────

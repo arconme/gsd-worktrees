@@ -144,9 +144,7 @@ step "6. flow, with a Claude → Codex handoff on the cart phase"
 PD=$(ls -d "$WT_CART"/.planning/phases/"$P"-* 2>/dev/null | head -1)
 [ -n "$PD" ] || { PD="$WT_CART/.planning/phases/$P-shopping-cart"; mkdir -p "$PD"; }
 NEXT() { gsd-flow-next "$CART_N" --repo "$WT_CART" --no-ui 2>&1 | sed -n 's/^step=//p'; }
-check "first step is story"   '[ "$(NEXT)" = story ]'
-: > "$PD/$P-STORY.md"; art "$WT_CART" "story"
-check "then discuss"          '[ "$(NEXT)" = discuss ]'
+check "no tracker → first step is discuss" '[ "$(NEXT)" = discuss ]'
 printf '# context (by claude)\n' > "$PD/$P-CONTEXT.md"; art "$WT_CART" "discuss (claude)"
 (cd shop && gsd-start -p "$CART_N" --provider codex --no-launch) > handoff.log 2>&1
 check "handoff to codex reuses the same worktree" 'grep -q "$WT_CART" handoff.log && grep -q "&& codex " handoff.log' "$(tail -4 handoff.log)"

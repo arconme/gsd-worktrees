@@ -115,9 +115,9 @@ before claiming work; attach or hand off with
 \`gsd-start -p <N>\` or claim new work with \`gsd-start -n "<desc>"\`.
 
 Inside the worktree, run \`gsd-flow-next <N>\` before every phase action:
-story → discuss → UI decision → UI phase when needed → plan → independent
-review → replan → execute → verifier/gap loop → verify work → code review/fix
-→ UI review → security → done. The human decisions are discuss, UI approval,
+ticket (with a tracker) → discuss → UI decision → UI phase when needed →
+plan → independent review → replan → execute → verifier/gap loop → verify
+work → code review/fix → UI review → security → done. The human decisions are discuss, UI approval,
 and review findings. Never bypass a guard unless the user explicitly requests
 \`GSD_SKIP_GUARD=1\`.
 

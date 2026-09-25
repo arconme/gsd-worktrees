@@ -15,7 +15,7 @@ follow the `run=` text as a natural-language phase instruction and clearly
 print the next step when a capability is unavailable. Never invent a universal
 provider-native invocation API. Run steps in order. The three planned approval
 gates are discussion, screen approval when applicable, and independent review;
-story intent and the UI/no-UI choice may also need a user answer.
+the ticket and the UI/no-UI choice may also need a user answer.
 The order comes from `gsd-flow-next`, which reads the phase folder — so the
 same command resumes a half-finished phase after a crash or a `/clear`.
 
@@ -36,8 +36,8 @@ Read `step=`, `run=`, `then=`, `stop=`, `note=`. Then:
 
 | step | what you do |
 |---|---|
-| `story` | Create the ClickUp story (product words, no tech; see project instructions for the list). Write `<P>-STORY.md` as a snapshot. Ask when product intent is missing. |
-| `discuss` | Invoke or follow `gsd-discuss-phase <N>` live; the user answers. Then update the story. |
+| `ticket` | Only when the repo sets a tracker. With `run=`: run that `gsd-tracker snapshot … --out …` command, then commit the file. Without `run=`: the phase has no ticket — ask the user for its id (product words, no tech), then snapshot it. Never invent product intent. |
+| `discuss` | Invoke or follow `gsd-discuss-phase <N>` live; the user answers. If `then=` says so, update the ticket to the agreed scope. |
 | `ui-decision` | Ask the user once: does this phase have screens? Re-run `gsd-flow-next` with `--ui` or `--no-ui` and keep passing that flag for the rest of this session. |
 | `ui-phase` | Invoke/follow `gsd-ui-phase <N>`. Stop for screen approval. |
 | `plan` | Invoke/follow `gsd-plan-phase <N>`. |
@@ -63,7 +63,7 @@ steps; use a normal `gsd-flow-next` call at each step.
 2. ui-phase — the user agrees the screens.
 3. review — the user sees the configured reviewer's findings before the replan.
 
-The story may require clarification, and `ui-decision` asks whether the phase
+The ticket may require clarification, and `ui-decision` asks whether the phase
 has screens. Never guess those answers. A `stop=` line describes required user
 input; pause when that input is unavailable.
 
