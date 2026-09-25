@@ -222,6 +222,13 @@ curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/get.sh |
 curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/get.sh | bash -s -- --agent claude --agent codex
 ```
 
+Careful? Pin the installer to a release tag instead of `main`, and read it first:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/v0.2.0/get.sh -o get.sh
+less get.sh && bash get.sh --version 0.2.0
+```
+
 This downloads the latest GitHub release, checks its SHA256, and installs it to
 `~/.local/share/gsd-worktrees/releases/<version>/` with the commands linked in
 `~/.local/bin`. `--version X.Y.Z` installs a given release.
@@ -394,6 +401,10 @@ tree, git config and every file byte-identical, and that `gsd-doctor` and
 `gsd_planning_status`).
 
 CI runs the suite on Linux and macOS (`.github/workflows/tests.yml`).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ## Current state / roadmap
 

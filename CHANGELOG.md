@@ -20,6 +20,7 @@ becomes its release notes.
 - **Safer claims.** The claim race is decided on origin before merging; a claim
   writes its checklist and Progress rows and correct STATE counters; zero-padded
   decimal phases (`02.1`) work everywhere.
+- MIT license.
 - Fixes from two full reviews (docs/fix-plan.md), an end-to-end test suite, and
   `gsd-list` that honors `COLUMNS`.
 

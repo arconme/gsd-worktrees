@@ -10,6 +10,13 @@ curl -fsSL …/get.sh | bash -s -- --agent claude --agent codex    # choose agen
 curl -fsSL …/get.sh | bash -s -- --version 0.2.0                  # a given release
 ```
 
+Pinned (a given installer version, read before running):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/v0.2.0/get.sh -o get.sh
+less get.sh && bash get.sh --version 0.2.0
+```
+
 `get.sh`:
 
 1. asks GitHub for the latest release (or takes `--version`);
