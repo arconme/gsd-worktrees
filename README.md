@@ -233,6 +233,26 @@ This downloads the latest GitHub release, checks its SHA256, and installs it to
 `~/.local/share/gsd-worktrees/releases/<version>/` with the commands linked in
 `~/.local/bin`. `--version X.Y.Z` installs a given release.
 
+**Windows: use WSL2.** The toolkit is bash and expects a Unix system
+(symlinks, `~/.local/bin`, `perl`, Unix process checks). Plain Windows,
+PowerShell and Git Bash are not supported. Inside WSL2 it is just Linux, which
+CI tests on every push:
+
+```sh
+wsl --install                     # in PowerShell (admin), once; installs Ubuntu, then reboot
+# then, in the Ubuntu terminal:
+sudo apt update && sudo apt install -y git curl perl python3 jq
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/get.sh | bash
+```
+
+- Keep your projects on the Linux side (`~/projects`), not under `/mnt/c/…`:
+  it is much faster there, and file permissions and line endings behave.
+- Install and run the agents (Claude Code, Codex, Gemini) and `gsd-sdk`
+  (`npm i -g get-shit-done-cc`) inside WSL too, so they see the same PATH.
+- If `gsd-*` is not found after install, open a new terminal (Ubuntu adds
+  `~/.local/bin` to PATH at login once it exists).
+- VS Code: the "WSL" extension opens the Linux-side folders directly.
+
 **Updates:** `gsd-start`, `gsd-list`, `gsd-init` and `gsd-doctor` tell you when
 a newer release (of this toolkit or of GSD itself) is out (at most one GitHub call a day; `GSD_NO_UPDATE_CHECK=1` turns it
 off). Then:
