@@ -109,6 +109,11 @@ on `gsd-start` do not rewrite the set. Refer to `gsd-init --help` for setup flag
 | `test` | Test command; detected by project type, `none` skips tests |
 | `flow` | `strict` enables prerequisite checks; unset preserves legacy non-strict behavior |
 | `flow_since` | Minimum phase included in doctor's historical flow-debt report |
+| `tracker` | Ticket tracker: `none` (default), `clickup`, or `custom` |
+| `tracker_command` | Executable for `tracker = custom` (see `docs/trackers.md`) |
+| `tracker_status_start`, `tracker_status_finish` | Ticket status set by `gsd-start` / `gsd-finish` |
+
+`gsd-doctor` reports any other key as a likely typo (T017).
 
 `review_provider` selects a request, not a built-in subprocess runner. The external
 `gsd-review` skill supports the three named flags; its installation and CLI access

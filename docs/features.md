@@ -107,7 +107,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 |---|---|
 | Phase table: number, title, plans done/total, stage, worktree; wraps to the terminal (`--compact` for one line) | `gsd-list` |
 | Read-only health check, every finding names its fix command; `--quiet`, `--json` | `gsd-doctor` |
-| Finding codes: T001–T003 toolkit, T010–T014 repo setup, T020–T024 planning, T030–T031 hygiene, T040 flow debt, T050–T060 providers, T070–T072 tracker, W017 / W027 shared with `/gsd-health` | `gsd-doctor` |
+| Finding codes: T001–T007 toolkit (incl. T005 no gsd-sdk, T006 no perl, T007 stale skills), T010–T019 repo setup (T015 base branch, T017 unknown `.gsd.conf` key, T018 bad value, T019 pre-merge gate), T020–T025 planning (T025 duplicate phase heading), T030–T032 hygiene (T032 failed worktree install), T040 flow debt, T050–T060 providers, T070–T073 tracker (T073 no ClickUp token), W017 / W027 shared with `/gsd-health` | `gsd-doctor` |
 | Checks for a newer GSD on npm and branches whose upstream is gone | `gsd-doctor` |
 
 ## 9. Install and maintenance

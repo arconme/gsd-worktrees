@@ -62,5 +62,7 @@ jobs:
         run: tests/test-tracker.sh
       - name: release install + update suite
         run: tests/test-update.sh
+      - name: doctor checks suite
+        run: tests/test-doctor.sh
       - name: end-to-end suite (skips without gsd-sdk)
         run: tests/test-e2e.sh

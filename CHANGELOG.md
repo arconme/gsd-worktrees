@@ -4,6 +4,26 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.2.3
+
+`gsd-doctor` checks more (all read-only, as before):
+
+- Toolkit: GSD's `gsd-sdk` missing (T005), `perl` missing (T006), installed
+  skills that differ from this version (T007, for every configured provider).
+- `.gsd.conf`: unknown keys and lines that are not `key = value` (T017), bad
+  `flow` / `flow_since` / `start_mode` values (T018).
+- Base branch missing, or only on origin (T015). No `origin` is a note.
+- Pre-merge gate: script not executable, or a configured path that does not
+  exist (T019).
+- ROADMAP with two headings for one phase (T025). Without perl the roadmap row
+  check says it was skipped instead of passing.
+- A worktree whose dependency install failed (T032).
+- `tracker = clickup` with no token on this machine (T073).
+- Fix lines name the right reinstall command for a release install
+  (`get.sh --version X --reuse-install-config`) or a git checkout.
+- `install.sh --reuse-install-config --agent <p>` now adds `<p>` to the agents
+  recorded by the last install instead of ignoring it.
+
 ## 0.2.2
 
 Same as 0.2.1, which was tagged but never released (a test needed a command on

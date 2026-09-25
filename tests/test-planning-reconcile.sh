@@ -27,6 +27,13 @@ FAIL=0
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# Doctor reports a missing gsd-sdk (T005). CI has none, and these checks are
+# about the repo under inspection, so give them a stand-in.
+mkdir -p "$WORK/stub-bin"
+printf '#!/bin/sh\necho 1.0.0\n' > "$WORK/stub-bin/gsd-sdk"
+chmod +x "$WORK/stub-bin/gsd-sdk"
+PATH="$PATH:$WORK/stub-bin"
+
 ok()   { PASS=$((PASS + 1)); printf '  ✔ %s\n' "$1"; }
 bad()  { FAIL=$((FAIL + 1)); printf '  ✘ %s\n' "$1"; [ $# -gt 1 ] && printf '      %s\n' "$2"; }
 is()   { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }

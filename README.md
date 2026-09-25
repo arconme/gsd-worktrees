@@ -388,6 +388,7 @@ tests/test-list.sh
 tests/test-review-round2.sh
 tests/test-commands.sh
 tests/test-update.sh     # releases: get.sh install, gsd-update, checksums, pruning, the update notice
+tests/test-doctor.sh     # doctor checks: missing tools, stale skills, .gsd.conf typos, base branch, pre-merge gate, …
 tests/test-tracker.sh    # tickets: id parsing, none/custom/fake-ClickUp, start/finish/doctor paths
 tests/test-e2e.sh        # whole journey in a fake project; needs gsd-sdk (skips without it)
 ```

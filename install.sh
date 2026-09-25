@@ -54,7 +54,8 @@ MANIFEST=$BIN_DIR/.gsd-install-manifest
 if [ "$REUSE" = 1 ] && [ -f "$MANIFEST" ]; then
   while IFS=$'\t' read -r key value; do
     case "$key" in
-      providers) [ -n "$PROVIDERS" ] || PROVIDERS=$value ;;
+      # recorded agents are kept; any --agent given now is added to them
+      providers) oldifs=$IFS; IFS=,; for p in $value; do add_provider "$p"; done; IFS=$oldifs ;;
       claude_skills) GSD_CLAUDE_SKILL_DIR=${GSD_CLAUDE_SKILL_DIR:-$value} ;;
       codex_skills) GSD_CODEX_SKILL_DIR=${GSD_CODEX_SKILL_DIR:-$value} ;;
       gemini_skills) GSD_GEMINI_SKILL_DIR=${GSD_GEMINI_SKILL_DIR:-$value} ;;

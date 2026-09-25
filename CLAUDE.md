@@ -35,6 +35,7 @@ tests/test-review-round2.sh           # regressions from the 2026-09-25 review (
 tests/test-commands.sh                # derive-port, start refusals/insert/-p/--flow, conflict abort, stale lock, init docs detection, finish --pr, bash-3.2 lint
 tests/test-tracker.sh                 # tickets: ids, gsd-tracker none/custom/fake ClickUp (curl stub), --ticket through start/finish, doctor T070–T072
 tests/test-update.sh                  # releases: get.sh, gsd-update, checksums, pruning, update notice (fake GitHub via a curl stub)
+tests/test-doctor.sh                  # doctor checks T005–T007, T015–T019, T025, T032, T073; reinstall command; install --reuse-install-config + --agent
 tests/test-e2e.sh                     # END-TO-END: fake project + real gsd-sdk (skips without it), ~15s.
                                       # Run it after ANY change to start/finish/guard/flow/planning code —
                                       # it caught 4 bugs the unit suites missed (fix-plan R15–R18).

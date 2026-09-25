@@ -25,8 +25,8 @@ installation is idempotent. `gsd-sync` can still check project shims from a
 standalone copy; its Git self-update step is skipped.
 
 Use `--reuse-install-config` when updating to reuse providers and skill roots
-recorded in `GSD_BIN_DIR/.gsd-install-manifest`, or explicitly repeat the desired
-`--agent` flags. The manifest is parsed as data, never evaluated. Copy runtimes
+recorded in `GSD_BIN_DIR/.gsd-install-manifest`; any `--agent` given with it is
+added to the recorded ones. The manifest is parsed as data, never evaluated. Copy runtimes
 record owned command names in `.gsd-owned-commands`; removed commands are moved
 to backups and only their matching PATH symlinks are removed. Older runtimes
 without an inventory cannot safely have obsolete files automatically retired.
