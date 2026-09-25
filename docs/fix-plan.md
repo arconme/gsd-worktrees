@@ -41,12 +41,16 @@ Status: `todo` · `in progress` · `done` (fixed + regression test) · `won't fi
 
 A fake project with a local bare remote, the real `gsd-sdk` 1.42.3, two clones
 claiming and finishing at the same moment, a Claude → Codex handoff, and strict
-flow. AI output simulated with files. Result: 32 of 33 checks pass.
+flow. AI output simulated with files. First result: 32 of 33 checks pass.
+After R15–R18: **35 of 35**, three runs in a row, with either clone losing the
+claim race (script kept outside the repo; it needs the real `gsd-sdk`).
 
 | ID | Finding | Where | Fix | Status |
 |---|---|---|---|---|
 | R15 | **Claim race loses a phase.** Two sessions claim at once, both get phase N; on the loser's rebase the planning merge driver collapses the two `### Phase N` sections into one, so the duplicate count stays 1, no renumber happens, and the other session's phase vanishes from the roadmap (its branch/worktree remain). The driver (2026-08-05) broke the renumber logic (2026-07-18); no test covered it | `bin/gsd-start` publish loop | decide the race on `origin/<base>`'s roadmap **before** merging: fetch, and if phase N is already there, unclaim → fast-forward → claim again | done — regression test R15 in `tests/test-review-round2.sh` (stub `gsd-sdk` + pre-push race) fails on the old code; the e2e run with the real `gsd-sdk` now yields phases 2 and 3 |
-| R16 | **Every claim leaves the roadmap red in `gsd-doctor`.** `gsd-sdk phase.add` writes only the `### Phase N` section and a `- [ ] TBD (run /gsd-plan-phase N …)` line — no checklist row, no Progress row. Doctor then reports T022 + T023 + T021 (completing the phase would tick the TBD line) for each new phase. `roadmap-audit.pl` documents this for `phase.insert` only; `phase.add` does it too | `bin/gsd-start` `claim()` / `insert_phase()` | after the claim, add the missing checklist row (before any TBD line, so `phase.complete` ticks the right line) and Progress row, only when absent | todo |
+| R16 | **Every claim leaves the roadmap red in `gsd-doctor`.** `gsd-sdk phase.add` writes only the `### Phase N` section and a `- [ ] TBD (run /gsd-plan-phase N …)` line — no checklist row, no Progress row. Doctor then reports T022 + T023 + T021 (completing the phase would tick the TBD line) for each new phase. `roadmap-audit.pl` documents this for `phase.insert` only; `phase.add` does it too | `bin/gsd-start` `claim()` / `insert_phase()` | after the claim, add the missing checklist row (before any TBD line, so `phase.complete` ticks the right line) and Progress row, only when absent | done — new `lib/roadmap-rows.pl`, called from both claim paths; 7 checks in round 2; e2e roadmap audit clean |
+| R17 | **A plain `git pull` blocks the next claim.** Claims left STATE.md's counters stale (`total_phases: 1` with 3 phases); the `post-merge` hook recomputes them on the next pull and leaves STATE.md modified, so `gsd-start` refuses ("uncommitted .planning changes"). Seen in e2e whenever the other clone won the race | `bin/gsd-start` | recompute counters (`gsd-planning-repair`, no commit) inside the claim commit; the refusal now names `gsd-planning-repair --commit` | done — 2 checks in round 2 fail on the old code |
+| R18 | **Regression from R03.** Normalizing `02.1` → `2.1` broke `gsd-sdk`'s zero-padded decimal inserts: branch `phase-02.1-*` no longer matched, so every `gsd-start --insert` ended BLOCKED | `bin/gsd-worktree-guard` | compare branch and requested phase numerically; take the artifact prefix from the phase dir that exists (`02.1-` or `7.1-`) | done — 5 guard checks with a padded decimal fixture |
 
 ## Backlog — not part of this pass
 

@@ -320,7 +320,8 @@ if [ -z "$ATTACH" ]; then
   cur=$(git -C "$MAIN" branch --show-current)
   [ "$cur" = "$BASE" ] || die "main checkout is on '$cur', not '$BASE' — checkout $BASE first (claims serialize through $BASE)"
   [ -z "$(git -C "$MAIN" status --porcelain -- .planning)" ] \
-    || die "main checkout has uncommitted .planning/ changes — commit or stash them first (the claim commit must be clean)"
+    || die "main checkout has uncommitted .planning/ changes — commit or stash them first (the claim commit must be clean)" \
+           "if they are only recomputed counters (from the post-merge hook): gsd-planning-repair --commit"
 
   HAS_ORIGIN=0
   git -C "$MAIN" remote get-url origin >/dev/null 2>&1 && HAS_ORIGIN=1
@@ -333,6 +334,16 @@ if [ -z "$ATTACH" ]; then
 fi
 
 # ── claim the phase (deterministic, no LLM) ──────────────────────────────────
+add_roadmap_rows() {  # gsd-sdk writes no checklist/Progress row for phase $N — add them
+  perl "$GSD_PKG/lib/roadmap-rows.pl" "$MAIN/.planning/ROADMAP.md" "$N" \
+    || echo "⚠ could not add the ROADMAP rows for phase $N — gsd-doctor will list them (T022/T023)" >&2
+  # Recompute STATE.md's progress counters (total_phases, …) in the claim
+  # commit itself. Left stale, the post-merge hook recomputes them on the next
+  # plain `git pull` and leaves STATE.md modified — which then blocks the next
+  # gsd-start. Best effort: without python the counters simply stay as they were.
+  "$GSD_PKG/bin/gsd-planning-repair" --repo "$MAIN" >/dev/null 2>&1 || true
+}
+
 claim() {  # claims the next phase number and commits; sets $N
   gsd-sdk query phase.add "$DESC" --project-dir "$MAIN" >/dev/null \
     || die "gsd-sdk query phase.add failed"
@@ -343,6 +354,7 @@ claim() {  # claims the next phase number and commits; sets $N
         | grep -E '^\+### Phase [0-9]+(\.[0-9]+)?:' | tail -1 \
         | sed -E 's/^\+### Phase ([0-9]+(\.[0-9]+)?):.*/\1/' || true)
   [ -n "$N" ] || die "claim did not add a '### Phase N:' heading to ROADMAP.md — inspect $MAIN/.planning/ROADMAP.md"
+  add_roadmap_rows
 
   # STATE.md roadmap-evolution note (same note the /gsd-phase skill writes).
   local state="$MAIN/.planning/STATE.md"
@@ -365,6 +377,7 @@ insert_phase() {  # inserts a decimal phase after $INSERT and commits; sets $N (
   # Source of truth for what was claimed: the phase_number from the JSON result.
   N=$(printf '%s\n' "$out" | sed -nE 's/^[[:space:]]*"phase_number"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1)
   [ -n "$N" ] || die "phase.insert did not return a phase_number — inspect $MAIN/.planning/ROADMAP.md"
+  add_roadmap_rows
   # Reuse the slug the SDK derived (avoids the '(INSERTED)' suffix leaking into the worktree name).
   if [ -z "$SLUG" ]; then
     SLUG=$(printf '%s\n' "$out" | sed -nE 's/^[[:space:]]*"slug"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1)

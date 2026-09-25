@@ -27,6 +27,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Deterministic claim via `gsd-sdk query phase.add` / `phase.insert` (no LLM call) | `gsd-start` |
 | Parallel-safe claim: pull, push with rebase-and-retry, auto-renumber the loser | `gsd-start` |
 | Duplicate-description guard (case-insensitive) | `gsd-start` |
+| Claim bookkeeping: checklist + Progress rows and STATE.md counters land in the claim commit | `gsd-start`, `lib/roadmap-rows.pl` |
 | ClickUp story link (`--cu <id|url>`): id folded into title/slug, duplicate-story guard, story → "in progress" | `gsd-start`, `gsd-clickup` |
 | Print-only by default; `--launch` / `--agent-command` / `--provider` open the session | `gsd-start` |
 | `--flow` / `--no-flow` / `start_mode`: open discuss-phase only, or resume the full flow | `gsd-start`, `lib/provider.sh` |
@@ -135,3 +136,4 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | `lib/gsd_planning.py` | `reconcile` and `repair` engines for ROADMAP.md / STATE.md |
 | `lib/gsd_hook_payload.py` | Claude/Gemini hook JSON → guard input |
 | `lib/roadmap-audit.pl` | read-only ROADMAP bookkeeping audit |
+| `lib/roadmap-rows.pl` | adds a claimed phase's missing checklist + Progress rows (the ones `gsd-sdk` leaves out) |

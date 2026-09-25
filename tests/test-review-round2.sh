@@ -115,6 +115,7 @@ chmod +x "$WORK/stub/gsd-sdk"
 git init -q --bare -b main "$WORK/r15.git"
 R="$WORK/r15"; mkdir -p "$R/.planning"; git -C "$R" init -qb main
 printf '# Roadmap\n\n### Phase 1: first\n' > "$R/.planning/ROADMAP.md"
+printf -- '---\nstatus: planning\nprogress:\n  total_phases: 1\n  completed_phases: 0\n  total_plans: 0\n  completed_plans: 0\n  percent: 0\n---\n\n# Project State\n' > "$R/.planning/STATE.md"
 printf '.planning/ROADMAP.md merge=gsd-planning\n.planning/STATE.md merge=gsd-planning\n' > "$R/.gitattributes"
 printf 'install = none\n' > "$R/.gsd.conf"
 commit "$R" init; git -C "$R" remote add origin "$WORK/r15.git"; git -C "$R" push -qu origin main
@@ -134,6 +135,53 @@ check "the rival's phase 2 survives on origin" 'printf "%s" "$ORIGIN_RM" | grep 
 check "our claim landed as phase 3" 'printf "%s" "$ORIGIN_RM" | grep -q "^### Phase 3: shopping cart"'
 check "exactly one phase 2 heading" '[ "$(printf "%s" "$ORIGIN_RM" | grep -c "^### Phase 2:")" = 1 ]'
 check "worktree branch is phase-3" 'git -C "$R" show-ref --verify --quiet refs/heads/phase-3-shopping-cart'
+
+section "R17 — the claim commit carries correct STATE.md counters"
+check "origin STATE.md counts all 3 phases" \
+  'git --git-dir="$WORK/r15.git" show main:.planning/STATE.md | grep -q "total_phases: 3"'
+gsd-planning-repair --repo "$R" > /dev/null 2>&1
+check "a later repair (the post-merge hook) leaves main clean" '[ -z "$(git -C "$R" status --porcelain -- .planning)" ]' \
+  || git -C "$R" diff -- .planning
+
+section "R16 — a claimed phase gets its checklist + Progress rows"
+RM="$WORK/r16.md"
+cat > "$RM" <<'EOF'
+# Roadmap
+
+## Phases
+
+- [x] **Phase 1: First** - done
+- [ ] **Phase 2: Second** - next
+
+## Phase Details
+
+### Phase 1: First
+### Phase 2: Second
+### Phase 2.1: Hot fix | urgent (INSERTED)
+- [ ] TBD (run /gsd-plan-phase 2.1 to break down)
+### Phase 3: Third
+- [ ] TBD (run /gsd-plan-phase 3 to break down)
+
+## Progress
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. First | v1 | 1/1 | Complete | 2026-09-01 |
+| 2. Second | v1 | 0/2 | In progress | - |
+EOF
+perl "$PKG/lib/roadmap-rows.pl" "$RM" 3 && perl "$PKG/lib/roadmap-rows.pl" "$RM" 2.1
+check "roadmap audit is clean afterwards (no T021/T022/T023)" '[ -z "$(perl "$PKG/lib/roadmap-audit.pl" "$RM")" ]' || perl "$PKG/lib/roadmap-audit.pl" "$RM"
+check "checklist rows in numeric order" \
+  '[ "$(grep -oE "^- \[.\] \*\*Phase [0-9.]+" "$RM" | grep -oE "[0-9.]+$" | tr "\n" " ")" = "1 2 2.1 3 " ]'
+check "Progress rows in numeric order" \
+  '[ "$(grep -oE "^\| [0-9.]+\." "$RM" | grep -oE "[0-9.]+" | tr "\n" " ")" = "1. 2. 2.1. 3. " ]'
+check "Progress row matches the table's columns" \
+  'grep -qxF "| 3. Third | - | 0/TBD | Not started | - |" "$RM"'
+check "a | in the title does not break the table" 'grep -q "^| 2.1. Hot fix / urgent" "$RM"'
+before=$(cat "$RM"); perl "$PKG/lib/roadmap-rows.pl" "$RM" 3
+check "idempotent" '[ "$before" = "$(cat "$RM")" ]'
+printf '# Roadmap\n### Phase 1: only\n' > "$RM"; perl "$PKG/lib/roadmap-rows.pl" "$RM" 1
+check "a roadmap without checklist or table is left alone" '[ "$(cat "$RM")" = "$(printf "# Roadmap\n### Phase 1: only")" ]'
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

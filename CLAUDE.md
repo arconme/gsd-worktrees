@@ -48,6 +48,7 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 - **`lib/provider.sh`** — the provider adapters. No workflow logic. Resolves provider, executable, model and start mode (precedence tables in `docs/providers.md`); renders argv safely (never `eval`); owns the marked-block helpers for generated instruction files.
 - **`lib/gsd_hook_payload.py`** — turns native hook JSON (Claude, Gemini) into the guard's NUL-delimited input. It rejects any compound/wrapped shell command that mentions a `gsd-` name instead of guessing.
 - **`lib/gsd_planning.py`** — `reconcile` (one file, structural only, run mid-merge by the driver) and `repair` (both files + recompute counters from `.planning/phases/*/*-PLAN.md`/`*-SUMMARY.md`; `--check` for CI).
+- **`lib/roadmap-rows.pl`** — run by `gsd-start` after each claim: adds the checklist + Progress rows `gsd-sdk` omits, so the new phase passes `roadmap-audit.pl`.
 - **`lib/roadmap-audit.pl`** — read-only ROADMAP audit for `gsd-doctor`. It catches two upstream `gsd-sdk` bugs (`phase.insert` writes no checklist row; `phase.complete` can tick another phase's row).
 - **`shims/`** — frozen 7-line delegators that bootstrap copies into target repos as `scripts/gsd-*.sh`. Keep them unchanged.
 - **`skills/`** — `gsd-worktrees` and `gsd-flow`, installed per agent. They must stay provider-neutral: no literal `Skill()` calls. The flow skill only interprets `gsd-flow-next` output; it is not a second state machine.

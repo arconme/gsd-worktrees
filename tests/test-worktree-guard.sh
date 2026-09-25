@@ -89,6 +89,15 @@ allowed "plan-phase 8 finds the 08-* dir"           gsd-plan-phase "8"
 mkrepo strict phase-09-legacy 09-legacy; : > "$PDIR/09-CONTEXT.md"
 allowed "phase from a phase-09-* branch pads correctly" gsd-plan-phase ""
 
+section "flow = strict — gsd-sdk decimal inserts are zero-padded (02.1)"
+mkrepo strict phase-02.1-hotfix 02.1-hotfix
+blocked "02.1 plan-phase without CONTEXT is blocked"   gsd-plan-phase "02.1"
+: > "$PDIR/02.1-CONTEXT.md"
+allowed "02.1 plan-phase with CONTEXT passes"          gsd-plan-phase "02.1"
+allowed "2.1 names the same phase as 02.1"             gsd-plan-phase "2.1"
+allowed "phase taken from a phase-02.1-* branch"       gsd-discuss-phase ""
+blocked "02.2 is still another phase"                  gsd-plan-phase "02.2"
+
 section "flow = strict — policy comes from the MAIN checkout, not the worktree copy"
 mkrepo "" phase-7-thing 07-thing          # branch carries NO flow key
 git -C "$REPO" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1
