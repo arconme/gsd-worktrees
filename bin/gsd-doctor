@@ -47,6 +47,7 @@ done
 GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 # shellcheck source=../lib/common.sh
 . "$GSD_PKG/lib/common.sh"
+. "$GSD_PKG/lib/provider.sh"
 
 REPO=""
 QUIET=0
@@ -88,6 +89,25 @@ fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)  
   printf '%s\n' "$FIXES" | grep -qxF -- "$2" || FIXES="${FIXES:+$FIXES$'\n'}$2"
 }
 section() { [ "$QUIET" = 1 ] || printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+RAW_PROVIDERS=$(gsd_conf_get "$MAIN" providers)
+RAW_LEGACY_PROVIDER=$(gsd_conf_get "$MAIN" provider)
+if [ -n "$RAW_PROVIDERS" ]; then RAW_PROVIDER=${RAW_PROVIDERS%%,*}
+else RAW_PROVIDER=${RAW_LEGACY_PROVIDER:-claude}
+fi
+RAW_COMMAND=$(gsd_conf_get "$MAIN" agent_command)
+PROVIDER_VALID=1
+if gsd_provider_resolve "$MAIN" "$RAW_PROVIDER" "" 2>/dev/null; then
+  DOCTOR_PROVIDER=$GSD_PROVIDER_RESOLVED; DOCTOR_COMMAND=$GSD_AGENT_COMMAND_RESOLVED
+else
+  PROVIDER_VALID=0; DOCTOR_PROVIDER=$RAW_PROVIDER; DOCTOR_COMMAND=${RAW_COMMAND:-unknown}
+fi
+PROVIDER_AVAILABLE=false; command -v "$DOCTOR_COMMAND" >/dev/null 2>&1 && PROVIDER_AVAILABLE=true
+DOCTOR_MODEL=""; MODEL_VALID=1
+if gsd_model_resolve "$MAIN" "$DOCTOR_PROVIDER" "" 2>/dev/null; then
+  DOCTOR_MODEL=$GSD_MODEL_RESOLVED
+else MODEL_VALID=0
+fi
 
 [ "$JSON" = 1 ] || printf '\033[1mgsd-doctor\033[0m — %s\n%s\n' "$(basename "$MAIN")" "$MAIN"
 
@@ -149,7 +169,10 @@ fi
 # telling it to install GSD — including this toolkit, which is the SOURCE of
 # the scripts and is deliberately not a GSD project. gsd-bootstrap-repo already
 # refuses to run here; doctor has to know the same thing.
-if [ -f "$GSD_PKG/install.sh" ] && [ -d "$GSD_PKG/shims" ] && [ "$MAIN" = "$GSD_PKG" ]; then
+# Resolve both sides through Git: the running toolkit may itself be a linked
+# worktree, while MAIN always names the target repository's main checkout.
+TOOLKIT_MAIN=$(gsd_main "$GSD_PKG")
+if [ -f "$GSD_PKG/install.sh" ] && [ -d "$GSD_PKG/shims" ] && [ "$MAIN" = "$TOOLKIT_MAIN" ]; then
   section "repo setup"
   note "this is the gsd-worktrees toolkit itself, not a GSD project — setup checks skipped"
   IS_GSD_REPO=0
@@ -166,6 +189,63 @@ fi
 # ── repo setup (fixed by re-running gsd-init) ────────────────────────────────
 if [ "$IS_GSD_REPO" = 1 ]; then
 section "repo setup"
+review_provider=$(gsd_conf_get "$MAIN" review_provider)
+if [ -n "$review_provider" ] && ! gsd_provider_known "$review_provider"; then
+  fail "invalid review_provider '$review_provider'" "set review_provider to claude, codex, gemini, or custom in .gsd.conf" "T060"
+fi
+
+if [ "$MODEL_VALID" = 0 ]; then
+  fail "invalid model configuration for $DOCTOR_PROVIDER" "check ${DOCTOR_PROVIDER}_model in .gsd.conf and GSD model environment overrides" "T059"
+else
+  pass "session model: ${DOCTOR_MODEL:-CLI default} (model availability is checked by the provider CLI)"
+fi
+if [ "$PROVIDER_VALID" = 0 ]; then
+  fail "invalid provider configuration: '$RAW_PROVIDER'" "edit .gsd.conf: providers = claude|codex|gemini|custom" "T050"
+else
+  pass "provider: $DOCTOR_PROVIDER (command: $DOCTOR_COMMAND)"
+  [ "$PROVIDER_AVAILABLE" = true ] && pass "provider executable is available" || fail "provider executable '$DOCTOR_COMMAND' is unavailable (print-only still works)" "install $DOCTOR_COMMAND or set ${DOCTOR_PROVIDER}_command in .gsd.conf" "T051"
+  instruction=$(gsd_provider_instruction_file "$DOCTOR_PROVIDER")
+  if gsd_provider_instruction_integrated "$MAIN" "$DOCTOR_PROVIDER"; then pass "$instruction points to canonical .gsd/INSTRUCTIONS.md"; else fail "$instruction integration is missing, malformed or legacy" "gsd-init --no-launch" "T052"; fi
+  skillroot=$(gsd_provider_skill_root "$DOCTOR_PROVIDER" 2>/dev/null || true)
+  if [ -z "$skillroot" ]; then note "$DOCTOR_PROVIDER has no installable native skill format; follow .gsd/INSTRUCTIONS.md and gsd-flow-next"
+  elif [ -f "$skillroot/gsd-flow/SKILL.md" ]; then pass "gsd-flow adapter installed at $skillroot"
+  else note "gsd-flow adapter not found — (cd $GSD_PKG && ./install.sh --agent $DOCTOR_PROVIDER)"; fi
+  hookstate=$(gsd_provider_hook_state "$MAIN" "$DOCTOR_PROVIDER")
+  case "$hookstate" in
+    unsupported) note "$DOCTOR_PROVIDER native hook unsupported; command-level guard is the enforcement path" ;;
+    present) pass "$DOCTOR_PROVIDER native guard hook present (defense in depth)" ;;
+    *) note "$DOCTOR_PROVIDER native hook $hookstate — inspect provider settings, then gsd-init --no-launch" ;;
+  esac
+  if gsd_command_guards_active "$GSD_PKG"; then pass "mandatory command-level guards are active"; else fail "mandatory command-level guard route is incomplete" "reinstall the toolkit commands with install.sh" "T053"; fi
+fi
+
+configured=",${RAW_PROVIDERS:-${RAW_LEGACY_PROVIDER:-$DOCTOR_PROVIDER}},"
+configured_list=${configured#,}; configured_list=${configured_list%,}
+if [ -n "$RAW_LEGACY_PROVIDER" ]; then
+  if [ -n "$RAW_PROVIDERS" ] && [ "$RAW_LEGACY_PROVIDER" != "${RAW_PROVIDERS%%,*}" ]; then
+    fail "legacy provider '$RAW_LEGACY_PROVIDER' conflicts with providers default '${RAW_PROVIDERS%%,*}' and is ignored" "gsd-init --providers $configured_list --no-launch" "T056"
+  else
+    note "legacy 'provider' key is supported but redundant — gsd-init --providers $configured_list --no-launch migrates it"
+  fi
+fi
+oldifs=$IFS; IFS=,
+for configured_provider in $configured_list; do
+  if ! gsd_provider_known "$configured_provider"; then fail "unknown configured provider '$configured_provider'" "edit .gsd.conf providers" "T050"; continue; fi
+  if gsd_provider_resolve "$MAIN" "$configured_provider" "" 2>/dev/null; then
+    if command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then pass "configured provider $configured_provider is available as $GSD_AGENT_COMMAND_RESOLVED"
+    else fail "configured provider $configured_provider executable '$GSD_AGENT_COMMAND_RESOLVED' is unavailable" "install it, set ${configured_provider}_command, or use print-only" "T057"; fi
+  else fail "configured provider $configured_provider command is invalid" "check ${configured_provider}_command in .gsd.conf" "T050"; fi
+  configured_file=$(gsd_provider_instruction_file "$configured_provider")
+  gsd_provider_instruction_integrated "$MAIN" "$configured_provider" || fail "$configured_provider instruction adapter is missing or malformed in $configured_file" "gsd-init --no-launch" "T058"
+done
+IFS=$oldifs
+for f in CLAUDE.md AGENTS.md GEMINI.md; do
+  gsd_owned_markers_valid "$MAIN/$f" provider || fail "mixed/malformed GSD instruction blocks in $f" "repair the owned marker pair, then gsd-init --no-launch" "T055"
+  members=$(gsd_provider_instruction_members "$MAIN/$f")
+  oldifs=$IFS; IFS=,
+  for p in $members; do case "$configured" in *",$p,"*) ;; *) fail "stale $p provider block in $f" "remove only the stale provider's owned entrypoint, preserving shared providers and user content" "T054" ;; esac; done
+  IFS=$oldifs
+done
 
 [ -f "$MAIN/.gsd.conf" ] \
   && pass ".gsd.conf (base $(gsd_base "$MAIN"), worktrees $(gsd_wtdir "$MAIN"))" \
@@ -205,11 +285,6 @@ case " $GSD_PLANNING_MISSING " in
   *) pass "post-merge hook reconciles .planning after a plain git pull" ;;
 esac
 
-if grep -q 'gsd-worktree-guard' "$MAIN/.claude/settings.json" 2>/dev/null; then
-  pass "guard hook registered in .claude/settings.json"
-else
-  note "guard hook not registered (Claude Code only; harmless under other agents)"
-fi
 fi  # IS_GSD_REPO
 
 # ── planning state (fixed by gsd-planning-repair) ────────────────────────────
@@ -379,7 +454,14 @@ fi
 
 # ── verdict ──────────────────────────────────────────────────────────────────
 if [ "$JSON" = 1 ]; then
-  printf '{"repo":"%s","count":%d,"findings":[%s]}\n' "$(jstr "$MAIN")" "$FINDINGS" "$JSON_ITEMS"
+  instruction_file=$(gsd_provider_instruction_file "$DOCTOR_PROVIDER" 2>/dev/null || echo '')
+  instruction_integrated=false; gsd_provider_instruction_integrated "$MAIN" "$DOCTOR_PROVIDER" && instruction_integrated=true
+  skill_installed=false; doctor_skillroot=$(gsd_provider_skill_root "$DOCTOR_PROVIDER" 2>/dev/null || true); [ -n "$doctor_skillroot" ] && [ -f "$doctor_skillroot/gsd-flow/SKILL.md" ] && skill_installed=true
+  native_hook=$(gsd_provider_hook_state "$MAIN" "$DOCTOR_PROVIDER")
+  command_guard=false; gsd_command_guards_active "$GSD_PKG" && command_guard=true
+  configured_json=""; doctor_configured=$(gsd_conf_get "$MAIN" providers); doctor_configured=${doctor_configured:-$DOCTOR_PROVIDER}; oldifs=$IFS; IFS=,; for p in $doctor_configured; do configured_json="${configured_json:+$configured_json,}\"$(jstr "$p")\""; done; IFS=$oldifs
+  printf '{"session_model":"%s",' "$(jstr "$DOCTOR_MODEL")"
+  printf '"repo":"%s","configured":[%s],"provider":{"name":"%s","command":"%s","available":%s,"instruction_file":"%s","instruction_integrated":%s,"skill_installed":%s,"command_guard":%s,"native_hook":"%s"},"count":%d,"findings":[%s]}\n' "$(jstr "$MAIN")" "$configured_json" "$(jstr "$DOCTOR_PROVIDER")" "$(jstr "$DOCTOR_COMMAND")" "$PROVIDER_AVAILABLE" "$(jstr "$instruction_file")" "$instruction_integrated" "$skill_installed" "$command_guard" "$native_hook" "$FINDINGS" "$JSON_ITEMS"
   [ "$FINDINGS" -eq 0 ]; exit $?
 fi
 echo ""

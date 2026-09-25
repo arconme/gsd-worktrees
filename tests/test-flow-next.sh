@@ -11,6 +11,8 @@ section() { printf '\n%s\n' "$1"; }
 
 REPO="$WORK/r"; PD="$REPO/.planning/phases/07-thing"; mkdir -p "$PD"
 git -C "$REPO" init -q -b develop
+git -C "$REPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$REPO" checkout -q -b phase-7-thing
 gcommit() { git -C "$REPO" add -A >/dev/null; GIT_AUTHOR_DATE="$1" GIT_COMMITTER_DATE="$1" git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m "$2" --allow-empty; }
 step() { "$NEXT" 7 --repo "$REPO" "$@" | sed -n 's/^step=//p'; }
 fm() { printf -- '---\nstatus: %s\n%s\n---\n' "$2" "${3:-}" > "$PD/07-$1"; }
@@ -51,8 +53,20 @@ rm "$PD/07-REVIEWS.md" "$PD/07-UI-REVIEW.md"
 is "--all with two gaps lists 3 (review, ui-review, done)" "$("$NEXT" 7 --repo "$REPO" --all | grep -c '^step=')" 3
 is "--json emits one object" "$("$NEXT" 7 --repo "$REPO" --json | head -1 | grep -c '"step":"review"')" 1
 is "review has a then= replan" "$("$NEXT" 7 --repo "$REPO" | sed -n 's/^then=//p')" "/gsd-plan-phase 7 --reviews"
+git -C "$REPO" checkout -q -b phase-8-thing
 is "story via cu_ in dir name counts" "$(mkdir -p "$REPO/.planning/phases/08-x-cu_abc" && "$NEXT" 8 --repo "$REPO" | sed -n 's/^step=//p')" discuss
+git -C "$REPO" checkout -q -b phase-7.1-fix
 is "decimal phase dir" "$(mkdir -p "$REPO/.planning/phases/7.1-fix" && "$NEXT" 7.1 --repo "$REPO" | sed -n 's/^step=//p')" story
+git -C "$REPO" checkout -q -b phase-9-missing
 "$NEXT" 9 --repo "$REPO" >/dev/null 2>&1; is "missing phase dir → exit 1" "$?" 1
+
+section "unconditional location guard without configuration"
+"$NEXT" 7 --repo "$REPO" >/dev/null 2>&1; is "wrong phase without config is blocked" "$?" 2
+"$NEXT" 7.1 --repo "$REPO" >/dev/null 2>&1; is "story step on wrong phase is blocked" "$?" 2
+git -C "$REPO" checkout -q develop
+"$NEXT" 7 --repo "$REPO" --all >/dev/null 2>&1; is "preview on base is blocked" "$?" 2
+git -C "$REPO" checkout -q phase-7-thing
+printf 'flow = strict\ninstall = none\n' > "$REPO/.gsd.conf"
+"$NEXT" 7 --repo "$REPO" --all >/dev/null 2>&1; is "preview does not enforce gates of future steps" "$?" 0
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; [ "$FAIL" -eq 0 ]

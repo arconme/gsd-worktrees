@@ -16,7 +16,7 @@
 #   ui-decision  no UI-SPEC and no PLAN yet → the skill asks "screens?"
 #   ui-phase     <P>-UI-SPEC.md (screens only)              /gsd-ui-phase
 #   plan         a <P>-NN-PLAN.md                           /gsd-plan-phase
-#   review       <P>-REVIEWS.md                             /gsd-review --codex
+#   review       <P>-REVIEWS.md                             configured independent reviewer
 #                                                           + /gsd-plan-phase --reviews
 #   replan       a PLAN committed after REVIEWS.md            /gsd-plan-phase --reviews
 #   execute      a SUMMARY for every PLAN                   /gsd-execute-phase
@@ -36,9 +36,19 @@
 #     --all     print every remaining step, not just the next one
 #     --json    one JSON object per step
 #
+# review_provider = claude|codex|gemini|custom selects the independent reviewer.
+# The external gsd-review skill performs delegation, not this shell command.
+# Missing capabilities require a separate review session, never a skipped gate.
+#
 # Output (text): key=value lines — step, run, then (optional second command),
 # stop (why the skill must pause for the user after this step), note.
 set -uo pipefail
+
+SELF=$0
+while [ -L "$SELF" ]; do t=$(readlink "$SELF"); case "$t" in /*) SELF=$t ;; *) SELF="$(dirname "$SELF")/$t" ;; esac; done
+GSD_PKG=$(cd "$(dirname "$SELF")/.." && pwd)
+. "$GSD_PKG/lib/common.sh"
+. "$GSD_PKG/lib/provider.sh"
 
 usage() { awk 'NR>1 && /^set -uo/{exit} NR>1 {sub(/^# ?/,""); print}' "$0"; }
 N=""; REPO=""; UI=""; ALL=0; JSON=0
@@ -54,12 +64,16 @@ while [ $# -gt 0 ]; do
   shift
 done
 REPO="${REPO:-$PWD}"
+REVIEW_PROVIDER=$(gsd_conf_get "$REPO" review_provider); REVIEW_PROVIDER=${REVIEW_PROVIDER:-codex}
+gsd_provider_known "$REVIEW_PROVIDER" || { echo "invalid review_provider '$REVIEW_PROVIDER'; use claude, codex, gemini, or custom" >&2; exit 64; }
 if [ -z "$N" ]; then
   br=$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
   case "$br" in phase-*) N=$(printf '%s' "$br" | sed -E 's/^phase-([0-9]+(\.[0-9]+)?).*/\1/') ;; esac
   [ -n "$N" ] || { echo "no phase number given and '$br' is not a phase-<N>-* branch" >&2; exit 64; }
 fi
-case "$N" in *.*) P="$N" ;; *) P=$(printf '%02d' "$N") ;; esac
+printf '%s' "$N" | grep -qE '^[0-9]+(\.[0-9]+)?$' || { echo "invalid phase number: $N" >&2; exit 64; }
+case "$N" in *.*) P="$N" ;; *) P=$(printf '%02d' "$((10#$N))") ;; esac
+"$GSD_PKG/bin/gsd-worktree-guard" --command gsd-flow --phase "$N" --repo "$REPO" || exit $?
 pd=""; for d in "$REPO/.planning/phases/$P"-*; do [ -d "$d" ] && { pd="$d"; break; }; done
 [ -n "$pd" ] || { echo "no .planning/phases/$P-* directory in $REPO" >&2; exit 1; }
 
@@ -69,6 +83,12 @@ jstr() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
 EMITTED=0
 emit() {  # $1=step $2=run $3=then $4=stop $5=note
+  # --all is a preview, not authorization to execute future steps. Location
+  # was checked above; the current executable step is checked on normal calls.
+  if [ "$ALL" = 0 ] && printf '%s' "$2" | grep -qE '^/gsd-'; then
+    guard_cmd=${2%% *}; guard_cmd=${guard_cmd#/}; guard_args=${2#* }
+    "$GSD_PKG/bin/gsd-worktree-guard" --command "$guard_cmd" --args "$guard_args" --repo "$REPO" || exit $?
+  fi
   EMITTED=$((EMITTED + 1))
   if [ "$JSON" = 1 ]; then
     printf '{"phase":"%s","step":"%s","run":"%s","then":"%s","stop":"%s","note":"%s"}\n' \
@@ -94,7 +114,8 @@ fi
 # 2 discuss
 has CONTEXT.md || emit discuss "/gsd-discuss-phase $N" "update the ClickUp story to the agreed scope" "discuss asks the user the open questions" "run it live — never auto-answer"
 # 3 screens?
-PLANS=$(ls "$pd/$P"-[0-9]*-PLAN.md 2>/dev/null || true)
+PLANS=""
+for f in "$pd/$P"-[0-9]*-PLAN.md; do [ ! -f "$f" ] || PLANS=yes; done
 if [ -z "$UI" ] && [ -z "$PLANS" ]; then
   emit ui-decision "" "" "ask the user: does phase $N have screens? then re-run with --ui or --no-ui" "UI is agreed BEFORE planning; plan-phase would otherwise auto-generate an un-agreed UI-SPEC"
 fi
@@ -105,19 +126,26 @@ fi
 # 5 plan
 [ -n "$PLANS" ] || emit plan "/gsd-plan-phase $N" "" "" ""
 # 6 cross-AI review
-has REVIEWS.md || emit review "/gsd-review --phase $N --codex" "/gsd-plan-phase $N --reviews" "show the user the codex findings before the replan; verify each against the plans, never accept on trust" "key: OPENAI_API_KEY from ~/.config/ai-keys/keys.env"
+if ! has REVIEWS.md; then
+  if review_flag=$(gsd_provider_review_flag "$REVIEW_PROVIDER"); then
+    review_run="/gsd-review --phase $N $review_flag"
+  else
+    review_run="request an independent custom-provider review of $pd and save verified findings to $P-REVIEWS.md"
+  fi
+  emit review "$review_run" "/gsd-plan-phase $N --reviews" "show the user the independent findings before the replan; verify each against the plans, never accept on trust" "independent reviewer: $REVIEW_PROVIDER; external gsd-review capability required for automatic delegation. If unavailable, hand off the plans to a separate reviewer session and record $P-REVIEWS.md; never skip the gate."
+fi
 # 6b replan — the --reviews replan leaves no artifact of its own, so use git:
 # a plan committed after REVIEWS.md means it happened (commit_docs is on in a
 # GSD repo). Same commit counts as done; REVIEWS.md uncommitted = not yet.
 if has REVIEWS.md && [ -n "$PLANS" ]; then
   rt=$(git -C "$REPO" log -1 --format=%ct -- "$pd/$P-REVIEWS.md" 2>/dev/null || true)
-  pt=0; for f in $PLANS; do t=$(git -C "$REPO" log -1 --format=%ct -- "$f" 2>/dev/null || true); [ "${t:-0}" -gt "$pt" ] && pt="$t"; done
+  pt=0; for f in "$pd/$P"-[0-9]*-PLAN.md; do [ -f "$f" ] || continue; t=$(git -C "$REPO" log -1 --format=%ct -- "$f" 2>/dev/null || true); [ "${t:-0}" -gt "$pt" ] && pt="$t"; done
   if [ -z "$rt" ] || [ "$pt" -lt "$rt" ]; then
     emit replan "/gsd-plan-phase $N --reviews" "" "" "REVIEWS.md exists but no plan was committed after it — the review was not folded into the plans"
   fi
 fi
 # 7 execute
-MISSING=0; for f in $PLANS; do [ -f "${f%-PLAN.md}-SUMMARY.md" ] || MISSING=$((MISSING + 1)); done
+MISSING=0; for f in "$pd/$P"-[0-9]*-PLAN.md; do [ -f "$f" ] || continue; [ -f "${f%-PLAN.md}-SUMMARY.md" ] || MISSING=$((MISSING + 1)); done
 [ "$MISSING" -eq 0 ] || emit execute "/gsd-execute-phase $N" "" "" "$MISSING plan(s) without a SUMMARY; execute-phase runs code review and the verifier itself"
 # 7b verifier — all plans done but the verifier never wrote its report
 if [ -n "$PLANS" ] && [ "$MISSING" -eq 0 ] && ! has VERIFICATION.md; then
@@ -128,8 +156,8 @@ if [ "$(fm VERIFICATION.md status)" = "gaps_found" ]; then
   emit gaps "/gsd-plan-phase $N --gaps" "/gsd-execute-phase $N --gaps-only" "" "VERIFICATION.md reports gaps"
 fi
 # 9 verify-work
-UATS=$(ls "$pd/$P"-*UAT.md 2>/dev/null || true); OPEN=""
-for u in $UATS; do st=$(sed -n '/^---$/,/^---$/p' "$u" | sed -n -E 's/^status:[[:space:]]*//p' | head -1 | tr -d '[:space:]'); case "$st" in pending|partial) OPEN="$OPEN $(basename "$u")($st)";; esac; done
+UATS=""; OPEN=""
+for u in "$pd/$P"-*UAT.md; do [ -f "$u" ] || continue; UATS=yes; st=$(sed -n '/^---$/,/^---$/p' "$u" | sed -n -E 's/^status:[[:space:]]*//p' | head -1 | tr -d '[:space:]'); case "$st" in pending|partial) OPEN="$OPEN $(basename "$u")($st)";; esac; done
 if [ -z "$UATS" ]; then emit verify-work "/gsd-verify-work $N" "" "" "agent-driven UAT walk (Playwright/screenshots), recorded as agent-verified"
 elif [ -n "$OPEN" ]; then emit verify-work "/gsd-verify-work $N" "" "" "open UAT items:$OPEN"; fi
 # 10 code review

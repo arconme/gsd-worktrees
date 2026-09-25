@@ -1,363 +1,190 @@
 #!/usr/bin/env bash
-#
-# gsd-bootstrap-repo — fit the current repo with the gsd-worktrees workflow:
-# per-repo config (.gsd.conf), frozen delegating shims, guard-hook
-# registration, CLAUDE.md section, gitignore/gitattributes entries.
-#
-# All LOGIC lives in the gsd-worktrees toolkit (bin/ commands on PATH); what
-# gets installed into the repo is only:
-#   .gsd.conf                     committed per-repo settings (base branch,
-#                                 worktree dir, install cmd — all optional,
-#                                 written explicitly for documentation)
-#   scripts/gsd-*.sh (+ hook)     tiny FROZEN shims that delegate to the
-#                                 toolkit commands, so committed references
-#                                 (package.json dev scripts, .claude hooks,
-#                                 docs) keep working on every checkout —
-#                                 they never need syncing again
-#
-# Re-running is idempotent and safe: config/shims are refreshed, planning
-# state and existing CLAUDE.md sections are never touched.
 set -euo pipefail
-
-die() { printf '✖ %s\n' "$@" >&2; exit 1; }
-
-usage() {
-  cat <<'HELP'
-gsd-bootstrap-repo — install the gsd-worktrees workflow into the current repo
-
-Writes per-repo config (.gsd.conf), frozen delegating shims (scripts/gsd-*.sh
-+ the guard hook), .claude/settings.json hook registration, a CLAUDE.md
-"GSD planning system" section, and .gitignore/.gitattributes entries. All
-actual logic lives in the toolkit's PATH commands — re-run anytime; there is
-nothing to sync.
-
+die() { printf '✖ %s\n' "$*" >&2; exit 1; }
+usage() { cat <<'HELP'
+gsd-bootstrap-repo — install GSD worktree integration into the current repo
 USAGE
-  gsd-bootstrap-repo [options]          # run from INSIDE the target repo
-
+  gsd-bootstrap-repo [--agent claude|codex|gemini]... [options]
 OPTIONS
-  --base <branch>  base branch for phases/worktrees (default: auto-detect —
-                   'develop' if it exists, else 'main', else current branch)
-  --agent <cmd>    agent CLI the generated docs reference — claude, gemini, …
-                   (default: $GSD_AGENT, else claude). Prose only: the guard
-                   hook is still Claude-Code-specific.
-  --commit         commit the installed files afterwards (skipped with a
-                   warning if the repo has other uncommitted changes)
-  --src <path>     DEPRECATED — ignored (shims come from the toolkit itself)
-  -h, --help       show this help
-
-AFTER RUNNING
-  Open an agent session in the repo and initialize planning state:
-      /gsd-new-project      (fresh)  or  /gsd-ingest-docs  (existing docs)
-  Then the loop per feature:  gsd-start -n "<desc>" → work → gsd-finish
-
-RELATED
-  gsd-init     bootstrap + open the initialization session in one command
-  gsd-start, gsd-finish, gsd-sync
+  --agent <provider>       provider to integrate; repeat for multiple providers
+  --agents <a,b,...>       comma-separated provider list
+  --agent-command <path>   executable override for the default provider
+  --provider-command <p=path> executable override for one provider; repeatable
+  --base <branch>          base branch (auto-detected by default)
+  --commit                 commit only the installed integration files
+  --src <path>             deprecated; ignored
+  -h, --help               show help
 HELP
 }
-
-# ── args ─────────────────────────────────────────────────────────────────────
-BASE=""
-BASE_EXPLICIT=0
-COMMIT=0
-AGENT="${GSD_AGENT:-claude}"
+BASE=""; BASE_EXPLICIT=0; COMMIT=0; AGENT_COMMAND=""; SELECTED=""
+COMMAND_PROVIDERS=""
+CLAUDE_COMMAND=""; CODEX_COMMAND=""; GEMINI_COMMAND=""; CUSTOM_COMMAND=""
+add_provider() { local p=$1; case "$p" in claude|codex|gemini|custom) ;; *) die "unknown provider '$p' (expected claude, codex, gemini, or custom)" ;; esac; case ",$SELECTED," in *",$p,"*) ;; *) SELECTED="${SELECTED:+$SELECTED,}$p" ;; esac; }
+set_provider_command() { local p=$1 c=$2; case "$c" in *[[:space:]]*) die "provider command must be one executable path/name" ;; esac; case "$p" in claude) CLAUDE_COMMAND=$c ;; codex) CODEX_COMMAND=$c ;; gemini) GEMINI_COMMAND=$c ;; custom) CUSTOM_COMMAND=$c ;; *) die "unknown provider '$p'" ;; esac; }
+provider_command() { case "$1" in claude) printf '%s' "$CLAUDE_COMMAND" ;; codex) printf '%s' "$CODEX_COMMAND" ;; gemini) printf '%s' "$GEMINI_COMMAND" ;; custom) printf '%s' "$CUSTOM_COMMAND" ;; esac; }
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
-    --base)  [ $# -ge 2 ] || die "--base needs a value"; BASE="$2"; BASE_EXPLICIT=1; shift 2 ;;
-    --agent) [ $# -ge 2 ] || die "--agent needs a value (e.g. claude, gemini)"; AGENT="$2"; shift 2 ;;
+    --base) [ $# -ge 2 ] || die "--base needs a value"; BASE=$2; BASE_EXPLICIT=1; shift 2 ;;
+    --agent) [ $# -ge 2 ] || die "--agent needs a provider"; add_provider "$2"; shift 2 ;;
+    --agents) [ $# -ge 2 ] || die "--agents needs a comma-separated list"; case "$2" in ,*|*,|*,,*) die "malformed --agents list: $2" ;; esac; oldifs=$IFS; IFS=,; for p in $2; do add_provider "$p"; done; IFS=$oldifs; shift 2 ;;
+    --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND=$2; shift 2 ;;
+    --provider-command) [ $# -ge 2 ] || die "--provider-command needs provider=executable"; case "$2" in *=*) pc_p=${2%%=*}; pc_c=${2#*=}; [ -n "$pc_p" ] && [ -n "$pc_c" ] || die "malformed --provider-command: $2"; set_provider_command "$pc_p" "$pc_c"; case ",$COMMAND_PROVIDERS," in *",$pc_p,"*) ;; *) COMMAND_PROVIDERS="${COMMAND_PROVIDERS:+$COMMAND_PROVIDERS,}$pc_p" ;; esac ;; *) die "--provider-command needs provider=executable" ;; esac; shift 2 ;;
     --commit) COMMIT=1; shift ;;
-    --src)   [ $# -ge 2 ] || die "--src needs a value"
-             echo "• --src is deprecated and ignored — shims are installed from the toolkit itself"
-             shift 2 ;;
+    --src) [ $# -ge 2 ] || die "--src needs a value"; echo "• --src is deprecated and ignored"; shift 2 ;;
     *) die "unknown arg: $1 (see gsd-bootstrap-repo --help)" ;;
   esac
 done
-
-# ── locate the toolkit (self) and the target repo ────────────────────────────
-SELF="$0"
-while [ -L "$SELF" ]; do
-  tgt=$(readlink "$SELF")
-  case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
-done
-PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
-[ -d "$PKG/shims/scripts" ] || die "toolkit shims not found at $PKG/shims — broken install?"
-# shellcheck source=../lib/common.sh
-. "$PKG/lib/common.sh"
-
-DEST="$(git rev-parse --show-toplevel 2>/dev/null)" \
-  || die "run this from inside the TARGET git repo"
-[ "$DEST" = "$PKG" ] && die "you're inside the toolkit repo itself — cd into the target repo first"
-
-if [ "$COMMIT" = 1 ] && [ -n "$(git -C "$DEST" status --porcelain)" ]; then
-  echo "⚠ target repo has uncommitted changes — will install but SKIP --commit (commit manually)"
-  COMMIT=0
+SELF=$0; while [ -L "$SELF" ]; do t=$(readlink "$SELF"); case "$t" in /*) SELF=$t ;; *) SELF="$(dirname "$SELF")/$t" ;; esac; done
+PKG=$(cd "$(dirname "$SELF")/.." && pwd); . "$PKG/lib/common.sh"; . "$PKG/lib/provider.sh"
+DEST=$(git rev-parse --show-toplevel 2>/dev/null) || die "run this from inside the target git repo"
+[ "$DEST" != "$PKG" ] || die "you're inside the toolkit repo itself — cd into the target repo first"
+DIRTY_BEFORE=$(git -C "$DEST" status --porcelain)
+CONF=$DEST/.gsd.conf
+OLD_PROVIDERS=$(gsd_conf_get "$DEST" providers)
+if [ -z "$SELECTED" ] && grep -qE '^[[:space:]]*providers[[:space:]]*=' "$CONF" 2>/dev/null; then
+  gsd_provider_list_validate "$OLD_PROVIDERS" || exit $?
 fi
-
-REPO_NAME="$(basename "$DEST")"
-WT_DIR="${REPO_NAME}-worktrees"
-
-# ── detect settings ──────────────────────────────────────────────────────────
-if [ -z "$BASE" ]; then
-  if git -C "$DEST" show-ref --verify --quiet refs/heads/develop; then BASE=develop
-  elif git -C "$DEST" show-ref --verify --quiet refs/heads/main; then BASE=main
-  else BASE="$(git -C "$DEST" branch --show-current)"; fi
+[ -n "$OLD_PROVIDERS" ] || OLD_PROVIDERS=$(gsd_conf_get "$DEST" provider)
+OLD_DEFAULT=${OLD_PROVIDERS%%,*}; OLD_DEFAULT=${OLD_DEFAULT:-claude}
+if [ -z "$SELECTED" ]; then SELECTED=${OLD_PROVIDERS:-${COMMAND_PROVIDERS:-${GSD_PROVIDER:-${GSD_AGENT:-claude}}}}; fi
+gsd_provider_list_validate "$SELECTED" || exit $?
+oldifs=$IFS; IFS=,; CHECKED=""; for p in $SELECTED; do add_provider "$p"; CHECKED="${CHECKED:+$CHECKED,}$p"; done; IFS=$oldifs; SELECTED=$CHECKED
+DEFAULT=${SELECTED%%,*}
+oldifs=$IFS; IFS=,; for p in $COMMAND_PROVIDERS; do
+  case ",$SELECTED," in *",$p,"*) ;; *) die "command override for '$p' is outside providers '$SELECTED'; select integrations with --agents" ;; esac
+done; IFS=$oldifs
+# Keep the old generic executable bound to its original provider on migration.
+# Explicit overrides win; existing provider-specific keys already have priority.
+OLD_COMMAND=$(gsd_conf_get "$DEST" agent_command)
+if [ -n "$OLD_COMMAND" ] && [ -z "$(provider_command "$OLD_DEFAULT")" ] && [ -z "$(gsd_conf_get "$DEST" "${OLD_DEFAULT}_command")" ]; then
+  gsd_provider_validate "$OLD_DEFAULT" "$OLD_COMMAND" || exit $?
+  set_provider_command "$OLD_DEFAULT" "$OLD_COMMAND"
 fi
+[ -z "$AGENT_COMMAND" ] || set_provider_command "$DEFAULT" "$AGENT_COMMAND"
+oldifs=$IFS; IFS=,; for p in $SELECTED; do
+  effective_command=$(provider_command "$p")
+  [ -n "$effective_command" ] || effective_command=$(gsd_conf_get "$DEST" "${p}_command")
+  gsd_provider_validate "$p" "$effective_command" || exit $?
+done; IFS=$oldifs
+# Reject ambiguous ownership before changing any repository file. An unmatched,
+# nested, inline, reversed, or duplicate marker must never eat user content.
+oldifs=$IFS; IFS=,; for p in $SELECTED; do
+  instruction_file="$DEST/$(gsd_provider_instruction_file "$p")"
+  [ -f "$instruction_file" ] || continue
+  gsd_owned_markers_valid "$instruction_file" provider || die "ambiguous GSD markers in $instruction_file; repair the start/end pair manually (all files preserved)"
+done; IFS=$oldifs
+gsd_owned_markers_valid "$DEST/.gsd/INSTRUCTIONS.md" canonical || die 'ambiguous canonical GSD markers; repair the start/end pair (all files preserved)'
+if [ -z "$BASE" ]; then BASE=$(gsd_base "$DEST"); fi
 [ -n "$BASE" ] || die "could not determine base branch — pass --base <branch>"
-if [ "$BASE_EXPLICIT" = 1 ] && ! git -C "$DEST" show-ref --verify --quiet "refs/heads/$BASE"; then
-  die "branch '$BASE' does not exist in the target repo — the guard would block /gsd-phase forever"
-fi
-
-if   [ -f "$DEST/pnpm-lock.yaml" ]; then PM="pnpm install"
-elif [ -f "$DEST/yarn.lock" ];     then PM="yarn install"
-elif [ -f "$DEST/package-lock.json" ] || [ -f "$DEST/package.json" ]; then PM="npm install"
-else PM="none"; fi
-
-echo "Toolkit     : $PKG"
-echo "Target repo : $DEST"
-echo "Base branch : $BASE"
-echo "Worktrees   : $(dirname "$DEST")/$WT_DIR/"
-echo "Install cmd : $PM"
-echo "Agent (docs): $AGENT"
-echo ""
-
-# ── .gsd.conf (committed per-repo settings) ──────────────────────────────────
-CONF="$DEST/.gsd.conf"
+[ "$BASE_EXPLICIT" = 0 ] || git -C "$DEST" show-ref --verify --quiet "refs/heads/$BASE" || die "branch '$BASE' does not exist"
+WT_DIR=$(gsd_wtdir "$DEST")
+if [ -f "$DEST/pnpm-lock.yaml" ]; then PM="pnpm install"; elif [ -f "$DEST/yarn.lock" ]; then PM="yarn install"; elif [ -f "$DEST/package-lock.json" ] || [ -f "$DEST/package.json" ]; then PM="npm install"; else PM=none; fi
+printf 'Toolkit     : %s\nTarget repo : %s\nBase branch : %s\nProviders   : %s (default: %s)\n\n' "$PKG" "$DEST" "$BASE" "$SELECTED" "$DEFAULT"
 if [ ! -f "$CONF" ]; then
-  cat > "$CONF" <<CONF_EOF
-# .gsd.conf — per-repo settings for the gsd-worktrees toolkit (committed).
-# Everything here is optional; unset keys fall back to auto-detection.
-base = $BASE
-wtdir = $WT_DIR
-install = $PM
-# premerge = scripts/gsd-premerge-check.sh   # pre-merge hook run by gsd-finish
-#                                            # (default path; 'none' disables)
-# test = npm test                            # tests gsd-finish runs when no premerge script
-#                                            # (auto-detected; 'none' skips)
-CONF_EOF
-  echo "✔ .gsd.conf (created)"
-elif [ "$BASE_EXPLICIT" = 1 ]; then
-  # The branch name goes in via %ENV, not interpolated into the perl code — a
-  # name with a '/' (release/2024) would otherwise break the s/// delimiters.
-  BASE="$BASE" perl -pi -e 's/^\s*base\s*=.*/base = $ENV{BASE}/' "$CONF"
-  grep -qE '^\s*base\s*=' "$CONF" || printf 'base = %s\n' "$BASE" >> "$CONF"
-  echo "✔ .gsd.conf (base updated to '$BASE')"
+    { echo '# .gsd.conf — committed, inspectable GSD worktree configuration.'; printf 'base = %s\nwtdir = %s\ninstall = %s\nproviders = %s\n' "$BASE" "$WT_DIR" "$PM" "$SELECTED"; [ -z "$CLAUDE_COMMAND" ] || printf 'claude_command = %s\n' "$CLAUDE_COMMAND"; [ -z "$CODEX_COMMAND" ] || printf 'codex_command = %s\n' "$CODEX_COMMAND"; [ -z "$GEMINI_COMMAND" ] || printf 'gemini_command = %s\n' "$GEMINI_COMMAND"; [ -z "$CUSTOM_COMMAND" ] || printf 'custom_command = %s\n' "$CUSTOM_COMMAND"; echo '# start_mode = flow  # optional; default is discuss'; echo '# flow = strict'; } > "$CONF"
+  echo '✔ .gsd.conf (created)'
 else
-  echo "• .gsd.conf already exists — left untouched"
+  update_key() { local k=$1 v=$2; K=$k V=$v perl -pi -e 's/^\s*\Q$ENV{K}\E\s*=.*/$ENV{K} = $ENV{V}/' "$CONF"; grep -qE "^[[:space:]]*${k}[[:space:]]*=" "$CONF" || printf '%s = %s\n' "$k" "$v" >> "$CONF"; }
+  remove_key() { local k=$1; K=$k perl -ni -e 'print unless /^\s*\Q$ENV{K}\E\s*=/' "$CONF"; }
+  update_key providers "$SELECTED"; remove_key provider; remove_key agent_command; [ -z "$CLAUDE_COMMAND" ] || update_key claude_command "$CLAUDE_COMMAND"; [ -z "$CODEX_COMMAND" ] || update_key codex_command "$CODEX_COMMAND"; [ -z "$GEMINI_COMMAND" ] || update_key gemini_command "$GEMINI_COMMAND"; [ -z "$CUSTOM_COMMAND" ] || update_key custom_command "$CUSTOM_COMMAND"; [ "$BASE_EXPLICIT" = 0 ] || update_key base "$BASE"
+  echo '✔ .gsd.conf (provider configuration updated; other keys preserved)'
 fi
-
-# ── shims (frozen delegators — safe to overwrite on every run) ───────────────
-mkdir -p "$DEST/scripts/hooks" "$DEST/.claude"
-for rel in scripts/gsd-new-worktree-feature.sh scripts/gsd-finish-worktree-feature.sh \
-           scripts/gsd-derive-port.sh \
-           scripts/gsd-planning-repair.sh \
-           scripts/hooks/gsd-worktree-guard.sh; do
-  cp "$PKG/shims/$rel" "$DEST/$rel"
-  chmod +x "$DEST/$rel"
-  echo "✔ $rel (shim)"
-done
-
-# ── .gitignore: worktree install artifacts ───────────────────────────────────
-# .claude/settings.local.json is per-user (permissions, worktree.baseRef) and
-# must be ignored so gsd-wt-new can carry it into each worktree.
-for pat in .gsd-install.status .gsd-install.log .claude/settings.local.json; do
-  grep -qxF "$pat" "$DEST/.gitignore" 2>/dev/null || echo "$pat" >> "$DEST/.gitignore"
-done
-echo "✔ .gitignore (.gsd-install.log/.status, .claude/settings.local.json)"
-
-# ── .planning merge safety ───────────────────────────────────────────────────
-# What "installed" means lives in gsd_planning_status (lib/common.sh) and is
-# shared with gsd-doctor, so the writer and the checker cannot drift apart.
-# Migrates repos off the old merge=union in place.
+mkdir -p "$DEST/scripts/hooks" "$DEST/.gsd"
+for rel in scripts/gsd-new-worktree-feature.sh scripts/gsd-finish-worktree-feature.sh scripts/gsd-derive-port.sh scripts/gsd-planning-repair.sh scripts/hooks/gsd-worktree-guard.sh; do cp "$PKG/shims/$rel" "$DEST/$rel"; chmod +x "$DEST/$rel"; echo "✔ $rel (shim)"; done
+for pat in .gsd-install.status .gsd-install.log .claude/settings.local.json; do grep -qxF "$pat" "$DEST/.gitignore" 2>/dev/null || echo "$pat" >> "$DEST/.gitignore"; done
 gsd_planning_apply "$DEST"
+CANON=$DEST/.gsd/INSTRUCTIONS.md
+if [ -f "$CANON" ] && grep -qx '<!-- gsd-worktrees:canonical -->' "$CANON"; then
+  bak=$CANON.bak; n=1; while [ -e "$bak" ] || [ -L "$bak" ]; do bak=$CANON.bak.$n; n=$((n+1)); done
+  cp "$CANON" "$bak"
+  # Migrate the recognizable legacy generated span, retaining additions after it.
+  perl -0777 -pi -e 's/^<!-- gsd-worktrees:canonical -->\n.*?^worktrees `[^\n]*`\.\n?//ms' "$CANON"
+  echo "• legacy canonical content backed up to $bak"
+fi
+[ -f "$CANON" ] || touch "$CANON"
+canonical_block=$(mktemp)
+cat > "$canonical_block" <<EOF
+<!-- gsd-worktrees:canonical:start -->
+# GSD worktree workflow
 
-# ── register the guard hook in .claude/settings.json ─────────────────────────
-HOOK_CMD='$CLAUDE_PROJECT_DIR/scripts/hooks/gsd-worktree-guard.sh'
-SETTINGS="$DEST/.claude/settings.json"
-if [ ! -f "$SETTINGS" ]; then
-  cat > "$SETTINGS" <<JSON
-{
-  "hooks": {
-    "UserPromptExpansion": [
-      {
-        "hooks": [
-          { "type": "command", "command": "$HOOK_CMD" }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Skill",
-        "hooks": [
-          { "type": "command", "command": "$HOOK_CMD" }
-        ]
-      }
-    ]
-  }
+The shell commands are the source of truth. One feature equals one phase and
+worktree. Several configured providers may hand the same phase between their
+sessions; only one session may mutate that worktree at a time. Run \`gsd-list\`
+before claiming work; attach or hand off with
+\`gsd-start -p <N>\` or claim new work with \`gsd-start -n "<desc>"\`.
+
+Inside the worktree, run \`gsd-flow-next <N>\` before every phase action:
+story → discuss → UI decision → UI phase when needed → plan → independent
+review → replan → execute → verifier/gap loop → verify work → code review/fix
+→ UI review → security → done. The human decisions are discuss, UI approval,
+and review findings. Never bypass a guard unless the user explicitly requests
+\`GSD_SKIP_GUARD=1\`.
+
+\`gsd-finish\` is never automatic. Run it only with explicit user intent and as
+the final action because it removes the worktree. Provider hooks are early
+feedback only; \`gsd-flow-next\` invokes the mandatory neutral guard. Arbitrary
+shell commands outside GSD are outside this enforcement boundary.
+
+Providers: \`$SELECTED\` (default: first, \`$DEFAULT\`); base \`$BASE\`;
+worktrees \`../$WT_DIR/\`.
+<!-- gsd-worktrees:canonical:end -->
+EOF
+gsd_replace_owned_block "$CANON" canonical "$canonical_block"
+rm -f "$canonical_block"
+echo '✔ .gsd/INSTRUCTIONS.md (canonical workflow instructions)'
+preserve_legacy_claude() {
+  local file=$DEST/CLAUDE.md
+  [ -f "$file" ] || return 0
+  grep -q '^## GSD planning system' "$file" || return 0
+  grep -q 'scripts/hooks/gsd-worktree-guard.sh' "$file" || return 0
+  grep -q '<!-- gsd-worktrees:provider:start -->' "$file" && return 0
+  echo '• preserved unmarked legacy GSD instructions in CLAUDE.md; the marked adapter will be appended'
 }
-JSON
-  echo "✔ .claude/settings.json (created)"
-elif grep -q 'gsd-worktree-guard' "$SETTINGS"; then
-  echo "• .claude/settings.json already registers the guard — left untouched"
-elif command -v jq >/dev/null 2>&1; then
-  if jq --arg c "$HOOK_CMD" '
-       .hooks //= {} |
-       .hooks.UserPromptExpansion = ((.hooks.UserPromptExpansion // []) +
-         [{"hooks":[{"type":"command","command":$c}]}]) |
-       .hooks.PreToolUse = ((.hooks.PreToolUse // []) +
-         [{"matcher":"Skill","hooks":[{"type":"command","command":$c}]}])
-     ' "$SETTINGS" > "$SETTINGS.tmp" 2>/dev/null; then
-    mv "$SETTINGS.tmp" "$SETTINGS"
-    echo "✔ .claude/settings.json (guard hooks merged into existing file)"
-  else
-    rm -f "$SETTINGS.tmp"
-    echo "⚠ $SETTINGS could not be parsed as JSON — add the guard manually to hooks:"
-    echo "    UserPromptExpansion + PreToolUse(matcher: Skill) → $HOOK_CMD"
-  fi
-else
-  echo "⚠ $SETTINGS exists and jq is unavailable — add the guard manually to hooks:"
-  echo "    UserPromptExpansion + PreToolUse(matcher: Skill) → $HOOK_CMD"
-fi
-if [ "$AGENT" != "claude" ]; then
-  echo "• guard hook enforced under Claude Code only — driving GSD from '$AGENT'"
-  echo "  uses the same commands, but without the hook's phase-guard checks."
-fi
+update_entrypoint() {
+  local file=$1 provider=$2 block; block=$(mktemp)
+  cat > "$block" <<EOF
+<!-- gsd-worktrees:provider:start -->
+## GSD worktrees ($provider adapter)
 
-# ── CLAUDE.md section ────────────────────────────────────────────────────────
-agent_usage_block() {
-  AGENT="$AGENT" perl -pe 's/\{\{AGENT\}\}/$ENV{AGENT}/g' <<'MD'
-- **How the agent should use the shared commands** (from inside a session):
-  - Asked to start a feature/phase → FIRST run `gsd-list` and check whether the
-    roadmap already has a phase for this work. If it does, attach to it:
-    `gsd-start -p <N>`. Only when it is genuinely new: `gsd-start -n "<desc>"`.
-    Claiming needs the explicit `-n` — a bare description is refused on purpose,
-    so a reworded restatement of existing work can't open a duplicate phase.
-  - Either way the command prints a `cd … && {{AGENT}} …` one-liner (no nested
-    session) — relay it to the user to run in a fresh terminal, and do NOT do the
-    phase work in the current session.
-  - Asked to finish/land a phase (from that phase's worktree session) → run
-    `gsd-finish` via Bash as the session's LAST action (it removes the worktree
-    the session is standing in).
-  - Prefer the shared commands over chaining the manual steps — they carry the
-    parallel-session race handling the manual path lacks.
-MD
+Read and follow \`.gsd/INSTRUCTIONS.md\`. Use the \`gsd-flow\` skill when it is
+available; otherwise run \`gsd-flow-next <N>\` and follow each printed action.
+For toolkit command syntax and workflow order, this marked adapter and the
+canonical document supersede older unmarked GSD text in this file. Continue to
+follow repository-specific policy from that older text.
+<!-- gsd-worktrees:provider:end -->
+EOF
+  [ -f "$file" ] || touch "$file"
+  gsd_replace_owned_block "$file" provider "$block"
+  rm -f "$block"; echo "✔ ${file#"$DEST"/} ($provider entrypoint; unrelated content preserved)"
 }
-
-CMD_FILE="$DEST/CLAUDE.md"
-if [ -f "$CMD_FILE" ] && grep -qE 'How (Claude|the agent) should use the shared commands' "$CMD_FILE"; then
-  echo "• CLAUDE.md already has the GSD section incl. agent-usage instructions — left untouched"
-elif [ -f "$CMD_FILE" ] && grep -q 'GSD planning system' "$CMD_FILE"; then
-  BLOCK="$(agent_usage_block)" perl -0pi -e \
-    's/(## GSD planning system.*?)(\n## |\z)/$1\n$ENV{BLOCK}\n$2/s' "$CMD_FILE"
-  echo "✔ CLAUDE.md (agent-usage instructions added to the existing GSD section)"
-else
-  SECTION="$(mktemp)"
-  trap 'rm -f "$SECTION"' EXIT
-  cat > "$SECTION" <<'MD'
-
-## GSD planning system
-
-This repo uses **GSD** (Get Shit Done) for planning, with the gsd-worktrees
-toolkit for parallel sessions. State lives in `.planning/`, committed to git on
-`{{BASE}}` and inherited by every worktree branched off it. Multiple agent
-sessions may run in parallel, so:
-
-- **One feature = one phase = one worktree = one session.** Never run two sessions
-  against the same folder/branch, and don't do feature work directly in the main
-  checkout on `{{BASE}}`.
-- **The loop per feature** (shared commands, in `~/.local/bin`):
-  1. `gsd-start -n "<description>"` — claims a uniquely-numbered phase in
-     `ROADMAP.md` (deterministic, parallel-safe with auto-renumber), pushes the
-     claim, creates worktree `../{{WT_DIR}}/phase-<N>-<slug>` off `{{BASE}}`, and
-     prints (or with `--launch` opens) the session there on `/gsd-discuss-phase <N>`.
-  2. In that session: `/gsd-discuss-phase <N>` → `/gsd-plan-phase <N>` →
-     `/gsd-execute-phase <N>`. Optional: `/gsd-spec-phase`, `/gsd-ui-phase`
-     (frontend), `/gsd-verify-work`, `/gsd-code-review`, `/gsd-secure-phase`.
-  3. `/gsd-pr-branch` — code-only PR branch with `.planning/` commits stripped
-     (if you use PRs).
-  4. `gsd-finish` (no args, from inside the worktree) — merges the feature
-     branch into `{{BASE}}`, pushes, removes the worktree + branch.
-- **Repo settings** live in `.gsd.conf` (base branch, worktree dir, install
-  command). The `scripts/gsd-*.sh` files are frozen shims delegating to the
-  toolkit — don't edit them; toolkit repo: arconme/gsd-worktrees.
-- **Guard hook** (`scripts/hooks/gsd-worktree-guard.sh`, registered in
-  `.claude/settings.json`): blocks `/gsd-phase` off `{{BASE}}`, blocks per-phase
-  commands outside their matching `phase-<N>-*` worktree, and blocks
-  `/gsd-execute-phase` until the background install finishes. Bypass with
-  `GSD_SKIP_GUARD=1`. **Enforced under Claude Code only.**
-- **Touch only your own phase** in `ROADMAP.md`/`STATE.md` — never renumber or edit
-  other phases. Merges of those two files auto-resolve (`merge=gsd-planning` in
-  `.gitattributes`): both sides' additions are kept, then every line that is a
-  single source of truth is collapsed back to one value and the progress
-  counters are recomputed from the roadmap and the plan files on disk. Run
-  `gsd-planning-repair --check` any time to confirm `.planning/` is coherent;
-  `gsd-finish` and the `post-merge` hook run the repair for you.
-- Lost context mid-feature: `/gsd-resume-work` · status: `/gsd-progress` ·
-  reference: `/gsd-help`.
-MD
-  agent_usage_block >> "$SECTION"
-  WT_DIR="$WT_DIR" BASE="$BASE" AGENT="$AGENT" perl -pi -e 's/\{\{WT_DIR\}\}/$ENV{WT_DIR}/g; s/\{\{BASE\}\}/$ENV{BASE}/g; s/\{\{AGENT\}\}/$ENV{AGENT}/g' "$SECTION"
-  cat "$SECTION" >> "$CMD_FILE"
-  rm -f "$SECTION"; trap - EXIT
-  echo "✔ CLAUDE.md ('GSD planning system' section appended)"
-fi
-
-# ── self-check ───────────────────────────────────────────────────────────────
-OK=1
-for f in scripts/gsd-new-worktree-feature.sh scripts/gsd-finish-worktree-feature.sh \
-         scripts/gsd-derive-port.sh \
-         scripts/gsd-planning-repair.sh scripts/hooks/gsd-worktree-guard.sh; do
-  bash -n "$DEST/$f" || { echo "✖ self-check failed: $f has a syntax error" >&2; OK=0; }
+merge_hook() {
+  local provider=$1 settings=$2 event=$3 matcher=$4 command=$5 tmp; mkdir -p "$(dirname "$settings")"; [ -f "$settings" ] || echo '{}' > "$settings"
+  if [ "$(gsd_provider_hook_state "$DEST" "$provider")" = present ]; then echo "• ${settings#"$DEST"/} already registers the guard"; return; fi
+  if ! command -v jq >/dev/null 2>&1 || ! jq empty "$settings" >/dev/null 2>&1; then echo "⚠ ${settings#"$DEST"/} is not mergeable JSON; preserved unchanged (native hook absent)"; return; fi
+  if [ "$(gsd_provider_hook_state "$DEST" "$provider")" = invalid ]; then echo "⚠ incompatible hook structure in $settings; preserved unchanged"; return; fi
+  # Do not override an explicit user decision to disable native hooks.
+  if jq -e '.disableAllHooks == true or .hooksConfig.enabled == false' "$settings" >/dev/null; then echo "⚠ native hooks disabled in $settings; preserved unchanged"; return; fi
+  tmp=$(mktemp)
+  if ! jq --arg e "$event" --arg m "$matcher" --arg c "$command" '.hooks //= {} | .hooks[$e] = ((.hooks[$e] // []) + [{matcher:$m,hooks:[{type:"command",command:$c}]}])' "$settings" > "$tmp"; then rm -f "$tmp"; die "could not merge native hook into $settings (original preserved)"; fi
+  mv "$tmp" "$settings"; echo "✔ ${settings#"$DEST"/} ($provider native guard hook)"
+}
+oldifs=$IFS; IFS=,
+for p in $SELECTED; do
+  [ "$p" != claude ] || preserve_legacy_claude
+  members=""; entry=$(gsd_provider_instruction_file "$p")
+  for member in $SELECTED; do [ "$(gsd_provider_instruction_file "$member")" != "$entry" ] || members="${members:+$members,}$member"; done
+  update_entrypoint "$DEST/$entry" "$members"
+  if gsd_provider_hook_metadata "$p"; then merge_hook "$p" "$DEST/$GSD_HOOK_SETTINGS" "$GSD_HOOK_EVENT" "$GSD_HOOK_MATCHER" "$GSD_HOOK_COMMAND"
+  else echo "• $p native guard hook: unsupported; command-level guard remains active"; fi
 done
-if command -v jq >/dev/null 2>&1; then
-  jq empty "$SETTINGS" 2>/dev/null || { echo "✖ self-check failed: $SETTINGS is not valid JSON" >&2; OK=0; }
-fi
-[ "$OK" = 1 ] || exit 1
-echo "✔ self-check (shims parse, settings valid)"
-
-# ── commit (--commit) ────────────────────────────────────────────────────────
+IFS=$oldifs
+for f in "$DEST"/scripts/gsd-*.sh "$DEST"/scripts/hooks/gsd-worktree-guard.sh; do bash -n "$f"; done
+echo '✔ self-check (shims parse)'
 if [ "$COMMIT" = 1 ]; then
-  git -C "$DEST" add .gsd.conf scripts/gsd-new-worktree-feature.sh \
-    scripts/gsd-finish-worktree-feature.sh scripts/gsd-derive-port.sh \
-    scripts/gsd-planning-repair.sh \
-    scripts/hooks/gsd-worktree-guard.sh \
-    .claude/settings.json .gitignore .gitattributes CLAUDE.md
-  # Commit the post-merge hook when it lands in the working tree — .husky/, or
-  # a core.hooksPath pointing at a tracked dir like scripts/git-hooks. A hook
-  # inside .git/ is per clone and cannot be committed.
-  gsd_planning_hook "$DEST"
-  [ "${GSD_HOOK_VERSIONED:-0}" = 1 ] && [ -f "$GSD_HOOK_PATH" ] \
-    && git -C "$DEST" add -- "$GSD_HOOK_PATH"
-  if git -C "$DEST" diff --cached --quiet; then
-    echo "• nothing new to commit"
-  else
-    git -C "$DEST" commit -q -m "chore: add gsd-worktrees workflow (config + shims)"
-    echo "✔ committed on '$(git -C "$DEST" branch --show-current)'"
+  if [ -n "$DIRTY_BEFORE" ]; then echo '⚠ target repo had existing changes — skipped --commit'; else
+    files=(.gsd.conf .gsd/INSTRUCTIONS.md scripts .gitignore .gitattributes); oldifs=$IFS; IFS=,; for p in $SELECTED; do files+=("$(gsd_provider_instruction_file "$p")"); case "$p" in claude) files+=(.claude/settings.json) ;; gemini) files+=(.gemini/settings.json) ;; esac; done; IFS=$oldifs
+    git -C "$DEST" add -- "${files[@]}"; gsd_planning_hook "$DEST"; [ "${GSD_HOOK_VERSIONED:-0}" = 1 ] && [ -f "$GSD_HOOK_PATH" ] && git -C "$DEST" add -- "$GSD_HOOK_PATH"; git -C "$DEST" diff --cached --quiet || git -C "$DEST" commit -q -m 'chore: add gsd-worktrees workflow'; echo '✔ bootstrap changes committed'
   fi
 fi
-
-# ── next steps ───────────────────────────────────────────────────────────────
-cat <<EOS
-
-✅ gsd-worktrees workflow installed in $DEST
-
-Next steps (in the target repo):
-  1. Initialize planning state — open a $AGENT session there and run:
-       /gsd-new-project        (fresh)   or   /gsd-ingest-docs   (existing ADRs/PRDs)
-     then optionally /gsd-map-codebase to build .planning/codebase/.
-  2. (optional) Per-worktree dev ports: wire scripts/gsd-derive-port.sh into each
-     app's own \`dev\` script, e.g.
-       "dev": "PORT=\$(bash ../../scripts/gsd-derive-port.sh 3000) <your dev cmd>"
-     Each worktree then gets its own port and they never collide.
-EOS
-if [ "$COMMIT" != 1 ]; then
-  cat <<EOS
-  3. Commit:
-       git add .gsd.conf scripts/ .claude/settings.json .gitignore .gitattributes CLAUDE.md && git commit -m "chore: add gsd-worktrees workflow"
-EOS
-fi
-cat <<EOS
-
-Then the loop per feature (parallel-safe):
-  gsd-start -n "<desc>"   →  work in the session it opens  →  gsd-finish
-EOS
+echo; echo "✅ provider-neutral GSD workflow installed (default: $DEFAULT)"; echo "Next: gsd-init --no-launch (preserves $SELECTED), or gsd-start -n \"<desc>\""

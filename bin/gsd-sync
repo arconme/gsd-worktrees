@@ -49,13 +49,15 @@ done
 
 # ── locate the toolkit repo by resolving our own symlink ─────────────────────
 SELF="$0"
+INSTALL_BIN=${GSD_BIN_DIR:-$HOME/.local/bin}
+if [ -L "$SELF" ]; then INSTALL_BIN=$(cd "$(dirname "$SELF")" && pwd -P); fi
 while [ -L "$SELF" ]; do
   tgt=$(readlink "$SELF")
   case "$tgt" in /*) SELF="$tgt" ;; *) SELF="$(dirname "$SELF")/$tgt" ;; esac
 done
 REPO="$(cd "$(dirname "$SELF")/.." && pwd)"
 [ -d "$REPO/bin" ] && [ -f "$REPO/install.sh" ] \
-  || die "could not locate the gsd-worktrees repo from $0 (resolved to $REPO)"
+  || die "could not locate the gsd-worktrees package from $0 (resolved to $REPO)"
 # shellcheck source=lib/common.sh
 . "$REPO/lib/common.sh"
 START_DIR="$PWD"
@@ -75,14 +77,19 @@ echo "reference    : ${SRCR:-(none — not inside a project repo)}"
 echo ""
 
 # ── step 1: self-update ──────────────────────────────────────────────────────
-DIRTY=$(git status --porcelain)
-if [ -n "$DIRTY" ]; then
+DIRTY=""
+if [ ! -e "$REPO/.git" ]; then
+  echo "• standalone copy — self-update and reinstall skipped (run install.sh --copy from a newer package to update)"
+elif [ -n "$(git status --porcelain)" ]; then
+  DIRTY=$(git status --porcelain)
   echo "• toolkit repo has uncommitted changes (commit them so they're versioned):"
   git status --short | sed 's/^/    /'
 fi
-if git remote get-url origin >/dev/null 2>&1; then
+if [ ! -e "$REPO/.git" ]; then
+  :
+elif git remote get-url origin >/dev/null 2>&1; then
   if [ "$CHECK" = 1 ]; then
-    git fetch origin --quiet 2>/dev/null || echo "• fetch failed (offline?) — skipping remote check"
+    echo '• remote comparison uses last fetched refs (read-only; no fetch)'
     if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
       behind=$(git rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')
       ahead=$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo '?')
@@ -108,10 +115,12 @@ else
 fi
 
 # ── step 2: re-link (picks up commands added by the pull) ────────────────────
-if [ "$CHECK" = 1 ]; then
+if [ ! -e "$REPO/.git" ]; then
+  :
+elif [ "$CHECK" = 1 ]; then
   echo "▶ would re-run install.sh"
 else
-  ./install.sh | sed 's/^/  /'
+  GSD_BIN_DIR="$INSTALL_BIN" ./install.sh --reuse-install-config | sed 's/^/  /'
 fi
 echo ""
 

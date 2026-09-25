@@ -77,8 +77,10 @@ blocked "7.1 plan-phase without CONTEXT is blocked" gsd-plan-phase "7.1"
 : > "$PDIR/7.1-CONTEXT.md"
 allowed "7.1 plan-phase with CONTEXT passes"        gsd-plan-phase "7.1"
 mkrepo strict phase-8-new 08-new; rmdir "$PDIR"
-allowed "no phase dir yet → nothing to order"        gsd-plan-phase "8"
+blocked "missing phase dir cannot bypass discuss gate" gsd-plan-phase "8"
+allowed "fresh phase can still discuss" gsd-discuss-phase "8"
 GSD_SKIP_GUARD=1 allowed "GSD_SKIP_GUARD=1 bypasses"  gsd-plan-phase "8"
+GSD_SKIP_GUARD=0 blocked "GSD_SKIP_GUARD=0 does not bypass" gsd-plan-phase "8"
 
 section "flow = strict — policy comes from the MAIN checkout, not the worktree copy"
 mkrepo "" phase-7-thing 07-thing          # branch carries NO flow key
@@ -94,6 +96,37 @@ blocked "old worktree (no flow key in its .gsd.conf) is still gated" gsd-plan-ph
 section "flow = strict — the older rules still fire first"
 mkrepo strict phase-7-thing 07-thing
 blocked "wrong phase worktree is still blocked"  gsd-plan-phase "9"
+
+section "install completion never bypasses strict gates"
+printf 'base = develop\nflow = strict\ninstall = npm install\n' > "$REPO/.gsd.conf"
+echo ok > "$REPO/.gsd-install.status"
+blocked "install ok still requires review" gsd-execute-phase "7"
+: > "$PDIR/07-REVIEWS.md"
+allowed "install ok and review permit execution" gsd-execute-phase "7"
+mkdir -p "$REPO/node_modules"
+echo running > "$REPO/.gsd-install.status"
+blocked "partial node_modules cannot bypass running install" gsd-execute-phase "7"
+echo fail > "$REPO/.gsd-install.status"
+blocked "node_modules cannot bypass failed install" gsd-execute-phase "7"
+echo ok > "$REPO/.gsd-install.status"
+blocked "review in wrong phase is blocked" gsd-review "--phase 9 --codex"
+blocked "flow in wrong phase is blocked" gsd-flow "9"
+blocked "omitted phase still enforces discuss gate" gsd-plan-phase ""
+git -C "$REPO" checkout -q -b agent-untrusted
+blocked "agent branch name alone is not an exemption" gsd-execute-phase "7"
+
+section "nested workers retain phase checks"
+git -C "$REPO" checkout -q phase-7-thing
+git -C "$REPO" add .
+git -C "$REPO" -c user.name=t -c user.email=t@t commit -qm artifacts
+PARENT=$REPO
+NESTED="$PARENT/.claude/worktrees/worker"
+git -C "$PARENT" worktree add -q -b agent-nested "$NESTED"
+REPO=$NESTED; PDIR="$REPO/.planning/phases/07-thing"
+allowed "nested worker in same repository inherits phase" gsd-execute-phase "7"
+blocked "nested worker cannot target another phase" gsd-execute-phase "9"
+rm "$PDIR/07-REVIEWS.md"
+blocked "nested worker still requires strict review" gsd-execute-phase "7"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

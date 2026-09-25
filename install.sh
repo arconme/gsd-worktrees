@@ -8,43 +8,155 @@
 # machine that won't keep this checkout around).
 #
 # Usage:
-#   ./install.sh [--copy]
+#   ./install.sh [--copy] [--agent claude|codex|gemini]... [--all-agents]
 #
 # Env:
 #   GSD_BIN_DIR   install target (default: ~/.local/bin)
+#   GSD_COPY_DIR  standalone runtime (default: GSD_BIN_DIR/../share/gsd-worktrees)
 set -euo pipefail
 
 BIN_DIR="${GSD_BIN_DIR:-$HOME/.local/bin}"
-MODE="link"
-case "${1:-}" in
-  --copy) MODE="copy" ;;
-  '') ;;
-  *) echo "usage: ./install.sh [--copy]" >&2; exit 1 ;;
-esac
+MODE="link"; PROVIDERS=""; REUSE=0
+add_provider() { case ",$PROVIDERS," in *",$1,"*) ;; *) PROVIDERS="${PROVIDERS:+$PROVIDERS,}$1" ;; esac; }
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --copy) MODE=copy; shift ;;
+    --reuse-install-config) REUSE=1; shift ;;
+    --agent) [ $# -ge 2 ] || { echo '--agent needs a provider' >&2; exit 1; }; case "$2" in claude|codex|gemini) add_provider "$2" ;; *) echo "unknown provider: $2" >&2; exit 1 ;; esac; shift 2 ;;
+    --all-agents) PROVIDERS=claude,codex,gemini; shift ;;
+    -h|--help) echo 'usage: ./install.sh [--copy] [--agent claude|codex|gemini]... [--all-agents] [--reuse-install-config]'; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+REPO="$(cd "$(dirname "$0")" && pwd -P)"
+. "$REPO/lib/common.sh"
+. "$REPO/lib/provider.sh"
+INSTALL_PYTHON=$(gsd_python) || { echo 'installation requires Python 3.7+ (python3 or python on PATH)' >&2; exit 1; }
+backup_path() { local base=$1 out=$1.bak n=1; while [ -e "$out" ] || [ -L "$out" ]; do out=$base.bak.$n; n=$((n+1)); done; printf '%s\n' "$out"; }
+absolute_path() { "$INSTALL_PYTHON" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"; }
+within() { case "$1/" in "$2/"*) return 0 ;; *) return 1 ;; esac; }
+BIN_DIR=$(absolute_path "$BIN_DIR")
+if within "$BIN_DIR" "$REPO" || within "$REPO" "$BIN_DIR"; then
+  echo "unsafe $([ "$MODE" = copy ] && printf '%s ' --copy)destination: bin and source directories must not overlap" >&2; exit 1
+fi
+MANIFEST=$BIN_DIR/.gsd-install-manifest
+if [ "$REUSE" = 1 ] && [ -f "$MANIFEST" ]; then
+  while IFS=$'\t' read -r key value; do
+    case "$key" in
+      providers) [ -n "$PROVIDERS" ] || PROVIDERS=$value ;;
+      claude_skills) GSD_CLAUDE_SKILL_DIR=${GSD_CLAUDE_SKILL_DIR:-$value} ;;
+      codex_skills) GSD_CODEX_SKILL_DIR=${GSD_CODEX_SKILL_DIR:-$value} ;;
+      gemini_skills) GSD_GEMINI_SKILL_DIR=${GSD_GEMINI_SKILL_DIR:-$value} ;;
+      *) echo "invalid install manifest key: $key" >&2; exit 1 ;;
+    esac
+  done < "$MANIFEST"
+fi
+[ -n "$PROVIDERS" ] || PROVIDERS=claude
+gsd_provider_list_validate "$PROVIDERS"
+case ",$PROVIDERS," in *,custom,*) echo 'custom provider has no installable skill format' >&2; exit 1 ;; esac
+oldifs=$IFS; IFS=,
+for provider in $PROVIDERS; do
+  skillpath=$(gsd_provider_skill_root "$provider")
+  case "$skillpath" in *$'\t'*|*$'\n'*) echo 'skill destination cannot contain tabs or newlines' >&2; exit 1 ;; esac
+  skillpath=$(absolute_path "$skillpath")
+  if within "$skillpath" "$REPO" || within "$REPO" "$skillpath"; then
+    echo 'unsafe skill destination: skills and source directories must not overlap' >&2; exit 1
+  fi
+done
+IFS=$oldifs
 
-REPO="$(cd "$(dirname "$0")" && pwd)"
+if [ "$MODE" = copy ]; then
+  BIN_DIR=$(absolute_path "$BIN_DIR")
+  COPY_REQUEST=${GSD_COPY_DIR:-$BIN_DIR/../share/gsd-worktrees}
+  COPY_REQUEST=$("$INSTALL_PYTHON" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$COPY_REQUEST")
+  if [ -L "$COPY_REQUEST" ]; then
+    echo "unsafe --copy destination: runtime root is a symlink ($COPY_REQUEST)" >&2
+    exit 1
+  fi
+  COPY_DIR=$(absolute_path "$COPY_REQUEST")
+  if within "$COPY_DIR" "$REPO" || within "$REPO" "$COPY_DIR" \
+    || within "$BIN_DIR" "$REPO" || within "$REPO" "$BIN_DIR" \
+    || within "$COPY_DIR" "$BIN_DIR" || within "$BIN_DIR" "$COPY_DIR"; then
+    echo "unsafe --copy destination: runtime, bin, and source directories must not overlap" >&2
+    exit 1
+  fi
+  # Merge only package-owned paths. Unrelated files remain in place; changed
+  # paths get distinct backups, so repeated installs never clobber old copies.
+  copy_tree() {
+    local src=$1 dst=$2 path rel target bak
+    if [ -e "$dst" ] || [ -L "$dst" ]; then
+      if [ ! -d "$dst" ] || [ -L "$dst" ]; then
+        bak=$(backup_path "$dst"); mv "$dst" "$bak"
+        echo "• existing $dst preserved at $bak"
+      fi
+    fi
+    mkdir -p "$dst"
+    while IFS= read -r path; do
+      rel=${path#"$src"/}; target="$dst/$rel"
+      if [ -d "$path" ] && [ ! -L "$path" ]; then
+        if [ -e "$target" ] || [ -L "$target" ]; then
+          if [ ! -d "$target" ] || [ -L "$target" ]; then
+            bak=$(backup_path "$target"); mv "$target" "$bak"
+            echo "• existing $target preserved at $bak"
+          fi
+        fi
+        mkdir -p "$target"
+      else
+        if [ -e "$target" ] || [ -L "$target" ]; then
+          if [ -L "$path" ] && [ -L "$target" ] && [ "$(readlink "$path")" = "$(readlink "$target")" ]; then continue; fi
+          if [ -f "$path" ] && [ -f "$target" ] && [ ! -L "$target" ] \
+            && cmp -s "$path" "$target" && { [ ! -x "$path" ] || [ -x "$target" ]; }; then continue; fi
+          bak=$(backup_path "$target"); mv "$target" "$bak"
+          echo "• existing $target preserved at $bak"
+        fi
+        cp -P "$path" "$target"
+      fi
+    done < <(find "$src" -mindepth 1 -type d -name __pycache__ -prune -o -mindepth 1 -print)
+  }
+  mkdir -p "$COPY_DIR"
+  # Only retire commands named by our previous inventory. Preserve their bytes
+  # in backups and leave unrelated runtime files and PATH links alone.
+  if [ -f "$COPY_DIR/.gsd-owned-commands" ]; then
+    while IFS= read -r old; do
+      case "$old" in gsd-*) ;; *) echo 'invalid copied command inventory' >&2; exit 1 ;; esac
+      case "$old" in */*|*..*) echo 'unsafe copied command inventory' >&2; exit 1 ;; esac
+      [ ! -e "$REPO/bin/$old" ] || continue
+      if [ -e "$COPY_DIR/bin/$old" ] || [ -L "$COPY_DIR/bin/$old" ]; then
+        bak=$(backup_path "$COPY_DIR/bin/$old"); mv "$COPY_DIR/bin/$old" "$bak"
+        echo "• retired command preserved at $bak"
+      fi
+      if [ -L "$BIN_DIR/$old" ] && [ "$(readlink "$BIN_DIR/$old")" = "$COPY_DIR/bin/$old" ]; then rm -f "$BIN_DIR/$old"; fi
+    done < "$COPY_DIR/.gsd-owned-commands"
+  fi
+  for component in bin lib shims skills; do copy_tree "$REPO/$component" "$COPY_DIR/$component"; done
+  if [ -e "$COPY_DIR/install.sh" ] || [ -L "$COPY_DIR/install.sh" ]; then
+    if ! { [ -f "$COPY_DIR/install.sh" ] && [ ! -L "$COPY_DIR/install.sh" ] && cmp -s "$REPO/install.sh" "$COPY_DIR/install.sh"; }; then
+      bak=$(backup_path "$COPY_DIR/install.sh"); mv "$COPY_DIR/install.sh" "$bak"
+      cp -P "$REPO/install.sh" "$COPY_DIR/install.sh"
+    fi
+  else
+    cp -P "$REPO/install.sh" "$COPY_DIR/install.sh"
+  fi
+  inventory=$(mktemp)
+  for command_file in "$REPO"/bin/*; do basename "$command_file" >> "$inventory"; done
+  mv "$inventory" "$COPY_DIR/.gsd-owned-commands"
+fi
 mkdir -p "$BIN_DIR"
 
 for f in "$REPO"/bin/*; do
   name=$(basename "$f")
   dest="$BIN_DIR/$name"
-  # A pre-existing REGULAR file: drop it if identical, back it up if it differs
-  # (it may carry local changes that were never committed here).
-  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
-    if cmp -s "$f" "$dest"; then
-      rm "$dest"
-    else
-      mv "$dest" "$dest.bak"
-      echo "• existing $name differed from the repo version — backed up to $name.bak"
-    fi
+  # Preserve any command already at this path unless it points to this runtime.
+  target=$f
+  [ "$MODE" = link ] || target="$COPY_DIR/bin/$name"
+  if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$target" ]; then
+    echo "✔ $name → $dest"; continue
   fi
-  if [ "$MODE" = link ]; then
-    ln -sfn "$f" "$dest"
-  else
-    rm -f "$dest"
-    cp "$f" "$dest"
+  if [ -e "$dest" ] || [ -L "$dest" ]; then
+    bak=$(backup_path "$dest"); mv "$dest" "$bak"
+    echo "• existing $name preserved at $bak"
   fi
-  chmod +x "$f"
+  ln -s "$target" "$dest"
   echo "✔ $name → $dest"
 done
 
@@ -60,25 +172,48 @@ done
 # ── the agent-facing skill ───────────────────────────────────────────────────
 # Follows the chosen mode like bin/ does: --copy exists for machines that
 # won't keep this checkout around, and a symlinked skill would dangle there.
-SKILL_DIR="${GSD_SKILL_DIR:-$HOME/.claude/skills}"
-if [ -d "$REPO/skills" ]; then
+install_skills() {
+  local provider=$1 SKILL_DIR d name dest bak
+  SKILL_DIR=$(gsd_provider_skill_root "$provider")
   mkdir -p "$SKILL_DIR"
   for d in "$REPO"/skills/*/; do
     name=$(basename "$d")
     dest="$SKILL_DIR/$name"
-    if [ -e "$dest" ] && [ ! -L "$dest" ] && [ "$MODE" = link ]; then
-      mv "$dest" "$dest.bak"
-      echo "• existing skill $name was a real directory — backed up to $name.bak"
+    if [ -e "$dest" ] || [ -L "$dest" ]; then
+      if [ -L "$dest" ] && [ "$(readlink "$dest")" = "${d%/}" ] && [ "$MODE" = link ]; then :
+      elif [ "$MODE" = copy ] && [ -d "$dest" ] && [ ! -L "$dest" ] \
+        && diff -qr "${d%/}" "$dest" >/dev/null 2>&1; then
+        echo "• $provider skill $name already current"; continue
+      else
+        bak=$(backup_path "$dest"); mv "$dest" "$bak"
+        echo "• existing $provider skill $name preserved at $bak"
+      fi
     fi
     if [ "$MODE" = link ]; then
       ln -sfn "${d%/}" "$dest"
     else
-      rm -rf "$dest"                     # a plain copy is ours to replace
       cp -R "${d%/}" "$dest"
     fi
-    echo "✔ skill $name → $dest"
+    echo "✔ $provider skill $name → $dest"
   done
+  for dest in "$SKILL_DIR"/*; do
+    [ -L "$dest" ] || continue
+    case "$(readlink "$dest")" in "$REPO"/skills/*) [ -e "$dest" ] || echo "⚠ stale toolkit skill link: $dest (re-run install after updating the toolkit)" ;; esac
+  done
+}
+oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do install_skills "$provider"; done; IFS=$oldifs
+manifest_tmp=$(mktemp)
+printf 'providers\t%s\n' "$PROVIDERS" > "$manifest_tmp"
+oldifs=$IFS; IFS=,
+for provider in $PROVIDERS; do
+  printf '%s_skills\t%s\n' "$provider" "$(absolute_path "$(gsd_provider_skill_root "$provider")")" >> "$manifest_tmp"
+done
+IFS=$oldifs
+if { [ -e "$MANIFEST" ] || [ -L "$MANIFEST" ]; } && ! cmp -s "$manifest_tmp" "$MANIFEST"; then
+  bak=$(backup_path "$MANIFEST"); mv "$MANIFEST" "$bak"
+  echo "• previous installation settings preserved at $bak"
 fi
+mv "$manifest_tmp" "$MANIFEST"
 
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

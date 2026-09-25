@@ -2,12 +2,8 @@
 #
 # gsd-init — take a repo with NO GSD to "ready for gsd-start" in one command:
 # installs the worktree workflow (gsd-bootstrap-repo), then prints (or, with
-# --agent/--launch, opens) the right initialization skill (/gsd-new-project or
-# /gsd-ingest-docs — auto-picked by whether planning docs already exist).
-#
-# Agent-agnostic: the session is opened with whatever CLI --agent names (claude,
-# gemini, …); both take the launch prompt as a positional arg. Default is
-# no-launch — the 'cd … && <agent> …' command is printed for you to run.
+# --launch, opens) the right initialization prompt. Provider adapters choose
+# the actual CLI argv; print-only is the default.
 set -euo pipefail
 
 die() { printf '✖ %s\n' "$@" >&2; exit 1; }
@@ -16,9 +12,8 @@ usage() {
   cat <<'HELP'
 gsd-init — set up GSD in a repo that doesn't have it yet
 
-Runs gsd-bootstrap-repo (worktree scripts, guard hook, settings, CLAUDE.md
-section, gitignore/gitattributes) and then prints (or, with --agent/--launch,
-opens) the session on the right initialization skill:
+Runs gsd-bootstrap-repo (shared scripts/config/instructions plus the selected
+provider adapter) and then prints or opens the initialization session.
 
   /gsd-new-project    when the repo has no planning docs (fresh interview)
   /gsd-ingest-docs    when ADRs/PRDs/SPECs are detected (bootstrap from them)
@@ -36,11 +31,17 @@ USAGE
 OPTIONS
   --new            force /gsd-new-project (skip docs detection)
   --ingest         force /gsd-ingest-docs
-  --src <path>     source repo for the bootstrap (default: gsd-bootstrap-repo's)
+  --src <path>     deprecated compatibility flag; bootstrap ignores it
   --base <branch>  base branch override (passed to gsd-bootstrap-repo)
   --no-commit      don't commit the bootstrap files (default: commit)
-  --agent <cmd>    agent CLI to open the session with (claude, gemini, …);
-                   naming one implies --launch. (default: claude)
+  --providers <list> comma-separated integrations to install, in default order
+  --provider <p>   provider for the initialization session; when --providers
+                   is omitted, also selects the single integration to install
+  --provider-command <p=path> executable override for one provider; repeatable
+  --agent-command <path> executable override (implies --launch; add --no-launch to print)
+  --model <id>     session model override; 'default' uses the CLI's own default
+  --agent <value>  compatibility alias: provider or custom executable;
+                   naming one implies --launch
   --launch         open the session with the default agent (default is NO
                    launch — the 'cd … && <agent> …' command is printed instead)
   --no-launch      force print-only, overriding --agent/--launch
@@ -48,13 +49,19 @@ OPTIONS
 
 EXAMPLES
   cd ~/projects/acme/webshop && gsd-init
-      Bootstrap + commit, then print the 'cd … && claude …' init command.
+      Bootstrap + commit, then print the configured init command.
 
   cd ~/projects/acme/webshop && gsd-init --launch
-      Same, but open the Claude session on the detected init skill right away.
+      Same, but open the configured session right away.
 
   gsd-init --ingest --agent gemini
       Force ingest mode and open the session with the gemini CLI.
+
+  gsd-init --providers claude,codex,gemini --provider codex --no-launch
+      Install all three integrations and print the Codex initialization command.
+
+  gsd-init --providers claude,codex --provider-command codex=/opt/bin/codex
+      Install Claude and Codex integrations with an explicit Codex executable.
 
   gsd-init --base main
       Bootstrap against 'main', print the init command to run later.
@@ -72,7 +79,12 @@ HELP
 MODE=""          # "" = auto-detect | new | ingest
 BOOT_ARGS=()
 COMMIT=1
-AGENT="claude"
+PROVIDER_CLI=""
+PROVIDERS_CLI=""
+PROVIDER_COMMAND_ARGS=()
+PROVIDER_COMMAND_COUNT=0
+AGENT_COMMAND_CLI=""
+MODEL_CLI=""
 LAUNCH=0
 FORCE_NOLAUNCH=0
 while [ $# -gt 0 ]; do
@@ -83,7 +95,12 @@ while [ $# -gt 0 ]; do
     --src)  [ $# -ge 2 ] || die "--src needs a value";  BOOT_ARGS+=(--src "$2");  shift 2 ;;
     --base) [ $# -ge 2 ] || die "--base needs a value"; BOOT_ARGS+=(--base "$2"); shift 2 ;;
     --no-commit) COMMIT=0; shift ;;
-    --agent) [ $# -ge 2 ] || die "--agent needs a value (e.g. claude, gemini)"; AGENT="$2"; LAUNCH=1; shift 2 ;;
+    --providers) [ $# -ge 2 ] || die "--providers needs a comma-separated list"; PROVIDERS_CLI="$2"; shift 2 ;;
+    --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, gemini, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
+    --model) [ $# -ge 2 ] && [ -n "$2" ] || die "--model needs a model ID or default"; MODEL_CLI="$2"; shift 2 ;;
+    --provider-command) [ $# -ge 2 ] || die "--provider-command needs provider=executable"; PROVIDER_COMMAND_ARGS+=("$2"); PROVIDER_COMMAND_COUNT=$((PROVIDER_COMMAND_COUNT+1)); shift 2 ;;
+    --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND_CLI="$2"; LAUNCH=1; shift 2 ;;
+    --agent) [ $# -ge 2 ] || die "--agent needs a provider or executable"; case "$2" in claude|codex|gemini|custom) PROVIDER_CLI="$2" ;; *) PROVIDER_CLI=custom; AGENT_COMMAND_CLI="$2" ;; esac; LAUNCH=1; shift 2 ;;
     --launch)    LAUNCH=1; shift ;;
     --no-launch) FORCE_NOLAUNCH=1; shift ;;
     *) die "unknown arg: $1 (see gsd-init --help)" ;;
@@ -103,8 +120,50 @@ done
 GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 # shellcheck source=../lib/common.sh
 . "$GSD_PKG/lib/common.sh"
+# shellcheck source=../lib/provider.sh
+. "$GSD_PKG/lib/provider.sh"
+
+# Build bootstrap arguments only after validating the complete selection. This
+# prevents a typo or a launch provider outside the configured set from writing
+# a partially initialized repository.
+if [ -n "$PROVIDERS_CLI" ]; then
+  gsd_provider_list_validate "$PROVIDERS_CLI" || exit $?
+  [ -n "$PROVIDER_CLI" ] || PROVIDER_CLI=${PROVIDERS_CLI%%,*}
+  case ",$PROVIDERS_CLI," in *",$PROVIDER_CLI,"*) ;; *) die "launch provider '$PROVIDER_CLI' is not listed in --providers $PROVIDERS_CLI" ;; esac
+  BOOT_ARGS+=(--agents "$PROVIDERS_CLI")
+elif [ -n "$PROVIDER_CLI" ]; then
+  gsd_provider_known "$PROVIDER_CLI" || die "unknown provider '$PROVIDER_CLI'"
+  BOOT_ARGS+=(--agent "$PROVIDER_CLI")
+fi
+if [ "$PROVIDER_COMMAND_COUNT" -gt 0 ]; then for provider_command in "${PROVIDER_COMMAND_ARGS[@]}"; do
+  case "$provider_command" in
+    *=*) command_provider=${provider_command%%=*}; command_value=${provider_command#*=} ;;
+    *) die "--provider-command needs provider=executable" ;;
+  esac
+  [ -n "$command_provider" ] && [ -n "$command_value" ] || die "malformed --provider-command: $provider_command"
+  gsd_provider_validate "$command_provider" "$command_value" || exit $?
+  if [ -n "$PROVIDERS_CLI" ]; then
+    case ",$PROVIDERS_CLI," in *",$command_provider,"*) ;; *) die "provider command '$command_provider' is not listed in --providers $PROVIDERS_CLI" ;; esac
+  fi
+  BOOT_ARGS+=(--provider-command "$provider_command")
+done; fi
+if [ -n "$AGENT_COMMAND_CLI" ]; then
+  gsd_provider_validate "${PROVIDER_CLI:-claude}" "$AGENT_COMMAND_CLI" || exit $?
+  if [ -n "$PROVIDERS_CLI" ]; then BOOT_ARGS+=(--provider-command "$PROVIDER_CLI=$AGENT_COMMAND_CLI")
+  else BOOT_ARGS+=(--agent-command "$AGENT_COMMAND_CLI")
+  fi
+fi
 
 # ── already initialized? (still repair/sync the workflow files below) ────────
+# Validate the prospective session model before bootstrap writes files.
+MODEL_PROVIDER=${PROVIDER_CLI:-${GSD_PROVIDER:-}}
+if [ -z "$MODEL_PROVIDER" ]; then
+  MODEL_PROVIDER=$(gsd_conf_get "$DEST" providers); MODEL_PROVIDER=${MODEL_PROVIDER%%,*}
+  [ -n "$MODEL_PROVIDER" ] || MODEL_PROVIDER=$(gsd_conf_get "$DEST" provider)
+  if [ -z "$MODEL_PROVIDER" ] && [ "$PROVIDER_COMMAND_COUNT" -gt 0 ]; then MODEL_PROVIDER=${PROVIDER_COMMAND_ARGS[0]%%=*}; fi
+  MODEL_PROVIDER=${MODEL_PROVIDER:-${GSD_PROVIDER:-${GSD_AGENT:-claude}}}
+fi
+gsd_model_resolve "$DEST" "$MODEL_PROVIDER" "$MODEL_CLI" || exit $?
 ALREADY=0
 [ -f "$DEST/.planning/ROADMAP.md" ] && ALREADY=1
 
@@ -160,24 +219,26 @@ if [ -z "$MODE" ]; then
     echo "▶ no planning docs found — will initialize with the project interview"
   fi
 fi
-case "$MODE" in
-  new)    CMD="/gsd-new-project" ;;
-  ingest) CMD="/gsd-ingest-docs" ;;
-esac
+gsd_provider_resolve "$DEST" "$PROVIDER_CLI" "$AGENT_COMMAND_CLI" || exit $?
+gsd_model_resolve "$DEST" "$GSD_PROVIDER_RESOLVED" "$MODEL_CLI" || exit $?
+CMD=$(gsd_provider_prompt "$GSD_PROVIDER_RESOLVED" "$MODE")
+gsd_provider_argv "$GSD_PROVIDER_RESOLVED" "$GSD_AGENT_COMMAND_RESOLVED" "$CMD" "$GSD_MODEL_RESOLVED"
+NEXT=$(gsd_provider_render "$DEST" "${GSD_LAUNCH_ARGV[@]}")
 
 # ── step 3: open the session (the initialization itself is interactive) ──────
-# Both claude and gemini take the launch prompt as a positional arg, so a single
-# `<agent> "<prompt>"` shape works for either; --agent selects which.
-if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$AGENT" >/dev/null 2>&1; then
+# The adapter builds an argv array; no shell template expansion is used.
+if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
   echo ""
-  echo "▶ opening $AGENT session in $DEST ($CMD)…"
+  echo "▶ opening $GSD_PROVIDER_RESOLVED session in $DEST…"
   cd "$DEST"
-  exec "$AGENT" "$CMD"
+  exec "${GSD_LAUNCH_ARGV[@]}"
 else
   echo ""
-  if [ "$LAUNCH" = 1 ] && ! command -v "$AGENT" >/dev/null 2>&1; then
-    echo "• '$AGENT' not found on PATH — not launching."
+  if [ "$LAUNCH" = 1 ] && ! command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
+    echo "✖ provider executable '$GSD_AGENT_COMMAND_RESOLVED' not found — launch cancelled." >&2
+    echo "Next (after installing it or changing agent_command):  $NEXT"
+    exit 127
   fi
-  echo "Next:  cd $DEST && $AGENT \"$CMD\""
+  echo "Next:  $NEXT"
   echo "Then per feature:  gsd-start -n \"<description>\"  →  work  →  gsd-finish"
 fi

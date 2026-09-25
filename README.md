@@ -1,15 +1,109 @@
 # gsd-worktrees
 
-Parallel-session worktree orchestration for the **GSD** (Get Shit Done) planning
-system — the companion toolkit that lets several agent sessions (Claude Code,
-gemini, …) work on one repo at once without clobbering each other.
+Provider-neutral, parallel-session worktree orchestration for **GSD** (Get Shit
+Done). The shared shell engine supports Claude Code, OpenAI Codex, and Gemini;
+thin adapters select launch syntax, durable instructions, skill destinations,
+and optional native hooks.
 
 GSD itself provides the planning skills (`/gsd-phase`, `/gsd-discuss-phase`,
 `/gsd-plan-phase`, `/gsd-execute-phase`, …) and the `gsd-sdk` CLI. This repo
 provides everything around them: one-command feature start/finish, per-phase
 git worktrees, claim races resolved automatically, a checkout lock, per-worktree
-dev ports, ClickUp write-back, and the guard hook that keeps each command in
-its right place.
+dev ports, ClickUp write-back, and mandatory command-level guards. Native agent
+hooks are additional early feedback, not the safety boundary.
+
+`gsd-start` validates the target worktree before printing or opening a session.
+`gsd-flow-next` checks location even without `.gsd.conf`, including story and
+decision steps; normal calls also validate the current phase action. A running
+or failed install cannot be bypassed by partially created `node_modules`.
+Nested agent workers retain these checks. Only `GSD_SKIP_GUARD=1` explicitly
+bypasses them; use it only at the user's request.
+
+## Providers and configuration
+
+Use `gsd-init`, the normal public setup command, to install one or more
+integrations and choose which provider should run the initialization session:
+
+```sh
+gsd-init --provider claude
+gsd-init --provider codex
+gsd-init --provider gemini
+gsd-init --providers claude,codex,gemini --provider codex
+gsd-init --providers claude,codex --provider codex \
+  --provider-command codex=/opt/bin/codex
+```
+
+`--providers` is the installed provider set, in default order; `--provider`
+selects the provider for this initialization session. `gsd-bootstrap-repo` is
+the lower-level idempotent installer used by `gsd-init`.
+
+`.gsd.conf` separates identity from executable:
+
+```ini
+providers = codex,claude
+claude_command = /opt/anthropic/bin/claude
+codex_command = /opt/openai/bin/codex
+claude_model = MODEL_ID
+codex_model = MODEL_ID
+gemini_model = MODEL_ID
+flow = strict
+review_provider = codex
+start_mode = flow
+```
+
+The provider-specific `*_model` keys are optional. `gsd-init --model MODEL_ID`
+and `gsd-start --model MODEL_ID` override the model for that launched session;
+otherwise model selection follows `--model`, `GSD_MODEL`, the matching
+`GSD_CLAUDE_MODEL` / `GSD_CODEX_MODEL` / `GSD_GEMINI_MODEL`, then the matching
+repo key above. With no value, the toolkit omits the model flag and lets the
+CLI use its default. An explicit `--model` value of `default` also omits that
+flag, overriding configured model values. Custom providers reject non-default
+model selections because the toolkit cannot assume their CLI flag syntax.
+Model selection applies only to the session launched by these commands; it
+does not change existing or manually started sessions, or upstream GSD
+subagent/review models. Model selection makes no authentication changes or
+direct model API calls; each CLI uses its existing authentication.
+
+`providers` is ordered: its first entry is the repository default. The older
+singular `provider` key is still read when `providers` is absent, but new and
+migrated configuration does not write it.
+
+`gsd-start` keeps the historical discuss-only launch when `start_mode` is
+unset. Pass `--flow` to start or resume the complete artifact-driven workflow,
+or `--no-flow` to override `start_mode = flow` for one invocation.
+
+Provider identity and executable have separate precedence chains; see the
+[configuration reference](docs/providers.md#configuration-reference).
+Command values are one executable, never a shell template. Print-only does
+not require an installed agent CLI, but still validates configuration and
+guards. It means **no agent launch**, not a dry run: setup/claims/worktree
+creation may still occur. `--launch` exits 127 when the executable is missing.
+
+Multiple providers can use the same phase sequentially:
+
+```sh
+gsd-start -p 7 --provider claude --no-launch
+gsd-start -p 7 --provider codex --no-launch
+gsd-start -p 7 --provider gemini --no-launch
+```
+
+Each command targets the existing `phase-7-*` worktree and renders that
+provider's valid invocation. Only one mutating session may use the shared
+worktree at a time; hand off after committing or otherwise reaching a clean
+state. Parallel writers for different phases remain fully supported.
+
+| Provider | Instructions | User skills | Launch prompt | Native hook |
+|---|---|---|---|---|
+| Claude Code | `CLAUDE.md` | `~/.claude/skills` | positional slash/skill prompt | supported, optional |
+| OpenAI Codex | `AGENTS.md` | `~/.codex/skills` | positional natural-language prompt | not registered; command guard applies |
+| Gemini | `GEMINI.md` | `~/.gemini/skills` | `--prompt-interactive` | supported, optional |
+
+All provider files point to canonical `.gsd/INSTRUCTIONS.md`. Generated blocks
+are marked and repeated bootstrap updates only those blocks. See
+[`docs/architecture.md`](docs/architecture.md),
+[`docs/provider-audit.md`](docs/provider-audit.md),
+[`docs/migration.md`](docs/migration.md), and
+[`docs/providers.md`](docs/providers.md).
 
 ## Which command when
 
@@ -17,7 +111,7 @@ its right place.
 
 | Command | What it does | When |
 |---|---|---|
-| `gsd-init` | Sets up a repo from zero: bootstrap, then points you at `/gsd-new-project` or `/gsd-ingest-docs` | First time in a new repo |
+| `gsd-init` | Sets up a repo from zero: installs the requested provider set, then prints or opens the provider-appropriate initialization prompt | First time in a new repo |
 | `gsd-start` | Claims a phase, pushes it, creates the worktree, prints the session command | Begin a feature. `-n "desc"` = new phase, `-p <N>` = existing one |
 | `gsd-list` | Table of every phase: number, plans done, stage, worktree | "What's in flight?" Read-only, safe anywhere |
 | `gsd-finish` | Merges the phase back to base, pushes, deletes worktree + branch. `--pr` pushes and opens a GitHub PR instead (branch protection) | Phase is done. No argument needed from inside the worktree |
@@ -28,17 +122,17 @@ its right place.
 
 | Command | What it does | When |
 |---|---|---|
-| `gsd-bootstrap-repo` | Writes `.gsd.conf`, shims, guard hook, CLAUDE.md section | Usually called by `gsd-init`. Re-running is safe |
+| `gsd-bootstrap-repo` | Writes neutral config/shims/instructions plus selected provider adapters | Usually called by `gsd-init`. Re-running is safe |
 | `gsd-planning-repair` | Fixes `ROADMAP.md` / `STATE.md` after a merge scrambles them | When `gsd-doctor` tells you to |
 | `gsd-clickup` | Moves a ClickUp story to "in progress" / "in testing" | Only if you wired ClickUp up |
 
-**Never by hand — something else calls these:**
+**Lower-level APIs — usually called by other commands or skills:**
 
 | Command | Called by |
 |---|---|
 | `gsd-wt-new` | `gsd-start` — the worktree-creating half |
 | `gsd-wt-finish` | `gsd-finish` — the merge-and-cleanup half |
-| `gsd-worktree-guard` | The Claude Code hook. Blocks GSD commands run in the wrong worktree |
+| `gsd-worktree-guard` | Provider-neutral validator; also callable from optional native hooks |
 | `gsd-flow-next` | Which phase-flow step is next, read from the phase folder. Engine behind the `/gsd-flow` skill |
 | `gsd-planning-merge` | git, as the merge driver for `.planning/` files |
 | `gsd-derive-port` | your app's `dev` script, to pick a per-worktree port |
@@ -55,20 +149,20 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 | `gsd-start` | Start a feature in one step: claim the phase (deterministic, parallel-safe with auto-renumber), push, create the `phase-<N>-<slug>` worktree, open/print the session. `-n` is required to claim a new phase (a bare description is refused, so nobody — human or agent — opens a duplicate by accident); `-p <N>` re-attaches, `--insert <N>` claims a decimal hotfix phase, `--cu <id>` drives a ClickUp story (and a phase already carrying that id is refused, whatever the wording). |
 | `gsd-finish` | Finish from anywhere: merge the phase branch back into the base branch, push (with retry on parallel pushes), remove the worktree + branch, move the ClickUp story to its list's testing/review status (resolved per list, so differently-named statuses all work). Runs the pre-merge check or the project's tests first. `--pr` (with `--draft`) skips the merge: pushes the branch — the `*-pr` one from `/gsd-pr-branch` when present — and opens a GitHub PR via `gh`; run `gsd-finish` again after it lands to clean up. |
 | `gsd-list` | Read-only table of all phases: number, description, plan progress, lifecycle stage (live from the phase's worktree), worktree state. |
-| `gsd-init` | Take a repo with no GSD to "ready for gsd-start": bootstrap + open the right init skill (`/gsd-new-project` or `/gsd-ingest-docs`). |
-| `gsd-bootstrap-repo` | Fit a repo with the workflow: write `.gsd.conf`, install the frozen shims, register the guard hook, add the CLAUDE.md section + gitignore/gitattributes entries. Idempotent; no text rewriting. |
+| `gsd-init` | Take a repo with no GSD to "ready for gsd-start": bootstrap one or more providers, then print or open the right provider-specific initialization prompt. |
+| `gsd-bootstrap-repo` | Fit a repo with shared workflow files and explicitly selected provider adapters. Marked blocks preserve unrelated instructions. |
 | `gsd-clickup` | Minimal ClickUp write-back helper (status + comment + subtask cascade); token in `~/.config/gsd/clickup.env`. |
 | `gsd-sync` | Toolkit maintenance in one command: pull + push this repo, re-link `bin/`, and verify the shims of the repo you run it from are current. `--check` for a dry run. |
 | `gsd-wt-new` / `gsd-wt-finish` | The worktree workers behind `gsd-start`/`gsd-finish` (create with config-copy + background install; merge back locked and conflict-safe). Callable standalone. |
 | `gsd-planning-repair` | Reconcile `.planning/ROADMAP.md` + `STATE.md` after a union merge and recompute their progress counters from the roadmap and the plan files on disk. `--check` is the CI guard (exit 1 on union-merge damage); `--commit` lands the repair. Run automatically by `gsd-finish` and the `post-merge` hook. |
 | `gsd-planning-merge` | The git merge driver behind `merge=gsd-planning`: union both sides, then collapse every single-value line back to one value so the contradiction never lands. Registered per clone by `gsd-bootstrap-repo`, re-asserted by `gsd-finish`. |
 | `gsd-doctor` | Read-only health check of a repo's GSD setup: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene, gsd-core workstreams (not supported here — flagged loud), branches whose upstream is gone, newer GSD on npm. Diagnoses only — every finding names the command that fixes it and carries a code (`W017`/`W027` shared with `/gsd-health`, `T0xx` toolkit-only); `--json` emits them for CI. No `--fix`, by design. |
-| `gsd-worktree-guard` | The guard: blocks `/gsd-phase` off the base branch, per-phase commands outside their `phase-<N>-*` worktree, and execute-phase before deps land. With `flow = strict` in `.gsd.conf` it also enforces the phase order: `/gsd-plan-phase` needs `<P>-CONTEXT.md` (discuss; `--prd` exempt), `/gsd-execute-phase` needs `<P>-REVIEWS.md` (cross-AI review; `--gaps-only` exempt), `/gsd-secure-phase` needs `<P>-REVIEW.md` and, when a UI-SPEC exists, `<P>-UI-REVIEW.md`. Invoked via the repo's hook shim. |
+| `gsd-worktree-guard` | Shared guard API used by `gsd-flow-next`: phase/worktree matching, base restrictions, dependency/install state, and strict phase order. Provider hooks may invoke the same API. |
 | `gsd-derive-port` | Per-worktree dev ports (base + phase N), so parallel worktrees never collide on a port. |
 
-**`skills/` — the agent-facing skill** (symlinked into `~/.claude/skills`):
+**`skills/` — canonical agent-facing skills** (installed per selected provider):
 
-`gsd-worktrees/SKILL.md` teaches any Claude Code session, in any project, what
+`gsd-worktrees/SKILL.md` teaches any supported agent, in any project, what
 these commands are and the order to use them in — `gsd-list` before claiming,
 `-p <N>` to attach, `-n` only for genuinely new work. Only its description line
 sits in context permanently; the body loads when a session is actually about
@@ -78,13 +172,17 @@ GSD. `./install.sh` links it; `gsd-sync` keeps it current.
 
 All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
 
-- **`.gsd.conf`** (committed) — `base`, `wtdir`, `install`, `premerge`, `test`, `flow`; every key optional,
+- **`.gsd.conf`** (committed) — `providers`, provider commands/models, `review_provider`,
+  `start_mode`, `base`, `wtdir`, `install`, `premerge`, `test`, `flow`; keys are optional,
   falling back to auto-detection (develop/main, `<repo>-worktrees`, lockfile).
   `flow = strict` turns on the guard's phase-flow rule (below) and gsd-doctor's
   phase-flow debt report (T040); `flow_since = <N>` limits that report to phases >= N.
+- **`.gsd/INSTRUCTIONS.md`** — canonical marked workflow block. Selected providers
+  get minimal entrypoints in `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`, plus
+  optional native-hook settings where supported. Unrelated content is preserved.
 - **`shims/` → `scripts/gsd-*.sh` + `scripts/hooks/gsd-worktree-guard.sh`** —
   frozen 7-line delegators to the PATH commands, so committed references
-  (package.json dev scripts, `.claude/settings.json` hook registration, docs)
+  (package.json dev scripts, optional provider-hook registration, docs)
   keep working on every checkout. They never change, so there is nothing to
   sync. The port shim fails soft (bare base port) and the guard shim fails open
   on machines without the toolkit; the rest fail with an install pointer.
@@ -95,45 +193,68 @@ All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
   plain `git pull` on the base branch is covered, not just `gsd-finish`.
 - **`scripts/gsd-premerge-check.sh`** (optional, repo-authored — not a shim) —
   pre-merge hook `gsd-wt-finish` runs as `<script> <branch> <base>` after the
-  origin sync, before the merge; nonzero aborts the finish with nothing merged.
+  origin sync, before the merge, and again on the combined tree after each merge
+  (including push retries). Nonzero prevents push and worktree removal. After a
+  merge, failure leaves the merge local for inspection; no automatic rollback.
   The home for repo-specific validations (e.g. TypeORM migration-timestamp
   collision checks). Path override: `premerge =` in `.gsd.conf`; `none` disables.
   Without it, `gsd-finish` runs the project's test suite in the worktree
-  instead — `test =` in `.gsd.conf` sets the command, `none` skips, otherwise
+  instead, then on the combined base checkout before pushing. Install needed
+  test dependencies in both checkouts. `test =` sets the command, `none` skips, otherwise
   detected (xcodebuild / make / just / cargo / go / npm / pytest).
 
 ## Install
 
+Requires Bash, Git, Perl and Python 3.7+ (`python3` or `python`). `jq` enables
+native-hook registration/inspection; command-level guards do not require it.
+
 ```sh
 git clone git@github.com:arconme/gsd-worktrees.git
-cd gsd-worktrees && ./install.sh          # symlinks into ~/.local/bin
+cd gsd-worktrees
+./install.sh --agent claude
+./install.sh --agent codex
+./install.sh --agent gemini
+./install.sh --all-agents
 ```
 
 Symlink mode means `git pull` updates the live commands, and edits to the live
-commands land here ready to commit. Use `./install.sh --copy` for detached copies.
+commands land here ready to commit. Use `./install.sh --copy` for a standalone
+runtime containing commands and their required libraries; command symlinks
+point into that copy. See [copy installation](docs/copy-install.md) for
+`GSD_COPY_DIR`, backup behavior, and updates.
+Commands default to `GSD_BIN_DIR` or `~/.local/bin`. Skill roots can be isolated
+or relocated with `GSD_CLAUDE_SKILL_DIR`, `GSD_CODEX_SKILL_DIR`, and
+`GSD_GEMINI_SKILL_DIR`. Existing unrelated directories and links are backed up.
+Stale toolkit skill links are reported; stale toolkit command links are pruned.
 
 **Staying up to date:** run `gsd-sync` — it pulls this repo, pushes your local
 commits, re-links any new commands, and verifies the reference repo's shims
 are current. `gsd-sync --check` previews without changing anything.
+It uses last-fetched remote refs; it does not fetch. Installation records the
+selected providers and skill destinations in `GSD_BIN_DIR/.gsd-install-manifest`
+(data, never sourced as shell). Sync reuses that selection instead of defaulting
+to Claude. Repeat all desired `--agent` flags when changing the installation set.
 
 ## The loop per feature
 
 ```sh
-gsd-start -n "customer terms rework" --cu 869e33cv4   # claim + worktree + session
-# … discuss → plan → execute in the session it opens …
-gsd-finish                                          # merge back, push, clean up
+gsd-start -n "customer terms rework" --cu 869e33cv4 --flow
+# Run the printed session command; follow gsd-flow-next N through every gate.
+# After step=done, only with explicit user intent, as the session's final action:
+gsd-finish
 ```
 
 Every command self-documents: `gsd-start --help`, `gsd-finish --help`, ….
 
-The full order — including the optional gates (spec, UI, reviews, security) and
+The full order — including independent review, verification, security, conditional UI gates, and
 which commands run in the worktree vs the main checkout — is laid out in
 [`docs/command-order.html`](docs/command-order.html). Open it in a browser.
 
 ## Concurrency model (the point of all this)
 
-- **One feature = one phase = one worktree = one session.** The main checkout
-  stays on the base branch; nothing edits it directly.
+- **One feature = one phase = one worktree.** Multiple providers may take turns
+  in that worktree, but only one mutating session may use it at a time. The main
+  checkout stays on the base branch; nothing edits it directly.
 - **Claims serialize through the base branch** — pulled first, pushed with a
   rebase-and-retry loop; two sessions claiming at once get distinct numbers
   (the loser auto-renumbers).
@@ -218,13 +339,19 @@ today's behaviour, never worse.
 ## Tests
 
 ```bash
+tests/test-flow-next.sh
 tests/test-planning-reconcile.sh
+tests/test-worktree-guard.sh
+tests/test-providers.sh
+bash tests/test-gemini-hook.sh
+tests/test-install-copy.sh
+bash tests/test-review-fixes.sh
 ```
 
-122 assertions over the two real corruptions from `medyour-platform`
+The suites cover the two real planning corruptions from `medyour-platform`
 (`tests/fixtures/`), an end-to-end `git merge` through the driver, the same
 merge without the driver, a full `gsd-wt-finish` run, the three collateral-
-deletion regressions, and `gsd-doctor` — including that it leaves the working
+deletion regressions, the provider adapters, and `gsd-doctor` — including that it leaves the working
 tree, git config and every file byte-identical, and that `gsd-doctor` and
 `gsd-bootstrap-repo` agree on what "installed" means (both go through
 `gsd_planning_status`).
@@ -237,4 +364,5 @@ CI runs the suite on Linux and macOS (`.github/workflows/tests.yml`).
   shims all live here; repos carry only `.gsd.conf` + the frozen shims
   ("step two" done 2026-07-18: the old copy-and-perl-rewrite template system
   is gone).
-- Planned: shellcheck + bats CI for the lock/claim/finish concurrency paths.
+- CI includes shell syntax, ShellCheck (Linux), and Linux/macOS regression suites,
+  including a real local-remote push race during finish. Hosted CI must pass before merge.

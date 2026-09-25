@@ -139,11 +139,15 @@ done < <( cd "$MAIN" && git ls-files --others --ignored --exclude-standard \
 
 case "$INSTALL_MODE" in
   background)
-    ( cd "$DEST" && rm -f .gsd-install.status \
+    echo running > "$DEST/.gsd-install.status"
+    ( cd "$DEST" \
       && INSTALL_CMD="$INSTALL_CMD" nohup bash -c 'if $INSTALL_CMD >.gsd-install.log 2>&1; then echo ok >.gsd-install.status; else echo fail >.gsd-install.status; fi' </dev/null >/dev/null 2>&1 & )
     echo "▶ $INSTALL_CMD running in background → $DEST/.gsd-install.log (status: .gsd-install.status)" ;;
   foreground)
-    echo "▶ installing dependencies ($INSTALL_CMD)…"; ( cd "$DEST" && $INSTALL_CMD ) ;;
+    echo "▶ installing dependencies ($INSTALL_CMD)…"
+    echo running > "$DEST/.gsd-install.status"
+    if ( cd "$DEST" && $INSTALL_CMD ); then echo ok > "$DEST/.gsd-install.status"
+    else echo fail > "$DEST/.gsd-install.status"; exit 1; fi ;;
   none)
     # Record the skip: without this the guard cannot tell "skipped" apart from
     # "still installing" (both look like a missing status file) and would block
@@ -154,6 +158,8 @@ esac
 
 echo ""
 echo "✅ worktree ready: $DEST   (phase $N)"
-echo "Open an agent session there, then:"
-echo "    /gsd-discuss-phase $N → /gsd-plan-phase $N → /gsd-execute-phase $N"
-echo "Finish:  gsd-finish $N"
+if [ -z "${GSD_WT_NEW_SUPPRESS_NEXT:-}" ]; then
+  echo "Open an agent session there, then:"
+  echo "    /gsd-discuss-phase $N → /gsd-plan-phase $N → /gsd-execute-phase $N"
+  echo "Finish:  gsd-finish $N"
+fi

@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 #
-# gsd-worktree-guard — the GSD worktree guard, invoked as a Claude Code hook
-# via a tiny per-repo shim (scripts/hooks/gsd-worktree-guard.sh) registered on:
-#   - UserPromptExpansion  → catches TYPED /gsd-… slash commands
-#   - PreToolUse (Skill)   → catches model-initiated Skill calls
+# gsd-worktree-guard — shared validator called by gsd-start and gsd-flow-next.
+# Optional native hooks use the same validator through a per-repo shim.
 #
 # Rules (independent of how the command was invoked):
 #   1. /gsd-phase            → only on the base branch (the shared claim point).
@@ -26,8 +24,27 @@
 # Repo settings (base branch, install cmd, flow): .gsd.conf, see gsd-bootstrap-repo.
 set -uo pipefail
 
-[ -n "${GSD_SKIP_GUARD:-}" ] && exit 0
-input=$(cat 2>/dev/null || true)
+[ "${GSD_SKIP_GUARD:-}" = 1 ] && exit 0
+explicit_cmd=""; explicit_args=""; explicit_repo=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --command|--args|--phase|--repo)
+      [ $# -ge 2 ] && [ -n "$2" ] || { echo "$1 needs a value" >&2; exit 64; }
+      case "$1" in
+        --command) explicit_cmd=$2 ;;
+        --args) explicit_args=$2 ;;
+        --phase)
+          printf '%s' "$2" | grep -qE '^[0-9]+(\.[0-9]+)?$' || { echo "--phase needs a numeric phase" >&2; exit 64; }
+          explicit_args="${explicit_args:+$explicit_args }$2" ;;
+        --repo) explicit_repo=$2 ;;
+      esac
+      shift 2 ;;
+    -h|--help) echo 'usage: gsd-worktree-guard [--command gsd-… --args "…" --repo <dir>]'; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 64 ;;
+  esac
+done
+if [ -n "$explicit_cmd" ]; then input=""; cmd=${explicit_cmd#/}; args=$explicit_args
+else input=$(cat 2>/dev/null || true); fi
 
 SELF="$0"
 while [ -L "$SELF" ]; do
@@ -41,25 +58,82 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 # Command + args from the known payload shapes:
 #   UserPromptExpansion → .command_name / .command_args
 #   PreToolUse(Skill)   → .tool_input.skill / .tool_input.args
-if command -v jq >/dev/null 2>&1; then
+gemini_tool=""
+if [ -z "$explicit_cmd" ]; then
+  if command -v jq >/dev/null 2>&1; then
+    gemini_tool=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null || true)
+  else
+    gemini_tool=$(printf '%s' "$input" | sed -nE 's/.*"tool_name"[[:space:]]*:[[:space:]]*"(activate_skill|run_shell_command)".*/\1/p' | head -1)
+  fi
+fi
+if [ -z "$explicit_cmd" ] && { [ "$gemini_tool" = activate_skill ] || [ "$gemini_tool" = run_shell_command ]; }; then
+  # Gemini BeforeTool payloads need shell tokenization for direct commands.
+  # A registered hook must not silently allow a GSD call when that parser is
+  # unavailable or unable to classify the payload.
+  py=$(gsd_python 2>/dev/null || true)
+  [ -n "$py" ] || { echo 'BLOCKED: Gemini GSD hook needs Python 3.7+ to inspect tool calls.' >&2; exit 2; }
+  hook_fields=()
+  hook_field_count=0
+  while IFS= read -r -d '' field; do
+    hook_fields+=("$field")
+    hook_field_count=$((hook_field_count + 1))
+  done \
+    < <(printf '%s' "$input" | "$py" "$GSD_PKG/lib/gsd_hook_payload.py")
+  [ "$hook_field_count" -eq 4 ] || { echo 'BLOCKED: could not parse Gemini GSD tool call.' >&2; exit 2; }
+  case "${hook_fields[0]}" in
+    allow) exit 0 ;;
+    block) printf 'BLOCKED: %s\n' "${hook_fields[1]}" >&2; exit 2 ;;
+    guard) cmd=${hook_fields[1]}; args=${hook_fields[2]}; explicit_repo=${hook_fields[3]} ;;
+    *) echo 'BLOCKED: invalid Gemini GSD hook result.' >&2; exit 2 ;;
+  esac
+elif [ -z "$explicit_cmd" ] && command -v jq >/dev/null 2>&1; then
+  if ! printf '%s' "$input" | jq -e 'type == "object" and
+    ((.command_name // .tool_input.skill // "") | type == "string") and
+    ((.command_args // .tool_input.args // "") | type == "string")' >/dev/null 2>&1; then
+    echo 'BLOCKED: invalid Claude hook payload.' >&2; exit 2
+  fi
   cmd=$(printf '%s' "$input" | jq -r '.command_name // .tool_input.skill // empty' 2>/dev/null || true)
   args=$(printf '%s' "$input" | jq -r '.command_args // .tool_input.args // empty' 2>/dev/null || true)
-else
-  cmd=$(printf '%s' "$input" | sed -n 's/.*"command_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-  [ -z "$cmd" ] && cmd=$(printf '%s' "$input" | sed -n 's/.*"skill"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-  args=$(printf '%s' "$input" | sed -n 's/.*"command_args"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+elif [ -z "$explicit_cmd" ]; then
+  py=$(gsd_python 2>/dev/null || true)
+  [ -n "$py" ] || { echo 'BLOCKED: Claude hook needs jq or Python 3.7+ to inspect tool calls.' >&2; exit 2; }
+  hook_fields=(); hook_field_count=0
+  while IFS= read -r -d '' field; do
+    hook_fields+=("$field"); hook_field_count=$((hook_field_count + 1))
+  done < <(printf '%s' "$input" | "$py" "$GSD_PKG/lib/gsd_hook_payload.py" --claude)
+  [ "$hook_field_count" -eq 4 ] || { echo 'BLOCKED: could not parse Claude hook payload.' >&2; exit 2; }
+  case "${hook_fields[0]}" in
+    allow) exit 0 ;;
+    guard) cmd=${hook_fields[1]}; args=${hook_fields[2]} ;;
+    *) printf 'BLOCKED: %s\n' "${hook_fields[1]}" >&2; exit 2 ;;
+  esac
 fi
 cmd="${cmd:-}"; args="${args:-}"
+cmd=${cmd#/}
 case "$cmd" in gsd-*) ;; *) exit 0 ;; esac   # not a GSD command → allow
 
 N=$(printf '%s' "$args" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1 || true)
 
-dir="${CLAUDE_PROJECT_DIR:-$PWD}"
+dir="${explicit_repo:-${CLAUDE_PROJECT_DIR:-${GEMINI_PROJECT_DIR:-$PWD}}}"
+dir=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$dir")
 branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
-# gsd-core's parallel executors run in nested worktrees on agent-* branches
-# (.claude/worktrees/agent-*). They are inside a phase worktree already, and
-# the phase-<N>-* rule below would block them — let gsd-core's own workers pass.
-case "$branch" in agent-*|worktree-agent-*) exit 0 ;; esac
+# Nested workers inherit phase identity only from a containing checkout in the
+# same Git repository. A branch name alone never bypasses the guard.
+case "$branch" in agent-*|worktree-agent-*)
+  worker_common=$(git -C "$dir" rev-parse --git-common-dir 2>/dev/null || true)
+  worker_common=$(cd "$dir" && cd "$worker_common" 2>/dev/null && pwd -P)
+  parent=$(dirname "$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || echo "$dir")")
+  while [ "$parent" != / ]; do
+    parent_branch=$(git -C "$parent" branch --show-current 2>/dev/null || true)
+    case "$parent_branch" in phase-*)
+      parent_common=$(git -C "$parent" rev-parse --git-common-dir)
+      parent_common=$(cd "$parent" && cd "$parent_common" && pwd -P)
+      [ "$worker_common" != "$parent_common" ] || branch=$parent_branch
+      break ;;
+    esac
+    parent=$(dirname "$parent")
+  done ;;
+esac
 BASE=$(gsd_base "$dir" 2>/dev/null || echo develop)
 
 block() { printf '%s\n' "$@" >&2; exit 2; }
@@ -68,34 +142,38 @@ block() { printf '%s\n' "$@" >&2; exit 2; }
 if [ "$cmd" = "gsd-phase" ]; then
   [ "$branch" = "$BASE" ] && exit 0
   block "BLOCKED: /gsd-phase must run on '$BASE' (main checkout), not '$branch'." \
-        "Claim the phase number on $BASE first. See CLAUDE.md > GSD planning system."
+        "Claim the phase number on $BASE first. See .gsd/INSTRUCTIONS.md."
 fi
 
 # Per-phase ("feature work") commands
-case " gsd-discuss-phase gsd-plan-phase gsd-execute-phase gsd-ui-phase gsd-mvp-phase gsd-spec-phase gsd-ai-integration-phase gsd-verify-work gsd-secure-phase gsd-validate-phase gsd-code-review gsd-add-tests gsd-extract-learnings gsd-ui-review gsd-eval-review " in
+case " gsd-flow gsd-review gsd-discuss-phase gsd-plan-phase gsd-execute-phase gsd-ui-phase gsd-mvp-phase gsd-spec-phase gsd-ai-integration-phase gsd-verify-work gsd-secure-phase gsd-validate-phase gsd-code-review gsd-add-tests gsd-extract-learnings gsd-ui-review gsd-eval-review " in
   *" $cmd "*) ;;
   *) exit 0 ;;   # progress, help, map-codebase, resume-work, … allowed anywhere
 esac
 
 [ "$branch" = "$BASE" ] && block \
   "BLOCKED: /$cmd is feature work — run it in the phase worktree, not on $BASE." \
-  "Create/open it with: gsd-start -p ${N:-<N>}  (then open a session in phase-${N:-<N>}-*). See CLAUDE.md."
+  "Create/open it with: gsd-start -p ${N:-<N>}  (then open a session in phase-${N:-<N>}-*). See .gsd/INSTRUCTIONS.md."
 
-[ -z "$N" ] && exit 0   # no phase number given; 'not the base branch' already satisfied
+if [ -z "$N" ]; then
+  N=$(printf '%s' "$branch" | sed -nE 's/^phase-([0-9]+(\.[0-9]+)?)(-.*)?$/\1/p')
+  [ -n "$N" ] || block "BLOCKED: /$cmd requires a phase number and matching phase worktree."
+fi
 
 case "$branch" in
   phase-"$N"-*|phase-"$N") : ;;   # correct worktree
   phase-*) block "BLOCKED: you're in '$branch', but /$cmd targets phase $N. Switch to the phase-$N-* worktree." ;;
-  *)       block "BLOCKED: /$cmd targets phase $N but '$branch' isn't a phase-$N-* worktree. See CLAUDE.md." ;;
+  *)       block "BLOCKED: /$cmd targets phase $N but '$branch' isn't a phase-$N-* worktree. See .gsd/INSTRUCTIONS.md." ;;
 esac
 
 # Rule 3 — execute-phase needs deps installed (only for repos with an install step)
-if [ "$cmd" = "gsd-execute-phase" ] && [ -n "$(gsd_install_cmd "$dir")" ] && [ ! -d "$dir/node_modules" ]; then
-  s=$(cat "$dir/.gsd-install.status" 2>/dev/null || echo running)
-  [ "$s" = "ok" ] && exit 0   # install completed (repo may simply have no deps)
+if [ "$cmd" = "gsd-execute-phase" ] && [ -n "$(gsd_install_cmd "$dir")" ]; then
+  s=$(cat "$dir/.gsd-install.status" 2>/dev/null || echo unknown)
   [ "$s" = "fail" ] && block "BLOCKED: dependency install FAILED — see $dir/.gsd-install.log, then install manually."
-  [ "$s" = "skipped" ] && block "BLOCKED: the dependency install was skipped (--no-install) and node_modules is missing — run '$(gsd_install_cmd "$dir")' in the worktree first."
-  block "BLOCKED: dependencies still installing (no node_modules yet). Wait, or install manually. Log: $dir/.gsd-install.log"
+  [ "$s" = "running" ] && block "BLOCKED: dependencies still installing. Log: $dir/.gsd-install.log"
+  if [ "$s" != ok ] && [ ! -d "$dir/node_modules" ]; then
+    block "BLOCKED: dependency installation is not complete (status: $s). Run '$(gsd_install_cmd "$dir")' successfully and record ok in .gsd-install.status."
+  fi
 fi
 
 # Rule 4 — phase-flow order (opt-in: `flow = strict` in .gsd.conf)
@@ -104,9 +182,8 @@ fi
 [ "$(gsd_conf_get "$(gsd_main "$dir" 2>/dev/null || echo "$dir")" flow)" = "strict" ] || exit 0
 case "$N" in *.*) P="$N" ;; *) P=$(printf '%02d' "$N") ;; esac
 pdir=""; for d in "$dir/.planning/phases/$P"-*; do [ -d "$d" ] && { pdir="$d"; break; }; done
-[ -n "$pdir" ] || exit 0   # no phase dir yet (fresh claim) — nothing to order
 need() {  # $1=artifact suffix  $2=step that produces it  $3=command that runs it
-  [ -f "$pdir/$P-$1" ] && return 0
+  [ -n "$pdir" ] && [ -f "$pdir/$P-$1" ] && return 0
   block "BLOCKED (flow = strict): /$cmd $N needs $P-$1 — $2 has not been done." \
         "Run: $3   (or GSD_SKIP_GUARD=1 if the user asked to skip it)"
 }

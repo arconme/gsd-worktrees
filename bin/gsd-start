@@ -7,9 +7,7 @@
 #   /gsd-phase "<desc>"  →  git push  →  scripts/gsd-new-worktree-feature.sh
 #   →  cd worktree  →  <agent> /gsd-discuss-phase N
 #
-# Agent-agnostic: the session is opened with whatever CLI --agent names (claude,
-# gemini, …); both take the launch prompt as a positional arg. Default is
-# no-launch — the 'cd … && <agent> …' command is printed for you to run.
+# Provider adapters choose the CLI argv. Default is print-only.
 #
 # The claim uses `gsd-sdk query phase.add` — the same deterministic CLI the
 # /gsd-phase skill delegates to — so no LLM call is needed and the ROADMAP
@@ -37,8 +35,9 @@
 #                  "in progress" (best-effort, via gsd-clickup).
 #   --slug <slug>  worktree/branch slug (default: slugified description)
 #   --repo <path>  main checkout of the target repo (default: derived from cwd)
-#   --agent <cmd>  agent CLI to open the session with (claude, gemini, …);
-#                  naming one implies --launch. (default: claude)
+#   --provider <p> provider identity; --agent-command overrides its executable
+#   --flow         launch/resume the full gsd-flow workflow
+#   --no-flow      launch discuss-phase only (compatibility default)
 #   --launch       open the session in the worktree with the default agent
 #                  (default is NO launch — the command is printed instead)
 #   --no-launch    force print-only, even if --agent/--launch was given
@@ -57,19 +56,21 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 [ -f "$GSD_PKG/lib/common.sh" ] || die "gsd-worktrees toolkit lib not found (looked in $GSD_PKG/lib) — reinstall with install.sh"
 # shellcheck source=../lib/common.sh
 . "$GSD_PKG/lib/common.sh"
+# shellcheck source=../lib/provider.sh
+. "$GSD_PKG/lib/provider.sh"
 
 usage() {
   cat <<'HELP'
 gsd-start — start a GSD feature in ONE step
 
 Claims the next phase, publishes the claim, creates the phase worktree, and
-prints (or, with --agent/--launch, opens) the session on /gsd-discuss-phase <N>.
+prints (or with --launch opens) a provider-valid phase-flow session.
 Replaces the manual sequence:
   /gsd-phase "<desc>" → git push → scripts/gsd-new-worktree-feature.sh
   → cd <worktree> → <agent> "/gsd-discuss-phase N"
 
-Agent-agnostic: --agent picks the CLI (claude, gemini, …). Default is no-launch
-— the 'cd … && <agent> …' one-liner is printed for you to run.
+Provider identity and executable are configured separately. Print-only is the
+default and works even when the selected CLI is unavailable.
 
 USAGE
   gsd-start -n "<phase description>" [options]  claim a NEW phase
@@ -105,10 +106,16 @@ OPTIONS
                   (default: slugified phase description)
   --repo <path>   main checkout of the target repo
                   (default: derived from the current directory)
-  --agent <cmd>   agent CLI to open the session with — claude, gemini, or any
-                  binary that takes the prompt as a positional arg. Naming an
-                  agent implies --launch. (default: claude)
-  --launch        open the session with the default agent (default is NO
+  --provider <p>  claude, codex, gemini, or custom (config default otherwise)
+  --model <id>    session model override; 'default' uses the CLI's own default
+  --agent-command <path> executable override; implies --launch (add --no-launch to print)
+  --agent <value> compatibility alias: known provider or custom executable;
+                  implies --launch
+  --flow          start/resume the complete gsd-flow workflow. The flow reads
+                  existing phase artifacts and continues at the next step.
+  --no-flow       start with discuss-phase only. Overrides start_mode = flow.
+                  This is the compatibility default when start_mode is unset.
+  --launch        open the session with the configured provider (default NO
                   launch — the 'cd … && <agent> …' command is printed instead)
   --no-launch     force print-only, overriding --agent/--launch
   --no-push       skip pull/push (no-remote or offline workflows)
@@ -117,11 +124,11 @@ OPTIONS
 EXAMPLES
   gsd-start -n "customer terms rework"
       Claim the phase, push, create ../<repo>-worktrees/phase-<N>-customer-
-      terms-rework, and open Claude there.
+      terms-rework, and print the configured provider command.
 
   gsd-start --insert 11 "hotfix reset-email copy"
       Claim phase 11.1 (the next free decimal after phase 11), push, create
-      ../<repo>-worktrees/phase-11.1-hotfix-reset-email-copy, open Claude.
+      ../<repo>-worktrees/phase-11.1-hotfix-reset-email-copy.
 
   gsd-start --after 11 "second hotfix"
       Run after the previous example: phase 11.1 already exists, so this
@@ -137,25 +144,27 @@ EXAMPLES
 
   gsd-start -p 7
       Phase 7 is already in ROADMAP.md: don't claim anything — create or
-      reuse its phase-7-* worktree and open Claude there. Idempotent.
+      reuse its phase-7-* worktree and open/print discuss-phase. Idempotent.
+
+  gsd-start -p 7 --flow
+      Reuse phase 7's worktree and resume the complete workflow at the first
+      unfinished step reported by gsd-flow-next.
 
   gsd-start -n "fix invoice rounding" --slug invoice-fix
       Same, but the branch/worktree is phase-<N>-invoice-fix.
 
   gsd-start -n "reporting exports"
-      Prepare everything, print the 'cd … && claude …' command to run later
+      Prepare everything and print the configured command to run later
       (no launch is the default).
 
   gsd-start -n "reporting exports" --launch
-      Same, but open the Claude session in the worktree right away.
+      Same, but open the configured session in the worktree right away.
 
   gsd-start -n "reporting exports" --agent gemini
-      Prepare everything and open the session with the gemini CLI instead of
-      claude (naming an agent implies --launch).
+      Compatibility form: select Gemini and launch it.
 
   gsd-start -n "reporting exports" --agent gemini --no-launch
-      Print 'cd … && gemini "/gsd-discuss-phase N"' for you to run — pick the
-      agent for the printed command without opening it.
+      Print Gemini's verified `--prompt-interactive` form without opening it.
 
   gsd-start -n "hotfix parsing" --repo ~/projects/acme/webshop
       Start a phase in another repo without cd-ing into it first.
@@ -200,9 +209,12 @@ CU=""
 ATTACH=""
 INSERT=""
 NEW=0
-AGENT="claude"
+PROVIDER_CLI=""
+AGENT_COMMAND_CLI=""
+MODEL_CLI=""
 LAUNCH=0
 FORCE_NOLAUNCH=0
+START_MODE_CLI=""
 PUSH=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -213,7 +225,12 @@ while [ $# -gt 0 ]; do
     --repo)  [ $# -ge 2 ] || die "--repo needs a value";  REPO="$2"; shift 2 ;;
     --slug)  [ $# -ge 2 ] || die "--slug needs a value";  SLUG="$2"; shift 2 ;;
     --cu)    [ $# -ge 2 ] || die "--cu needs a value (ClickUp task id)"; CU="$2"; shift 2 ;;
-    --agent) [ $# -ge 2 ] || die "--agent needs a value (e.g. claude, gemini)"; AGENT="$2"; LAUNCH=1; shift 2 ;;
+    --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, gemini, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
+    --model) [ $# -ge 2 ] && [ -n "$2" ] || die "--model needs a model ID or default"; MODEL_CLI="$2"; shift 2 ;;
+    --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND_CLI="$2"; LAUNCH=1; shift 2 ;;
+    --agent) [ $# -ge 2 ] || die "--agent needs a provider or executable"; if gsd_provider_known "$2"; then PROVIDER_CLI="$2"; else PROVIDER_CLI=custom; AGENT_COMMAND_CLI="$2"; fi; LAUNCH=1; shift 2 ;;
+    --flow)       START_MODE_CLI=flow; shift ;;
+    --no-flow)    START_MODE_CLI=discuss; shift ;;
     --launch)    LAUNCH=1; shift ;;
     --no-launch) FORCE_NOLAUNCH=1; shift ;;
     --no-push)   PUSH=0;   shift ;;
@@ -286,6 +303,9 @@ fi
 # Base branch: .gsd.conf override, else detection (lib/common.sh).
 BASE=$(gsd_base "$MAIN")
 [ -n "$BASE" ] || die "could not determine the base branch — set 'base = <branch>' in $MAIN/.gsd.conf"
+gsd_provider_resolve "$MAIN" "$PROVIDER_CLI" "$AGENT_COMMAND_CLI" || exit $?
+gsd_model_resolve "$MAIN" "$GSD_PROVIDER_RESOLVED" "$MODEL_CLI" || exit $?
+gsd_start_mode_resolve "$MAIN" "$START_MODE_CLI" || exit $?
 
 # ── local lock: serialize gsd commands touching this checkout ────────────────
 # The push-retry protects against other machines; this lock protects against
@@ -464,7 +484,7 @@ fi
 # the script re-detect it from HEAD (a commit landing in between would win).
 WT_ARGS=(--phase "$N")
 [ -n "$SLUG" ] && WT_ARGS+=("$SLUG")
-WT_OUT=$( cd "$MAIN" && "$GSD_PKG/bin/gsd-wt-new" ${WT_ARGS[@]+"${WT_ARGS[@]}"} )
+WT_OUT=$( cd "$MAIN" && GSD_WT_NEW_SUPPRESS_NEXT=1 "$GSD_PKG/bin/gsd-wt-new" ${WT_ARGS[@]+"${WT_ARGS[@]}"} )
 printf '%s\n' "$WT_OUT"
 DEST=$(printf '%s\n' "$WT_OUT" | sed -n 's/^✅ worktree ready: \(.*\)   (phase.*/\1/p')
 if [ -z "$DEST" ] || [ ! -d "$DEST" ]; then
@@ -472,6 +492,18 @@ if [ -z "$DEST" ] || [ ! -d "$DEST" ]; then
   DEST=$(git -C "$MAIN" worktree list --porcelain | awk -v b="$BRANCH" '/^worktree /{w=substr($0,10)} $0=="branch refs/heads/"b{print w; exit}')
 fi
 [ -n "$DEST" ] && [ -d "$DEST" ] || die "could not locate the new worktree for phase $N"
+
+"$GSD_PKG/bin/gsd-worktree-guard" --command "gsd-${GSD_START_MODE_RESOLVED/discuss/discuss-phase}" --phase "$N" --repo "$DEST" || exit $?
+if [ "$GSD_START_MODE_RESOLVED" = flow ]; then
+  # Fresh claims may not have a phase directory yet. Existing phases must pass
+  # the current step's checks before a session is printed or opened.
+  phase_prefix=$N; case "$N" in *.*) ;; *) phase_prefix=$(printf '%02d' "$N") ;; esac
+  for phase_dir in "$DEST/.planning/phases/$phase_prefix"-*; do
+    [ -d "$phase_dir" ] || continue
+    "$GSD_PKG/bin/gsd-flow-next" "$N" --repo "$DEST" >/dev/null || exit $?
+    break
+  done
+fi
 
 # ── ClickUp write-back (best-effort — never blocks the phase) ────────────────
 # When the phase is driven by a ClickUp story (--cu, or cu_<id> embedded in the
@@ -497,19 +529,22 @@ elif [ -n "$CU_ID" ]; then
 fi
 
 # ── open the session ─────────────────────────────────────────────────────────
-# Both claude and gemini take the launch prompt as a positional arg, so a single
-# `<agent> "<prompt>"` shape works for either; --agent selects which.
-PROMPT="/gsd-discuss-phase $N"
-if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$AGENT" >/dev/null 2>&1; then
+# The adapter builds an argv array; no shell template expansion is used.
+PROMPT=$(gsd_provider_prompt "$GSD_PROVIDER_RESOLVED" "$GSD_START_MODE_RESOLVED" "$N")
+gsd_provider_argv "$GSD_PROVIDER_RESOLVED" "$GSD_AGENT_COMMAND_RESOLVED" "$PROMPT" "$GSD_MODEL_RESOLVED"
+NEXT=$(gsd_provider_render "$DEST" "${GSD_LAUNCH_ARGV[@]}")
+if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
   echo ""
-  echo "▶ opening $AGENT session in $DEST ($PROMPT)…"
+  echo "▶ opening $GSD_PROVIDER_RESOLVED session in $DEST…"
   cd "$DEST"
   gsd_release_lock   # exec replaces the process — the EXIT trap would never fire
-  exec "$AGENT" "$PROMPT"
+  exec "${GSD_LAUNCH_ARGV[@]}"
 else
   echo ""
-  if [ "$LAUNCH" = 1 ] && ! command -v "$AGENT" >/dev/null 2>&1; then
-    echo "• '$AGENT' not found on PATH — not launching."
+  if [ "$LAUNCH" = 1 ] && ! command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
+    echo "✖ provider executable '$GSD_AGENT_COMMAND_RESOLVED' not found — launch cancelled." >&2
+    echo "Next (after installing it or changing agent_command):  $NEXT"
+    exit 127
   fi
-  echo "Next:  cd $DEST && $AGENT \"$PROMPT\""
+  echo "Next:  $NEXT"
 fi

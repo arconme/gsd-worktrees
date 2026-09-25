@@ -30,6 +30,9 @@
 # validations like migration-timestamp collision checks. Without that script
 # the project's test suite runs instead (`test = <cmd>` in .gsd.conf, 'none'
 # disables; otherwise detected: xcodebuild/make/just/cargo/go/npm/pytest).
+# The validator runs again on the combined main checkout after the phase merge
+# and every remote retry, before pushing. Ensure its test dependencies exist
+# there too. Failure keeps any local merge and the phase worktree for recovery.
 #
 # Repo settings (base branch, worktree dir): .gsd.conf, see gsd-bootstrap-repo.
 # The old per-repo copy of this logic (scripts/gsd-finish-worktree-feature.sh)
@@ -67,6 +70,10 @@ if printf '%s' "$ID" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
              | grep -v -- '-pr$' | head -1 || true)
   [ -n "$BRANCH" ] || { echo "error: no 'phase-$ID-*' branch found" >&2; exit 1; }
 else
+  printf '%s' "$ID" | grep -qE '^phase-[0-9]+(\.[0-9]+)?-.+$' || {
+    echo "error: finish requires a phase number or phase-N-slug branch" >&2; exit 1;
+  }
+  case "$ID" in *-pr) echo 'error: finish the phase branch, not a PR-helper branch' >&2; exit 1 ;; esac
   BRANCH="$ID"
 fi
 
@@ -132,9 +139,11 @@ git -C "$MAIN" remote get-url origin >/dev/null 2>&1 && HAS_ORIGIN=1
 
 if [ "$HAS_ORIGIN" = 1 ]; then
   echo "▶ syncing local '$BASE' with origin…"
-  git -C "$MAIN" fetch origin "$BASE" --quiet || true
-  git -C "$MAIN" merge --ff-only "origin/$BASE" 2>/dev/null || \
-    echo "  (local '$BASE' not fast-forwardable to origin — continuing with local state)"
+  if ! git -C "$MAIN" fetch origin "$BASE" --quiet \
+    || ! git -C "$MAIN" merge --ff-only "origin/$BASE"; then
+    echo "error: could not synchronize '$BASE'; resolve remote connectivity or divergence, then retry finish. Phase worktree retained." >&2
+    exit 1
+  fi
 fi
 
 # ── pre-merge check hook (repo-specific validations) ─────────────────────────
@@ -143,23 +152,27 @@ fi
 PREMERGE=$(gsd_conf_get "$MAIN" premerge)
 PREMERGE="${PREMERGE:-scripts/gsd-premerge-check.sh}"
 case "$PREMERGE" in /*) PREMERGE_PATH="$PREMERGE" ;; *) PREMERGE_PATH="$MAIN/$PREMERGE" ;; esac
+validate_finish() { # checkout whose code will be validated; before/after merge
+local validation_dir=$1 stage=$2
 if [ "$PREMERGE" != none ] && [ -x "$PREMERGE_PATH" ]; then
   echo "▶ pre-merge check ($PREMERGE)…"
   if ! ( cd "$MAIN" && "$PREMERGE_PATH" "$BRANCH" "$BASE" ); then
-    echo "✗ pre-merge check failed — nothing was merged. Fix in the worktree, commit, re-run finish." >&2
-    exit 1
+    echo "✗ validation failed ($stage) — not pushing or removing the phase worktree." >&2
+    return 1
   fi
 elif TEST_CMD=$(gsd_test_cmd "$MAIN") && [ -n "$TEST_CMD" ]; then
   # No repo-authored check: fall back to the project's test suite, run in the
   # worktree (that is where the phase's code and node_modules are). `test =`
   # in .gsd.conf overrides the detection; 'none' skips.
-  echo "▶ pre-merge tests ($TEST_CMD, in $DEST)…"
-  if ! ( cd "$DEST" && $TEST_CMD ); then
-    echo "✗ tests failed — nothing was merged. Fix in the worktree, commit, re-run finish." >&2
+  echo "▶ tests ($TEST_CMD, in $validation_dir; $stage)…"
+  if ! ( cd "$validation_dir" && $TEST_CMD ); then
+    echo "✗ tests failed ($stage) — not pushing or removing the phase worktree. Any merge remains local." >&2
     echo "  (skip with 'test = none' in .gsd.conf, or provide $PREMERGE)" >&2
-    exit 1
+    return 1
   fi
 fi
+}
+validate_finish "$DEST" 'before merge'
 
 echo "▶ merging '$BRANCH' into '$BASE'…"
 if ! git -C "$MAIN" merge --no-ff "$BRANCH" -m "Merge $BRANCH into $BASE"; then
@@ -170,6 +183,7 @@ if ! git -C "$MAIN" merge --no-ff "$BRANCH" -m "Merge $BRANCH into $BASE"; then
   exit 1
 fi
 repair_planning "the phase merge"
+validate_finish "$MAIN" 'combined tree after phase merge'
 
 if [ "$HAS_ORIGIN" = 1 ]; then
   echo "▶ pushing '$BASE'…"
@@ -187,6 +201,7 @@ if [ "$HAS_ORIGIN" = 1 ]; then
     # This pull is the divergence case union handles worst — another session
     # moved the base branch under us — so reconcile before retrying the push.
     repair_planning "the origin/$BASE sync"
+    validate_finish "$MAIN" 'combined tree after remote retry'
   done
   if [ "$pushed" != 1 ]; then
     echo "✗ could not push '$BASE' after 3 attempts — push manually, then re-run to clean up." >&2

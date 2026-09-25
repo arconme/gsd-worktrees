@@ -521,6 +521,24 @@ out="$(PATH="$PKG/bin:$PATH" gsd-doctor --repo "$PKG" 2>&1)"
 is "the toolkit is recognised as itself" "$(grep -c 'toolkit itself, not a GSD project' <<<"$out")" 1
 is "and its setup checks are skipped"    "$(grep -c 'merge driver not registered' <<<"$out")" 0
 
+# Exercise linked toolkit execution even when CI runs from a normal checkout.
+# All copied commands, Git config, and worktree metadata stay in the fixture.
+TOOLKIT_FIXTURE="$WORK/toolkit fixture"
+TOOLKIT_LINKED="$WORK/toolkit linked"
+mkdir -p "$TOOLKIT_FIXTURE"
+cp -R "$PKG/bin" "$PKG/lib" "$PKG/shims" "$PKG/install.sh" "$TOOLKIT_FIXTURE/"
+git -C "$TOOLKIT_FIXTURE" init -q -b main
+git -C "$TOOLKIT_FIXTURE" add .
+git -C "$TOOLKIT_FIXTURE" -c user.name=t -c user.email=t@t commit -qm toolkit
+git -C "$TOOLKIT_FIXTURE" worktree add -q -b test-linked "$TOOLKIT_LINKED"
+for target in "$TOOLKIT_FIXTURE" "$TOOLKIT_LINKED"; do
+  out="$(PATH="$TOOLKIT_LINKED/bin:$PATH" "$TOOLKIT_LINKED/bin/gsd-doctor" --repo "$target" 2>&1)"; rc=$?
+  is "linked toolkit recognises $(basename "$target")" "$(grep -c 'toolkit itself, not a GSD project' <<<"$out")" 1
+  is "linked toolkit setup checks produce no findings" "$rc" 0
+done
+out="$(PATH="$TOOLKIT_LINKED/bin:$PATH" "$TOOLKIT_LINKED/bin/gsd-doctor" --repo "$DOC" 2>&1)"
+is "linked toolkit still checks an unrelated GSD repo" "$(grep -c 'merge=gsd-planning on ROADMAP' <<<"$out")" 1
+
 # Toolkit housekeeping is a note, not a finding: it is about the toolkit
 # checkout, not the repo you asked about.
 is "a dirty toolkit does not fail another repo's check" \

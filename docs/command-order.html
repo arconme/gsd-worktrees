@@ -250,18 +250,22 @@
 
   <section>
     <h2>The whole loop</h2>
+    <p><code>gsd-flow-next N</code> is authoritative: call it after each action.
+      <code>--all</code> previews remaining steps, not permission to skip gates.
+      Slash names below identify external planning skills; use your provider's
+      supported invocation mechanism. Missing capability means handoff, not completion.</p>
     <div class="diagram">
       <div class="flow">
 
         <div class="node cap">
-          <span class="n-cmd">gsd-start -n "description"</span>
-          <span class="n-sub">on develop</span>
+          <span class="n-cmd">gsd-start -n "description" --flow</span>
+          <span class="n-sub">on the configured base branch; run the printed session command</span>
         </div>
         <div class="link"></div>
 
-        <div class="branch">
-          <span class="dash"></span>
-          <span class="opt"><span class="n-cmd">/gsd-spec-phase N</span><span class="n-sub">if scope is fuzzy</span></span>
+        <div class="node">
+          <span class="n-cmd">Story snapshot</span>
+          <span class="n-sub">agree product intent when missing</span>
         </div>
 
         <div class="node">
@@ -272,7 +276,7 @@
 
         <div class="branch">
           <span class="dash"></span>
-          <span class="opt"><span class="n-cmd">/gsd-ui-phase N</span><span class="n-sub">if it has screens</span></span>
+          <span class="opt"><span class="n-cmd">UI decision → /gsd-ui-phase N</span><span class="n-sub">ask whether it has screens; approve them if yes</span></span>
         </div>
 
         <div class="node">
@@ -282,8 +286,13 @@
         <div class="link"></div>
 
         <div class="node">
+          <span class="n-cmd">Independent review → replan</span>
+          <span class="n-sub">show findings; /gsd-plan-phase N --reviews</span>
+        </div>
+        <div class="link"></div>
+        <div class="node">
           <span class="n-cmd">/gsd-execute-phase N</span>
-          <span class="n-sub">build it</span>
+          <span class="n-sub">build → verifier → gap plan/execute loop until verified</span>
         </div>
         <div class="link"></div>
 
@@ -293,20 +302,15 @@
         </div>
         <div class="link"></div>
 
-        <div class="branch">
-          <span class="dash"></span>
-          <span class="opt"><span class="n-cmd">/gsd-ui-review N</span><span class="n-sub">if it has screens</span></span>
-        </div>
-
         <div class="node">
           <span class="n-cmd">/gsd-code-review N</span>
-          <span class="n-sub">bugs + quality</span>
+          <span class="n-sub">bugs + quality; fix findings</span>
         </div>
         <div class="link"></div>
 
         <div class="branch">
           <span class="dash"></span>
-          <span class="opt"><span class="n-cmd">/gsd-validate-phase N</span><span class="n-sub">missing tests</span></span>
+          <span class="opt"><span class="n-cmd">/gsd-ui-review N</span><span class="n-sub">if it has screens, after code fixes</span></span>
         </div>
 
         <div class="node">
@@ -317,7 +321,7 @@
 
         <div class="node cap">
           <span class="n-cmd">gsd-finish</span>
-          <span class="n-sub">merge + clean up</span>
+          <span class="n-sub">only after done and explicit user intent; final session action</span>
         </div>
 
       </div>
@@ -330,14 +334,14 @@
 
       <li class="step">
         <span class="num">1</span>
-        <span class="cmd">gsd-start -n "description"<span class="tag tag-must">on develop</span></span>
-        <span class="why">Picks the next free phase number, makes the worktree, and opens a new session inside it. Run it from the main checkout. Everything after this happens in the new session.</span>
+        <span class="cmd">gsd-start -n "description" --flow<span class="tag tag-must">on base</span></span>
+        <span class="why">Claims a phase, creates its worktree, and prints a provider session command. Run that command, or request --launch. Without --flow, start uses discuss-only behavior unless configured otherwise.</span>
       </li>
 
       <li class="step">
         <span class="num">2</span>
-        <span class="cmd">/gsd-spec-phase N<span class="tag tag-opt">optional</span></span>
-        <span class="why">Only when you are not yet sure <strong>what</strong> the phase delivers. It pins the scope down before anyone argues about how. Skip it when the roadmap line is already clear.</span>
+        <span class="cmd">Story snapshot</span>
+        <span class="why">Record the product intent and story link. Ask for missing intent; never fabricate it. Optional spec work can help clarify scope, but is not a replacement for this engine step.</span>
       </li>
 
       <li class="step">
@@ -349,25 +353,25 @@
       <li class="step">
         <span class="num">4</span>
         <span class="cmd">/gsd-ui-phase N<span class="tag tag-fe">screens only</span></span>
-        <span class="why">Agrees the screens before anyone writes them. Your own rule says UI gets agreed before implementation — this is the step that does it.</span>
+        <span class="why">First ask whether the phase has screens. If yes, obtain screen approval before planning; otherwise pass --no-ui to the engine.</span>
       </li>
 
       <li class="step">
         <span class="num">5</span>
         <span class="cmd">/gsd-plan-phase N</span>
-        <span class="why">Turns the decisions into numbered plans with tasks. Add <code>--research</code> to refresh the research first.</span>
+        <span class="why">Turns decisions into numbered plans. Then obtain an independent review via the configured reviewer, show verified findings to the user, and replan with <code>--reviews</code> before execution. Missing reviewer capability requires a separate session handoff, not a skipped gate.</span>
       </li>
 
       <li class="step">
         <span class="num">6</span>
         <span class="cmd">/gsd-execute-phase N</span>
-        <span class="why">Builds it, one wave at a time, committing as it goes. The long one.</span>
+        <span class="why">Builds in waves, then runs the verifier. If verification reports gaps, plan with --gaps and execute --gaps-only; repeat until verified.</span>
       </li>
 
       <li class="step">
         <span class="num">7</span>
         <span class="cmd">/gsd-verify-work N</span>
-        <span class="why">Walks the phase's promises with you and checks each one really happened. Catches "the task is ticked but the feature is not there".</span>
+        <span class="why">Agent-driven UAT checks the phase promises and records the result. Ask for clarification when required, but do not add an unconditional fourth approval gate.</span>
       </li>
 
       <li class="step">
@@ -391,13 +395,13 @@
       <li class="step">
         <span class="num">11</span>
         <span class="cmd">/gsd-validate-phase N<span class="tag tag-opt">optional</span></span>
-        <span class="why">Finds requirements with no test covering them, and writes the missing tests.</span>
+        <span class="why">Optional supplementary coverage work, not an engine gate. If it changes code after security review, rerun the affected reviews and security before finishing.</span>
       </li>
 
       <li class="step">
         <span class="num">12</span>
         <span class="cmd">gsd-finish</span>
-        <span class="why">Merges the branch back, pushes, and deletes the worktree. Run it last — it removes the folder you are standing in.</span>
+        <span class="why">Only after the engine reports done and the user explicitly requests landing. Validates, merges, revalidates combined code, pushes and removes the worktree. Final session action.</span>
       </li>
 
     </ol>
@@ -427,7 +431,7 @@
 
   <section>
     <h2>The one rule that trips people up</h2>
-    <p class="note"><strong>Every command with a phase number runs inside that phase's worktree.</strong> A guard blocks them anywhere else, and with <code>flow = strict</code> in <code>.gsd.conf</code> it also refuses a step whose predecessor left no artifact (plan without discuss, execute without the cross-AI review, secure-phase without the code review). The exceptions are <code>gsd-start</code>, which runs on <code>develop</code> in the main checkout, and the two audit commands, which look across all phases and also run there.</p>
+    <p class="note"><strong>Every command with a phase number runs inside that phase's worktree.</strong> The provider-neutral command guard blocks them anywhere else, and with <code>flow = strict</code> in <code>.gsd.conf</code> it also refuses a step whose predecessor left no artifact. Claude and Gemini native hooks add early feedback; Codex and hook-free sessions retain the same checks through <code>gsd-flow-next</code>. Arbitrary shell commands that bypass GSD are outside this boundary.</p>
   </section>
 
 </div>

@@ -128,7 +128,7 @@ gsd_planning_status() {  # $1=repo root → GSD_PLANNING_MISSING + GSD_ATTRS_STA
       = "gsd-planning-merge %O %A %B %P" ] || gsd__add_missing driver
 
   gsd_planning_hook "$repo"
-  grep -q 'gsd-planning-repair' "$GSD_HOOK_PATH" 2>/dev/null || gsd__add_missing hook
+  { [ -x "$GSD_HOOK_PATH" ] && grep -q 'gsd-planning-repair' "$GSD_HOOK_PATH" 2>/dev/null; } || gsd__add_missing hook
 }
 
 gsd_planning_apply() {  # $1=repo root — install whatever gsd_planning_status reports missing
@@ -169,13 +169,16 @@ gsd-planning-repair || true
 '
     mkdir -p "$(dirname "$GSD_HOOK_PATH")"
     if [ -e "$GSD_HOOK_PATH" ]; then
-      printf '\n%s\n' "$body" | sed '1d' >> "$GSD_HOOK_PATH"
-      echo "✔ $GSD_HOOK_LABEL (gsd reconcile appended to the existing hook)"
+      if ! grep -q 'gsd-planning-repair' "$GSD_HOOK_PATH"; then
+        printf '\n%s\n' "$body" | sed '1d' >> "$GSD_HOOK_PATH"
+      fi
+      echo "✔ $GSD_HOOK_LABEL (existing hook repaired)"
     else
       printf '%s' "$body" > "$GSD_HOOK_PATH"
       chmod +x "$GSD_HOOK_PATH"
       echo "✔ $GSD_HOOK_LABEL (created)"
     fi
+    chmod +x "$GSD_HOOK_PATH"
   ;; esac
 }
 
