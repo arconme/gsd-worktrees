@@ -28,8 +28,8 @@ banner.
    invent their own styles, so the combined app looks inconsistent.
 
 Already in place (don't rebuild): `gsd-flow-next` requires `<P>-UI-REVIEW.md`
-for phases with screens (`bin/gsd-flow-next:170`), the guard enforces it
-(`bin/gsd-worktree-guard:206`), and doctor reports it (`bin/gsd-doctor:400`).
+for phases with screens (`bin/gsd-flow-next`, step `ui-review`), the guard enforces it
+(`bin/gsd-worktree-guard`, `gsd-secure-phase` rule), and doctor reports it (`bin/gsd-doctor`, T040 report).
 
 ## Manual recipe (works today, no toolkit change)
 
