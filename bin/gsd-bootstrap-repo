@@ -12,11 +12,12 @@ OPTIONS
   --provider-command <p=path> executable override for one provider; repeatable
   --base <branch>          base branch (auto-detected by default)
   --commit                 commit only the installed integration files
+  --no-ui                  no screens in this project: ui_gates = off
   --src <path>             deprecated; ignored
   -h, --help               show help
 HELP
 }
-BASE=""; BASE_EXPLICIT=0; COMMIT=0; AGENT_COMMAND=""; SELECTED=""
+BASE=""; BASE_EXPLICIT=0; COMMIT=0; NO_UI=0; AGENT_COMMAND=""; SELECTED=""
 COMMAND_PROVIDERS=""
 CLAUDE_COMMAND=""; CODEX_COMMAND=""; GEMINI_COMMAND=""; CUSTOM_COMMAND=""
 add_provider() { local p=$1; case "$p" in claude|codex|gemini|custom) ;; *) die "unknown provider '$p' (expected claude, codex, gemini, or custom)" ;; esac; case ",$SELECTED," in *",$p,"*) ;; *) SELECTED="${SELECTED:+$SELECTED,}$p" ;; esac; }
@@ -31,12 +32,15 @@ while [ $# -gt 0 ]; do
     --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND=$2; shift 2 ;;
     --provider-command) [ $# -ge 2 ] || die "--provider-command needs provider=executable"; case "$2" in *=*) pc_p=${2%%=*}; pc_c=${2#*=}; [ -n "$pc_p" ] && [ -n "$pc_c" ] || die "malformed --provider-command: $2"; set_provider_command "$pc_p" "$pc_c"; case ",$COMMAND_PROVIDERS," in *",$pc_p,"*) ;; *) COMMAND_PROVIDERS="${COMMAND_PROVIDERS:+$COMMAND_PROVIDERS,}$pc_p" ;; esac ;; *) die "--provider-command needs provider=executable" ;; esac; shift 2 ;;
     --commit) COMMIT=1; shift ;;
+    --no-ui) NO_UI=1; shift ;;
     --src) [ $# -ge 2 ] || die "--src needs a value"; echo "• --src is deprecated and ignored"; shift 2 ;;
     *) die "unknown arg: $1 (see gsd-bootstrap-repo --help)" ;;
   esac
 done
 SELF=$0; while [ -L "$SELF" ]; do t=$(readlink "$SELF"); case "$t" in /*) SELF=$t ;; *) SELF="$(dirname "$SELF")/$t" ;; esac; done
 PKG=$(cd "$(dirname "$SELF")/.." && pwd); . "$PKG/lib/common.sh"; . "$PKG/lib/provider.sh"
+# shellcheck source=../lib/ui.sh
+. "$PKG/lib/ui.sh"
 DEST=$(git rev-parse --show-toplevel 2>/dev/null) || die "run this from inside the target git repo"
 [ "$DEST" != "$PKG" ] || die "you're inside the toolkit repo itself — cd into the target repo first"
 DIRTY_BEFORE=$(git -C "$DEST" status --porcelain)
@@ -82,12 +86,12 @@ WT_DIR=$(gsd_wtdir "$DEST")
 if [ -f "$DEST/pnpm-lock.yaml" ]; then PM="pnpm install"; elif [ -f "$DEST/yarn.lock" ]; then PM="yarn install"; elif [ -f "$DEST/package-lock.json" ] || [ -f "$DEST/package.json" ]; then PM="npm install"; else PM=none; fi
 printf 'Toolkit     : %s\nTarget repo : %s\nBase branch : %s\nProviders   : %s (default: %s)\n\n' "$PKG" "$DEST" "$BASE" "$SELECTED" "$DEFAULT"
 if [ ! -f "$CONF" ]; then
-    { echo '# .gsd.conf — committed, inspectable GSD worktree configuration.'; printf 'base = %s\nwtdir = %s\ninstall = %s\nproviders = %s\n' "$BASE" "$WT_DIR" "$PM" "$SELECTED"; [ -z "$CLAUDE_COMMAND" ] || printf 'claude_command = %s\n' "$CLAUDE_COMMAND"; [ -z "$CODEX_COMMAND" ] || printf 'codex_command = %s\n' "$CODEX_COMMAND"; [ -z "$GEMINI_COMMAND" ] || printf 'gemini_command = %s\n' "$GEMINI_COMMAND"; [ -z "$CUSTOM_COMMAND" ] || printf 'custom_command = %s\n' "$CUSTOM_COMMAND"; echo '# start_mode = flow  # optional; default is discuss'; echo '# flow = strict'; } > "$CONF"
+    { echo '# .gsd.conf — committed, inspectable GSD worktree configuration.'; printf 'base = %s\nwtdir = %s\ninstall = %s\nproviders = %s\n' "$BASE" "$WT_DIR" "$PM" "$SELECTED"; [ -z "$CLAUDE_COMMAND" ] || printf 'claude_command = %s\n' "$CLAUDE_COMMAND"; [ -z "$CODEX_COMMAND" ] || printf 'codex_command = %s\n' "$CODEX_COMMAND"; [ -z "$GEMINI_COMMAND" ] || printf 'gemini_command = %s\n' "$GEMINI_COMMAND"; [ -z "$CUSTOM_COMMAND" ] || printf 'custom_command = %s\n' "$CUSTOM_COMMAND"; echo '# start_mode = flow  # optional; default is discuss'; echo '# flow = strict'; if [ "$NO_UI" = 1 ]; then echo 'ui_gates = off'; else echo '# ui_gates = strict  # UI gates: warn (default), strict, off'; fi; } > "$CONF"
   echo '✔ .gsd.conf (created)'
 else
   update_key() { local k=$1 v=$2; K=$k V=$v perl -pi -e 's/^\s*\Q$ENV{K}\E\s*=.*/$ENV{K} = $ENV{V}/' "$CONF"; grep -qE "^[[:space:]]*${k}[[:space:]]*=" "$CONF" || printf '%s = %s\n' "$k" "$v" >> "$CONF"; }
   remove_key() { local k=$1; K=$k perl -ni -e 'print unless /^\s*\Q$ENV{K}\E\s*=/' "$CONF"; }
-  update_key providers "$SELECTED"; remove_key provider; remove_key agent_command; [ -z "$CLAUDE_COMMAND" ] || update_key claude_command "$CLAUDE_COMMAND"; [ -z "$CODEX_COMMAND" ] || update_key codex_command "$CODEX_COMMAND"; [ -z "$GEMINI_COMMAND" ] || update_key gemini_command "$GEMINI_COMMAND"; [ -z "$CUSTOM_COMMAND" ] || update_key custom_command "$CUSTOM_COMMAND"; [ "$BASE_EXPLICIT" = 0 ] || update_key base "$BASE"
+  update_key providers "$SELECTED"; remove_key provider; remove_key agent_command; [ -z "$CLAUDE_COMMAND" ] || update_key claude_command "$CLAUDE_COMMAND"; [ -z "$CODEX_COMMAND" ] || update_key codex_command "$CODEX_COMMAND"; [ -z "$GEMINI_COMMAND" ] || update_key gemini_command "$GEMINI_COMMAND"; [ -z "$CUSTOM_COMMAND" ] || update_key custom_command "$CUSTOM_COMMAND"; [ "$BASE_EXPLICIT" = 0 ] || update_key base "$BASE"; [ "$NO_UI" = 0 ] || update_key ui_gates off
   echo '✔ .gsd.conf (provider configuration updated; other keys preserved)'
 fi
 mkdir -p "$DEST/scripts/hooks" "$DEST/.gsd"
@@ -103,6 +107,17 @@ if [ -f "$CANON" ] && grep -qx '<!-- gsd-worktrees:canonical -->' "$CANON"; then
   echo "• legacy canonical content backed up to $bak"
 fi
 [ -f "$CANON" ] || touch "$CANON"
+UI_TEXT=""
+if [ "$(gsd_ui_gates "$DEST")" != off ]; then
+  UI_TEXT="
+Screens: every screen uses the design system in \`.planning/design/DESIGN.md\`
+(tokens, components, page templates) — don't invent new styles. In a new
+project with screens, make the first phase \"Design system\". Each phase with
+screens picks a layout with \`/gsd-sketch\` before its UI-SPEC and records it in
+\`<P>-LAYOUT.md\`; \`gsd-ui shots <N>\` screenshots the built pages for
+ui-review. \`gsd-flow-next\` asks for each step (\`ui_gates\` in \`.gsd.conf\`).
+"
+fi
 canonical_block=$(mktemp)
 cat > "$canonical_block" <<EOF
 <!-- gsd-worktrees:canonical:start -->
@@ -115,17 +130,18 @@ before claiming work; attach or hand off with
 \`gsd-start -p <N>\` or claim new work with \`gsd-start -n "<desc>"\`.
 
 Inside the worktree, run \`gsd-flow-next <N>\` before every phase action:
-ticket (with a tracker) → discuss → UI decision → UI phase when needed →
-plan → independent review → replan → execute → verifier/gap loop → verify
-work → code review/fix → UI review → security → done. The human decisions are discuss, UI approval,
-and review findings. Never bypass a guard unless the user explicitly requests
+ticket (with a tracker) → discuss → UI decision → with screens: design
+system, layout (sketch), UI phase → plan → independent review → replan →
+execute → verifier/gap loop → verify work → code review/fix → with screens:
+screenshots, UI review → security → done. The human decisions are discuss,
+the design system and sketch, UI approval, and review findings. Never bypass a guard unless the user explicitly requests
 \`GSD_SKIP_GUARD=1\`.
 
 \`gsd-finish\` is never automatic. Run it only with explicit user intent and as
 the final action because it removes the worktree. Provider hooks are early
 feedback only; \`gsd-flow-next\` invokes the mandatory neutral guard. Arbitrary
 shell commands outside GSD are outside this enforcement boundary.
-
+${UI_TEXT}
 Providers: \`$SELECTED\` (default: first, \`$DEFAULT\`); base \`$BASE\`;
 worktrees \`../$WT_DIR/\`.
 <!-- gsd-worktrees:canonical:end -->

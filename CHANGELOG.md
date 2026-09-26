@@ -4,6 +4,32 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.3.0
+
+UI quality gates — so phases with screens stop shipping ugly pages. See
+`docs/ui-quality-plan.md`.
+
+- **Design system, once per project:** `.planning/design/DESIGN.md`
+  (references, tokens, components, page templates). `gsd-ui design` makes the
+  stub.
+- **Layout, per phase with screens:** before the UI-SPEC, `/gsd-sketch` the main
+  screen, the user picks the winner, and `<P>-LAYOUT.md` records it with the
+  pages. `gsd-ui layout <N>` makes the template.
+- **Screenshots before ui-review:** `gsd-ui shots <N>` shoots every page at
+  phone, tablet and desktop size with the Playwright CLI; ui-review compares
+  them with the sketch. `--skip "<reason>"` when it is impossible.
+- `gsd-flow-next` has the new steps: design-system, layout, screenshots.
+  Phases whose UI-SPEC already exists skip the two pre-spec steps.
+- `ui_gates` in `.gsd.conf`: `warn` (default — steps and doctor notes),
+  `strict` (the guard blocks `/gsd-ui-phase` and `/gsd-ui-review` until done;
+  doctor T080), `off`. `gsd-init --no-ui` sets `off` for projects without
+  screens.
+- `ui_url` in `.gsd.conf` for the app address; `{port}` follows each
+  worktree's port.
+- `gsd-init` prints optional tools per provider (Claude: `frontend-design`
+  plugin, Playwright MCP).
+- The e2e suite no longer reads the laptop's installed skills.
+
 ## 0.2.3
 
 `gsd-doctor` checks more (all read-only, as before):

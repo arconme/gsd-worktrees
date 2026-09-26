@@ -62,6 +62,17 @@ gsd_provider_review_flag() {
   case "$1" in claude|codex|gemini) printf -- '--%s\n' "$1" ;; *) return 1 ;; esac
 }
 
+# Optional UI tools (ui_gates): gsd-init prints these as a tip, nothing checks
+# or requires them — gsd-ui shots uses the Playwright CLI, which every provider
+# can run.
+gsd_provider_ui_tip() {
+  case "$1" in
+    claude) printf '%s\n' '/plugin marketplace add anthropics/claude-code  then  /plugin install frontend-design@claude-code-plugins;  claude mcp add playwright npx @playwright/mcp@latest' ;;
+    codex|gemini) printf '%s\n' "add the Playwright MCP server (npx @playwright/mcp@latest) to the $1 config" ;;
+    *) return 1 ;;
+  esac
+}
+
 # Shared registration metadata. Unsupported providers have no settings file.
 gsd_provider_hook_metadata() {
   case "$1" in

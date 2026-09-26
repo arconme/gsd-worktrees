@@ -15,6 +15,10 @@
 #                only when .gsd.conf sets tracker = clickup|custom
 #   discuss      <P>-CONTEXT.md                             /gsd-discuss-phase
 #   ui-decision  no UI-SPEC and no PLAN yet → the skill asks "screens?"
+#   design-system .planning/design/DESIGN.md filled (screens,   gsd-ui design
+#                before the UI-SPEC; one per project)
+#   layout       <P>-LAYOUT.md: chosen /gsd-sketch + pages    gsd-ui layout, /gsd-sketch
+#                (screens, before the UI-SPEC)
 #   ui-phase     <P>-UI-SPEC.md (screens only)              /gsd-ui-phase
 #   plan         a <P>-NN-PLAN.md                           /gsd-plan-phase
 #   review       <P>-REVIEWS.md                             configured independent reviewer
@@ -25,6 +29,7 @@
 #   gaps         <P>-VERIFICATION.md status gaps_found      --gaps / --gaps-only
 #   verify-work  a <P>-*UAT.md not pending/partial          /gsd-verify-work
 #   code-review  <P>-REVIEW.md; not clean → <P>-REVIEW-FIX  /gsd-code-review [--fix]
+#   screenshots  <P>-SHOTS.md (screens only)                gsd-ui shots
 #   ui-review    <P>-UI-REVIEW.md (screens only)            /gsd-ui-review
 #   secure       <P>-SECURITY.md, threats_open: 0           /gsd-secure-phase
 #   done         → gsd-finish
@@ -36,6 +41,10 @@
 #     --ui      this phase has screens (settles ui-decision without a UI-SPEC)
 #     --all     print every remaining step, not just the next one
 #     --json    one JSON object per step
+#
+# design-system, layout and screenshots are the UI gates (lib/ui.sh); `ui_gates
+# = off` in .gsd.conf drops them. Phases whose UI-SPEC predates them skip the
+# two pre-spec steps.
 #
 # review_provider = claude|codex|gemini|custom selects the independent reviewer.
 # The external gsd-review skill performs delegation, not this shell command.
@@ -52,6 +61,8 @@ GSD_PKG=$(cd "$(dirname "$SELF")/.." && pwd)
 . "$GSD_PKG/lib/provider.sh"
 # shellcheck source=../lib/tracker.sh
 . "$GSD_PKG/lib/tracker.sh"
+# shellcheck source=../lib/ui.sh
+. "$GSD_PKG/lib/ui.sh"
 
 usage() { awk 'NR>1 && /^set -uo/{exit} NR>1 {sub(/^# ?/,""); print}' "$0"; }
 N=""; REPO=""; UI=""; ALL=0; JSON=0
@@ -107,8 +118,9 @@ emit() {  # $1=step $2=run $3=then $4=stop $5=note
   [ "$ALL" = 1 ] || exit 0
 }
 
-# screens? UI-SPEC on disk settles it; otherwise the caller's --ui/--no-ui.
-if has UI-SPEC.md; then UI=yes; fi
+# screens? A UI-SPEC or LAYOUT on disk settles it; otherwise --ui/--no-ui.
+if has UI-SPEC.md || has LAYOUT.md; then UI=yes; fi
+GATES=$(gsd_ui_gates "$REPO")
 
 # 1 ticket — the tracker's issue/task, saved in the phase folder. The tag
 # tk-<id> in the ROADMAP title (or dir name) says which one.
@@ -138,9 +150,26 @@ for f in "$pd/$P"-[0-9]*-PLAN.md; do [ ! -f "$f" ] || PLANS=yes; done
 if [ -z "$UI" ] && [ -z "$PLANS" ]; then
   emit ui-decision "" "" "ask the user: does phase $N have screens? then re-run with --ui or --no-ui" "UI is agreed BEFORE planning; plan-phase would otherwise auto-generate an un-agreed UI-SPEC"
 fi
+# 3b design system + layout — decided before the UI-SPEC, so the spec (and
+# ui-review, which checks code against it) has a layout to hold the screens to.
+if [ "$UI" = yes ] && [ "$GATES" != off ] && ! has UI-SPEC.md; then
+  case "$(gsd_ui_design_state "$REPO")" in
+    ok) ;;
+    *) emit design-system "gsd-ui design" "" "agree the design system with the user and fill .planning/design/DESIGN.md (references, tokens, components, page templates), then delete its stub line" "one design system for every phase with screens; it is filled once, usually by the first such phase. ui_gates = off in .gsd.conf turns the UI gates off" ;;
+  esac
+  lrel="${pd#"$REPO"/}/$P-LAYOUT.md"
+  case "$(gsd_ui_layout_state "$REPO" "$pd" "$P")" in
+    missing)   emit layout "gsd-ui layout $N" "/gsd-sketch <this phase's main screen>" "the user picks the winning sketch variant; then write its folder in sketch: and the pages (URL paths) in pages: of $lrel" "sketch: skip <reason> only when the user agrees (e.g. a small change on an existing page)" ;;
+    nosketch)  emit layout "/gsd-sketch <this phase's main screen>" "" "the user picks the winning sketch variant; then write its folder in sketch: of $lrel" "sketch: skip <reason> only when the user agrees" ;;
+    badsketch) emit layout "" "" "sketch: in $lrel does not name a sketch folder — fix it (e.g. .planning/sketches/003-catalog)" "" ;;
+    nowinner)  emit layout "" "" "the sketch in $lrel has no winner yet — ask the user to pick a variant and mark winner: in its README.md" "" ;;
+    nopages)   emit layout "" "" "list the pages this phase builds (URL paths) in pages: of $lrel — gsd-ui shots uses them" "" ;;
+  esac
+fi
 # 4 ui-phase
 if [ "$UI" = yes ] && ! has UI-SPEC.md; then
-  emit ui-phase "/gsd-ui-phase $N" "" "the user must agree the screens before planning" ""
+  ui_note=""; [ "$GATES" = off ] || ui_note="follow .planning/design/DESIGN.md and ${pd#"$REPO"/}/$P-LAYOUT.md (the chosen sketch); add the layout: sections top to bottom, the one main focus, the main button"
+  emit ui-phase "/gsd-ui-phase $N" "" "the user must agree the screens before planning" "$ui_note"
 fi
 # 5 plan
 [ -n "$PLANS" ] || emit plan "/gsd-plan-phase $N" "" "" ""
@@ -185,8 +214,15 @@ else
   st=$(fm REVIEW.md status)
   case "$st" in ""|clean|skipped) ;; *) has REVIEW-FIX.md || emit code-review "/gsd-code-review $N --fix" "" "" "REVIEW.md status: $st" ;; esac
 fi
-# 11 ui-review
-if [ "$UI" = yes ] && ! has UI-REVIEW.md; then emit ui-review "/gsd-ui-review $N" "" "" "phase has screens"; fi
+# 11 screenshots, then ui-review — the review looks at the rendered pages, not only the code
+if [ "$UI" = yes ] && [ "$GATES" != off ] && ! has UI-REVIEW.md && ! has SHOTS.md; then
+  emit screenshots "gsd-ui shots $N" "" "" "start the app in this worktree first; if screenshots are impossible: gsd-ui shots $N --skip \"<reason>\""
+fi
+if [ "$UI" = yes ] && ! has UI-REVIEW.md; then
+  rv_note="phase has screens"
+  [ "$GATES" = off ] || [ "$(gsd_ui_shots_state "$pd" "$P")" != ok ] || rv_note="phase has screens: compare the screenshots in $P-SHOTS/ with the chosen sketch and the layout rules in $P-LAYOUT.md / DESIGN.md, not only the code"
+  emit ui-review "/gsd-ui-review $N" "" "" "$rv_note"
+fi
 # 12 secure — the last code gate
 if ! has SECURITY.md; then emit secure "/gsd-secure-phase $N" "" "" "last code gate — after every --fix has landed"
 else open=$(fm SECURITY.md threats_open); [ "${open:-0}" = 0 ] || emit secure "/gsd-secure-phase $N" "" "" "$open open threat(s)"; fi

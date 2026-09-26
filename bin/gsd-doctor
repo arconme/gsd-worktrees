@@ -35,6 +35,8 @@
 #                  in repos with `flow = strict`; `flow_since = <N>` in .gsd.conf
 #                  limits it to phases >= N).
 #                  T070–T073 = ticket tracker config (`tracker =` in .gsd.conf).
+#                  T080 = phases have screens but DESIGN.md is missing or a
+#                  stub (only with `ui_gates = strict`; a note otherwise).
 #   -h, --help     show this help
 #
 # Exit status: 0 when everything checks out, 1 when there is a finding.
@@ -63,6 +65,8 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 . "$GSD_PKG/lib/tracker.sh"
 # shellcheck source=../lib/version.sh
 . "$GSD_PKG/lib/version.sh"
+# shellcheck source=../lib/ui.sh
+. "$GSD_PKG/lib/ui.sh"
 
 REPO=""
 QUIET=0
@@ -331,6 +335,7 @@ if [ -f "$MAIN/.gsd.conf" ]; then
     case "$key" in
       base|wtdir|install|test|premerge|flow|flow_since|providers|provider|agent_command|review_provider|start_mode) ;;
       tracker|tracker_command|tracker_status_start|tracker_status_finish) ;;
+      ui_gates|ui_url) ;;
       claude_command|codex_command|gemini_command|custom_command|claude_model|codex_model|gemini_model|custom_model) ;;
       *) bad_keys="$bad_keys $key" ;;
     esac
@@ -343,6 +348,8 @@ if [ -f "$MAIN/.gsd.conf" ]; then
   [ -z "$v" ] || printf '%s' "$v" | grep -qE '^[0-9]+(\.[0-9]+)?$' || fail "flow_since = '$v' is not a phase number" "edit .gsd.conf" "T018"
   v=$(gsd_conf_get "$MAIN" start_mode)
   case "$v" in ''|discuss|flow) ;; *) fail "start_mode = '$v' is not a value (use discuss or flow)" "edit .gsd.conf" "T018" ;; esac
+  v=$(gsd_conf_get "$MAIN" ui_gates)
+  case "$v" in ''|warn|strict|off) ;; *) fail "ui_gates = '$v' is not a value (use warn, strict or off)" "edit .gsd.conf" "T018" ;; esac
 fi
 
 # The base branch every claim and finish works against.
@@ -517,6 +524,21 @@ EOF
     [ -z "$BR" ] || note "these may all clear with:  git merge $(gsd_base "$MAIN")"
   fi
 fi
+# ── UI gates (ui_gates = warn|strict|off; lib/ui.sh) ─────────────────────────
+# Only for projects with screens (a phase has a UI-SPEC or LAYOUT). Read from
+# the checkout you stand in: a phase worktree may be the one filling DESIGN.md.
+UI_GATES=$(gsd_ui_gates "$HERE")
+if [ "$UI_GATES" != off ] && gsd_ui_has_screens "$HERE"; then
+  section "UI (ui_gates = $UI_GATES)"
+  ds=$(gsd_ui_design_state "$HERE")
+  if [ "$ds" = ok ]; then pass "design system: .planning/design/DESIGN.md"
+  elif [ "$UI_GATES" = strict ]; then
+    fail "phases have screens but .planning/design/DESIGN.md is $ds — each phase invents its own styles" "gsd-ui design, then fill it with the user (in the next phase with screens)" "T080"
+  else note "phases have screens but .planning/design/DESIGN.md is $ds — gsd-ui design, then fill it (ui_gates = strict makes this a finding)"; fi
+  [ -n "$(gsd_ui_playwright "$HERE")" ] \
+    || note "no Playwright CLI for gsd-ui shots — npm i -D playwright && npx playwright install chromium"
+fi
+
 # ── phase flow (opt-in: flow = strict) ──────────────────────────────────────
 # Which MERGED phases skipped a mandatory step. Same artifact list the guard's
 # flow rule and a repo's pre-merge gate enforce going forward; this is the
@@ -553,6 +575,9 @@ if [ "$(gsd_conf_get "$MAIN" flow)" = "strict" ] && [ -f "$MAIN/.planning/ROADMA
     flow_has VERIFICATION.md || { miss="$miss verifier";        fix="$fix /gsd-execute-phase $n (runs the verifier);"; }
     ls "$pd/$p"-*UAT.md >/dev/null 2>&1 || { miss="$miss verify-work"; fix="$fix /gsd-verify-work $n;"; }
     if flow_has UI-SPEC.md && ! flow_has UI-REVIEW.md; then miss="$miss ui-review"; fix="$fix /gsd-ui-review $n;"; fi
+    # UI gates: only screenshots still have an action after the merge; the
+    # design system and layout shaped the spec, like discuss shapes the plan.
+    if [ "$UI_GATES" = strict ] && flow_has UI-SPEC.md && ! flow_has SHOTS.md; then miss="$miss ui-shots"; fix="$fix gsd-ui shots $n;"; fi
     if [ -n "$miss" ]; then
       debt=$((debt + 1))
       fail "Phase $n merged without:$miss" "in a phase-$n worktree:${fix%;}" "T040"

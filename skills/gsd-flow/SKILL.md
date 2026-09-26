@@ -13,8 +13,9 @@ You are the driver. Use this agent's real skill invocation mechanism when the
 named GSD skill is installed. If it has no direct skill-chaining interface,
 follow the `run=` text as a natural-language phase instruction and clearly
 print the next step when a capability is unavailable. Never invent a universal
-provider-native invocation API. Run steps in order. The three planned approval
-gates are discussion, screen approval when applicable, and independent review;
+provider-native invocation API. Run steps in order. The planned approval
+gates are discussion, the design system and sketch plus screen approval when
+the phase has screens, and independent review;
 the ticket and the UI/no-UI choice may also need a user answer.
 The order comes from `gsd-flow-next`, which reads the phase folder — so the
 same command resumes a half-finished phase after a crash or a `/clear`.
@@ -39,7 +40,9 @@ Read `step=`, `run=`, `then=`, `stop=`, `note=`. Then:
 | `ticket` | Only when the repo sets a tracker. With `run=`: run that `gsd-tracker snapshot … --out …` command, then commit the file. Without `run=`: the phase has no ticket — ask the user for its id (product words, no tech), then snapshot it. Never invent product intent. |
 | `discuss` | Invoke or follow `gsd-discuss-phase <N>` live; the user answers. If `then=` says so, update the ticket to the agreed scope. |
 | `ui-decision` | Ask the user once: does this phase have screens? Re-run `gsd-flow-next` with `--ui` or `--no-ui` and keep passing that flag for the rest of this session. |
-| `ui-phase` | Invoke/follow `gsd-ui-phase <N>`. Stop for screen approval. |
+| `design-system` | Run `gsd-ui design` (creates the stub). Agree the design system with the user — references, tokens, components, page templates — fill `.planning/design/DESIGN.md`, delete its stub line, commit. |
+| `layout` | Run `run=` (`gsd-ui layout <N>` and/or `gsd-sketch`). The user picks the winning sketch variant; write its folder in `sketch:` and the URL paths in `pages:` of `<P>-LAYOUT.md`, then commit. `sketch: skip <reason>` only when the user agrees. |
+| `ui-phase` | Invoke/follow `gsd-ui-phase <N>`, following `note=` (DESIGN.md and the chosen sketch). Stop for screen approval. |
 | `plan` | Invoke/follow `gsd-plan-phase <N>`. |
 | `review` | Run the configured independent review. Stop and show verified findings, then replan with `--reviews`. If the review capability is unavailable, print the required next step and wait; do not treat the gate as complete. |
 | `replan` | Invoke/follow `gsd-plan-phase <N> --reviews`. |
@@ -47,7 +50,8 @@ Read `step=`, `run=`, `then=`, `stop=`, `note=`. Then:
 | `gaps` | Plan with `--gaps`, then execute with `--gaps-only`. |
 | `verify-work` | Invoke/follow `gsd-verify-work <N>` and record agent-driven UAT. |
 | `code-review` | Invoke/follow `gsd-code-review <N> --fix` when issues exist. |
-| `ui-review` | Invoke/follow `gsd-ui-review <N>`. |
+| `screenshots` | Start the app in this worktree (its dev script), then run `gsd-ui shots <N>` and commit `<P>-SHOTS.md`. If that is impossible, ask the user, then `gsd-ui shots <N> --skip "<reason>"`. |
+| `ui-review` | Invoke/follow `gsd-ui-review <N>`; look at the screenshots in `<P>-SHOTS/` and compare them with the chosen sketch and the layout rules, as `note=` says. |
 | `secure` | Invoke/follow `gsd-secure-phase <N>` as the last code gate. |
 | `done` | Print the finish line. Do **not** run `gsd-finish` unless the user says so: it deletes the directory this session stands in and must be the session's last action. |
 
@@ -60,8 +64,10 @@ steps; use a normal `gsd-flow-next` call at each step.
 ## Planned approval gates
 
 1. discuss — the user answers the questions.
-2. ui-phase — the user agrees the screens.
-3. review — the user sees the configured reviewer's findings before the replan.
+2. design-system and layout (phases with screens) — the user agrees the design
+   system once per project, and picks the sketch for each phase.
+3. ui-phase — the user agrees the screens.
+4. review — the user sees the configured reviewer's findings before the replan.
 
 The ticket may require clarification, and `ui-decision` asks whether the phase
 has screens. Never guess those answers. A `stop=` line describes required user

@@ -19,6 +19,12 @@
 #                                               review) and, when a UI-SPEC
 #                                               exists, <P>-UI-REVIEW.md — it is
 #                                               the last code gate
+#   5. UI gates              → OPT-IN via `ui_gates = strict` (lib/ui.sh):
+#                                ui-phase   needs a filled DESIGN.md and a
+#                                           <P>-LAYOUT.md with a chosen sketch
+#                                           (or sketch: skip <reason>)
+#                                ui-review  needs <P>-SHOTS.md (gsd-ui shots,
+#                                           or its --skip record)
 #
 # Block = exit 2 (stderr shown). Escape hatch: GSD_SKIP_GUARD=1.
 # Repo settings (base branch, install cmd, flow): .gsd.conf, see gsd-bootstrap-repo.
@@ -54,6 +60,8 @@ done
 GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 # shellcheck source=../lib/common.sh
 . "$GSD_PKG/lib/common.sh"
+# shellcheck source=../lib/ui.sh
+. "$GSD_PKG/lib/ui.sh"
 
 # Command + args from the known payload shapes:
 #   UserPromptExpansion → .command_name / .command_args
@@ -181,10 +189,12 @@ if [ "$cmd" = "gsd-execute-phase" ] && [ -n "$(gsd_install_cmd "$dir")" ]; then
   fi
 fi
 
-# Rule 4 — phase-flow order (opt-in: `flow = strict` in .gsd.conf)
-# Policy is read from the MAIN checkout's .gsd.conf, not the worktree's copy, so
-# turning it on takes effect for worktrees branched before the key existed.
-[ "$(gsd_conf_get "$(gsd_main "$dir" 2>/dev/null || echo "$dir")" flow)" = "strict" ] || exit 0
+# Rules 4 and 5 — opt-in artifact gates. Policy is read from the MAIN
+# checkout's .gsd.conf, not the worktree's copy, so turning it on takes effect
+# for worktrees branched before the key existed.
+FLOW_STRICT=0; [ "$(gsd_conf_get "$(gsd_main "$dir" 2>/dev/null || echo "$dir")" flow)" = "strict" ] && FLOW_STRICT=1
+UI_STRICT=0; [ "$(gsd_ui_gates "$dir")" = strict ] && UI_STRICT=1
+[ "$FLOW_STRICT" = 1 ] || [ "$UI_STRICT" = 1 ] || exit 0
 # The phase dir may be padded (08-, 02.1-) or not (7.1-); artifacts inside it
 # carry the dir's own prefix, so P is taken from the dir that exists.
 nn=$(pnorm "$N"); int=${nn%%.*}; P="$(printf '%02d' "$int")${nn#"$int"}"
@@ -196,6 +206,23 @@ need() {  # $1=artifact suffix  $2=step that produces it  $3=command that runs i
   block "BLOCKED (flow = strict): /$cmd $N needs $P-$1 — $2 has not been done." \
         "Run: $3   (or GSD_SKIP_GUARD=1 if the user asked to skip it)"
 }
+ui_block() {  # $1=what is missing  $2=how to fix it
+  block "BLOCKED (ui_gates = strict): /$cmd $N needs $1." \
+        "Run: $2   (or GSD_SKIP_GUARD=1 if the user asked to skip it)"
+}
+if [ "$UI_STRICT" = 1 ]; then
+  case "$cmd" in
+    gsd-ui-phase)
+      [ "$(gsd_ui_design_state "$dir")" = ok ] || ui_block "a filled .planning/design/DESIGN.md (the design system)" "gsd-ui design, then fill it with the user"
+      case "$([ -n "$pdir" ] && gsd_ui_layout_state "$dir" "$pdir" "$P")" in
+        ok|skip) ;;
+        *) ui_block "$P-LAYOUT.md with a chosen sketch and pages" "gsd-ui layout $N, /gsd-sketch, then fill sketch: and pages:" ;;
+      esac ;;
+    gsd-ui-review)
+      [ -n "$pdir" ] && [ "$(gsd_ui_shots_state "$pdir" "$P")" != missing ] || ui_block "$P-SHOTS.md (screenshots of the built pages)" "gsd-ui shots $N  (or gsd-ui shots $N --skip \"<reason>\")" ;;
+  esac
+fi
+[ "$FLOW_STRICT" = 1 ] || exit 0
 case "$cmd" in
   gsd-plan-phase)
     case " $args " in *" --prd "*|*" --prd="*) ;; *) need CONTEXT.md "discuss-phase" "/gsd-discuss-phase $N" ;; esac ;;

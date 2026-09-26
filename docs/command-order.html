@@ -276,7 +276,7 @@
 
         <div class="branch">
           <span class="dash"></span>
-          <span class="opt"><span class="n-cmd">UI decision → /gsd-ui-phase N</span><span class="n-sub">ask whether it has screens; approve them if yes</span></span>
+          <span class="opt"><span class="n-cmd">UI decision → design system → /gsd-sketch → /gsd-ui-phase N</span><span class="n-sub">ask whether it has screens; if yes: DESIGN.md filled once, pick a sketch, approve the screens</span></span>
         </div>
 
         <div class="node">
@@ -310,7 +310,7 @@
 
         <div class="branch">
           <span class="dash"></span>
-          <span class="opt"><span class="n-cmd">/gsd-ui-review N</span><span class="n-sub">if it has screens, after code fixes</span></span>
+          <span class="opt"><span class="n-cmd">gsd-ui shots N → /gsd-ui-review N</span><span class="n-sub">if it has screens, after code fixes</span></span>
         </div>
 
         <div class="node">
@@ -353,7 +353,7 @@
       <li class="step">
         <span class="num">4</span>
         <span class="cmd">/gsd-ui-phase N<span class="tag tag-fe">screens only</span></span>
-        <span class="why">First ask whether the phase has screens. If yes, obtain screen approval before planning; otherwise pass --no-ui to the engine.</span>
+        <span class="why">First ask whether the phase has screens. If yes: the project's design system (<code>.planning/design/DESIGN.md</code>, filled once), then <code>/gsd-sketch</code> and pick the winner into <code>&lt;P&gt;-LAYOUT.md</code>, then screen approval before planning. Otherwise pass --no-ui to the engine.</span>
       </li>
 
       <li class="step">
@@ -383,7 +383,7 @@
       <li class="step">
         <span class="num">9</span>
         <span class="cmd">/gsd-ui-review N<span class="tag tag-fe">screens only</span></span>
-        <span class="why">Scores the screens that were built against six quality checks. Do it after the code review, not before.</span>
+        <span class="why">First <code>gsd-ui shots N</code> (app running) takes screenshots at phone, tablet and desktop size. Then the review scores the built screens and compares them with the chosen sketch. Do it after the code review, not before.</span>
       </li>
 
       <li class="step">

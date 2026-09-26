@@ -144,5 +144,37 @@ blocked "nested worker cannot target another phase" gsd-execute-phase "9"
 rm "$PDIR/07-REVIEWS.md"
 blocked "nested worker still requires strict review" gsd-execute-phase "7"
 
+section "ui_gates — warn (default) never blocks"
+mkrepo "" phase-5-shop 05-shop
+allowed "ui-phase without DESIGN/LAYOUT passes" gsd-ui-phase  "5"
+allowed "ui-review without SHOTS passes"        gsd-ui-review "5"
+
+section "ui_gates = strict — ui-phase needs the design system and a chosen layout"
+echo "ui_gates = strict" >> "$REPO/.gsd.conf"
+blocked "no DESIGN.md → blocked"                 gsd-ui-phase "5"
+grep -q 'DESIGN.md' "$WORK/err" && ok "…the message names DESIGN.md" || bad "…the message names DESIGN.md" "$(cat "$WORK/err")"
+mkdir -p "$REPO/.planning/design"; printf '# Design\n<!-- gsd:design-stub -->\n' > "$REPO/.planning/design/DESIGN.md"
+blocked "stub DESIGN.md → blocked"               gsd-ui-phase "5"
+printf '# Design\ntokens\n' > "$REPO/.planning/design/DESIGN.md"
+blocked "filled DESIGN.md, no LAYOUT → blocked"  gsd-ui-phase "5"
+printf 'sketch: .planning/sketches/001-shop\npages: /\n' > "$PDIR/05-LAYOUT.md"
+mkdir -p "$REPO/.planning/sketches/001-shop"; printf -- '---\nwinner: null\n---\n' > "$REPO/.planning/sketches/001-shop/README.md"
+blocked "sketch without a winner → blocked"      gsd-ui-phase "5"
+printf -- '---\nwinner: A\n---\n' > "$REPO/.planning/sketches/001-shop/README.md"
+allowed "design + chosen sketch + pages → allowed" gsd-ui-phase "5"
+printf 'sketch: skip one button\n' > "$PDIR/05-LAYOUT.md"
+allowed "sketch: skip <reason> → allowed"        gsd-ui-phase "5"
+
+section "ui_gates = strict — ui-review needs the screenshots"
+blocked "no SHOTS.md → blocked"                  gsd-ui-review "5"
+printf 'skipped: no browser in CI\n' > "$PDIR/05-SHOTS.md"
+allowed "a skip record → allowed"                gsd-ui-review "5"
+printf 'taken: now\n' > "$PDIR/05-SHOTS.md"
+allowed "screenshots → allowed"                  gsd-ui-review "5"
+allowed "other commands are not UI-gated"        gsd-plan-phase "5"
+rm "$PDIR/05-SHOTS.md"
+rc=$(GSD_SKIP_GUARD=1 "$GUARD" --command gsd-ui-review --phase 5 --repo "$REPO" 2>/dev/null; echo $?)
+[ "$rc" = 0 ] && ok "GSD_SKIP_GUARD=1 still escapes" || bad "GSD_SKIP_GUARD=1 still escapes" "rc=$rc"
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -34,6 +34,7 @@ OPTIONS
   --src <path>     deprecated compatibility flag; bootstrap ignores it
   --base <branch>  base branch override (passed to gsd-bootstrap-repo)
   --no-commit      don't commit the bootstrap files (default: commit)
+  --no-ui          the project has no screens (backend, CLI): ui_gates = off
   --providers <list> comma-separated integrations to install, in default order
   --provider <p>   provider for the initialization session; when --providers
                    is omitted, also selects the single integration to install
@@ -95,6 +96,7 @@ while [ $# -gt 0 ]; do
     --src)  [ $# -ge 2 ] || die "--src needs a value";  BOOT_ARGS+=(--src "$2");  shift 2 ;;
     --base) [ $# -ge 2 ] || die "--base needs a value"; BOOT_ARGS+=(--base "$2"); shift 2 ;;
     --no-commit) COMMIT=0; shift ;;
+    --no-ui) BOOT_ARGS+=(--no-ui); shift ;;
     --providers) [ $# -ge 2 ] || die "--providers needs a comma-separated list"; PROVIDERS_CLI="$2"; shift 2 ;;
     --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, gemini, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
     --model) [ $# -ge 2 ] && [ -n "$2" ] || die "--model needs a model ID or default"; MODEL_CLI="$2"; shift 2 ;;
@@ -124,6 +126,8 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 . "$GSD_PKG/lib/provider.sh"
 # shellcheck source=../lib/version.sh
 . "$GSD_PKG/lib/version.sh"
+# shellcheck source=../lib/ui.sh
+. "$GSD_PKG/lib/ui.sh"
 
 # Build bootstrap arguments only after validating the complete selection. This
 # prevents a typo or a launch provider outside the configured set from writing
@@ -181,6 +185,18 @@ echo ""
 # Everything installed above is a TRACKED file except two, so `git diff` is the
 # review — no --check flag needed, and no dry-run that could drift from what
 # actually happens. Name the two git cannot show you.
+ui_notice() {  # optional UI tools per configured provider (lib/provider.sh)
+  [ "$(gsd_ui_gates "$DEST")" != off ] || return 0
+  local p tip oldifs=$IFS printed=0
+  IFS=,
+  for p in $(gsd_conf_get "$DEST" providers); do
+    tip=$(gsd_provider_ui_tip "$p") || continue
+    [ "$printed" = 1 ] || { echo ""; echo "Optional, for better screens (the UI gates work without them):"; printed=1; }
+    echo "  • $p: $tip"
+  done
+  IFS=$oldifs
+}
+
 review_notice() {
   echo "Review the tracked changes with:  git -C $DEST diff"
   echo "Also set, and NOT visible to git diff (per clone, not versioned):"
@@ -199,6 +215,7 @@ if [ "$ALREADY" = 1 ]; then
   echo "  workflow files were repaired/synced, planning state left untouched."
   echo ""
   review_notice
+  ui_notice
   echo ""
   echo "  Health check:  gsd-doctor"
   echo "  Start features with:  gsd-start -n \"<description>\""
@@ -243,6 +260,7 @@ else
     echo "Next (after installing it or changing agent_command):  $NEXT"
     exit 127
   fi
+  ui_notice
   echo "Next:  $NEXT"
   echo "Then per feature:  gsd-start -n \"<description>\"  →  work  →  gsd-finish"
 fi

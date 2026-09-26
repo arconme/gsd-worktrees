@@ -24,6 +24,8 @@ S=$(mktemp -d); trap 'rm -rf "$S"' EXIT; cd "$S" || exit 1
 export PATH="$PKG/bin:$PATH"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=e2e GIT_AUTHOR_EMAIL=e2e@t GIT_COMMITTER_NAME=e2e GIT_COMMITTER_EMAIL=e2e@t
+# the laptop's installed skills are not what this checkout is testing
+export GSD_CLAUDE_SKILL_DIR="$S/skills" GSD_CODEX_SKILL_DIR="$S/skills-codex" GSD_GEMINI_SKILL_DIR="$S/skills-gemini"
 unset GSD_PROVIDER GSD_AGENT GSD_AGENT_COMMAND GSD_LOCK_HELD GSD_SKIP_GUARD
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ✔ %s\n' "$1"; }

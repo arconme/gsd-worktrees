@@ -1,7 +1,8 @@
 # UI quality plan
 
-Status: **research done, nothing built yet.** Written 2026-09-25 to continue in
-a later session.
+Status: **built in 0.3.0** (2026-09-26). Items 1–7 below are in `lib/ui.sh`,
+`bin/gsd-ui`, `gsd-flow-next`, the guard (rule 5), doctor (T080) and bootstrap.
+The answers to the open questions are at the end. Written 2026-09-25.
 
 ## Problem
 
@@ -88,15 +89,29 @@ the guard's `flow = strict` rule and doctor's T040 report — items 2–5 must
 change all three together, with tests in `tests/test-flow-next.sh` and
 `tests/test-worktree-guard.sh`.
 
-### Open questions for next session
+### Decisions (built in 0.3.0)
 
-- How does the flow know a sketch was **chosen** (not just generated)? A
-  marker line in `<P>-LAYOUT.md` pointing at the sketch?
-- How to tell a stub `DESIGN.md` from a filled one (marker line vs. size)?
-- How does `gsd-ui-shots.sh` find the running app URL / port
-  (`gsd-derive-port`?) and which pages to shoot (list them in `<P>-LAYOUT.md`)?
-- Should items 2–6 be on by default or behind a `.gsd.conf` key
-  (e.g. `ui_gates = strict|warn|off`)?
+- **Chosen sketch:** `sketch: <folder>` in `<P>-LAYOUT.md`, and that folder's
+  `README.md` (written by `/gsd-sketch`) has a `winner:` that is not `null`.
+  `sketch: skip <reason>` is an explicit opt-out, only with the user's OK.
+- **Stub vs filled DESIGN.md:** the stub has a `<!-- gsd:design-stub … -->`
+  line; filled = that line is gone.
+- **App address and pages:** `ui_url` in `.gsd.conf`, default
+  `http://localhost:{port}`. `{port}` is the phase's derived port (base from the
+  `gsd-derive-port.sh <base>` dev script); `{port:<base>}` writes the base in
+  the URL. A fixed URL works but parallel phases then share one app. Pages come
+  from `pages:` in `<P>-LAYOUT.md`. The screenshot step is one command,
+  `gsd-ui shots` (not a shim), using the Playwright CLI.
+- **On by default?** `ui_gates = warn` (default): `gsd-flow-next` shows the
+  steps, doctor notes; `strict`: the guard blocks too and doctor reports T080;
+  `off`: none of it (`gsd-init --no-ui`). Phases whose UI-SPEC was written
+  before 0.3.0 skip the two pre-spec steps.
+- **gsd-init does not create `.planning/design/`:** an existing `.planning/`
+  switches `/gsd-ingest-docs` into merge mode. The stub is created by the
+  flow's design-system step (`gsd-ui design`); the instructions tell a new
+  project with screens to make phase 1 "Design system".
+- **Screenshots are not committed:** the PNGs sit in `<P>-SHOTS/` (with its own
+  `.gitignore`); `<P>-SHOTS.md` is the committed record.
 
 ## Sources
 

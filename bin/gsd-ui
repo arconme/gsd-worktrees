@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+#
+# gsd-ui — the UI quality steps gsd-flow-next asks for in a phase with screens.
+#
+# Usage:
+#   gsd-ui design                 create .planning/design/DESIGN.md (a stub to
+#                                 fill with the user) and .planning/design/refs/
+#   gsd-ui layout [<N>]           create <P>-LAYOUT.md (the layout contract) in
+#                                 the phase folder; fill sketch: and pages:
+#   gsd-ui shots [<N>]            screenshot every LAYOUT pages: entry at 375,
+#                                 768 and 1440 px into <P>-SHOTS/, and record
+#                                 them in <P>-SHOTS.md (the app must be running)
+#   gsd-ui shots [<N>] --skip "<reason>"
+#                                 record that screenshots were not possible
+#   gsd-ui status [<N>]           design / layout / screenshots state
+#
+#   <N>       phase number; default: from the current phase-<N>-* branch
+#   --repo    checkout to work in (default: the current one)
+#
+# design and layout never overwrite a file; shots replaces the last screenshots.
+#
+# The app address: `ui_url` in .gsd.conf, default http://localhost:{port}.
+#   {port}       the port gsd-derive-port gives this phase, from the base port
+#                in a package.json dev script (gsd-derive-port.sh <base>)
+#   {port:5173}  the same, with the base port written here
+# A fixed address (no {port}) works too, but then parallel phases share it.
+#
+# Screenshots need the Playwright CLI: the repo's node_modules/.bin/playwright,
+# or `playwright` on PATH (GSD_PLAYWRIGHT overrides). Install:
+#   npm i -D playwright && npx playwright install chromium
+#
+# ui_gates in .gsd.conf: warn (default), strict (the guard enforces), off.
+set -euo pipefail
+
+SELF=$0
+while [ -L "$SELF" ]; do t=$(readlink "$SELF"); case "$t" in /*) SELF=$t ;; *) SELF="$(dirname "$SELF")/$t" ;; esac; done
+GSD_PKG=$(cd "$(dirname "$SELF")/.." && pwd)
+. "$GSD_PKG/lib/common.sh"
+# shellcheck source=../lib/ui.sh
+. "$GSD_PKG/lib/ui.sh"
+
+die() { printf '✖ %s\n' "$*" >&2; exit 1; }
+usage() { awk 'NR>1 && /^set -euo/{exit} NR>1 {sub(/^# ?/,""); print}' "$0"; }
+
+SUB=${1:-}; [ $# -eq 0 ] || shift
+case "$SUB" in -h|--help|help) usage; exit 0 ;; design|layout|shots|status) ;; '') usage >&2; exit 64 ;; *) die "unknown subcommand: $SUB (design, layout, shots, status)" ;; esac
+N=""; REPO=""; SKIP=""; SKIPPING=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --repo) [ $# -ge 2 ] || die "--repo needs a path"; REPO=$2; shift ;;
+    --skip) [ $# -ge 2 ] && [ -n "$2" ] || die "--skip needs a reason"; SKIP=$2; SKIPPING=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    -*) die "unknown option: $1" ;;
+    *) N=$1 ;;
+  esac
+  shift
+done
+REPO=$(git -C "${REPO:-$PWD}" rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repo"
+
+if [ "$SUB" = design ]; then
+  had=$(gsd_ui_design_state "$REPO")
+  gsd_ui_scaffold_design "$REPO"
+  case "$had" in
+    missing) echo "✔ .planning/design/DESIGN.md (stub) and .planning/design/refs/ created"
+             echo "  Next: agree the design system with the user, fill each section, then delete the stub line." ;;
+    stub) echo "• .planning/design/DESIGN.md is still the stub — fill it with the user, then delete the stub line" ;;
+    ok) echo "✔ .planning/design/DESIGN.md is filled" ;;
+  esac
+  exit 0
+fi
+
+# ── per-phase subcommands ────────────────────────────────────────────────────
+if [ -z "$N" ]; then
+  br=$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  N=$(printf '%s' "$br" | sed -n -E 's/^phase-([0-9]+(\.[0-9]+)?).*/\1/p')
+  [ -n "$N" ] || die "no phase number given and '$br' is not a phase-<N>-* branch"
+fi
+printf '%s' "$N" | grep -qE '^[0-9]+(\.[0-9]+)?$' || die "invalid phase number: $N"
+int=${N%%.*}; int=$((10#$int))
+case "$N" in *.*) cands="$N $(printf '%02d' "$int").${N#*.}" ;; *) cands="$(printf '%02d' "$int") $int" ;; esac
+PD=""; P=""
+for c in $cands; do for d in "$REPO/.planning/phases/$c"-*; do [ -d "$d" ] && { PD=$d; P=$c; break 2; }; done; done
+[ -n "$PD" ] || die "no .planning/phases/<$N>-* folder in $REPO"
+LAYOUT="$PD/$P-LAYOUT.md"; SHOTS_MD="$PD/$P-SHOTS.md"; SHOTS_DIR="$PD/$P-SHOTS"
+rel() { printf '%s' "${1#"$REPO"/}"; }
+
+case "$SUB" in
+layout)
+  if [ -f "$LAYOUT" ]; then echo "• $(rel "$LAYOUT") already exists — state: $(gsd_ui_layout_state "$REPO" "$PD" "$P")"; exit 0; fi
+  gsd_ui_layout_template "$LAYOUT" "$N"
+  echo "✔ $(rel "$LAYOUT") created"
+  echo "  Next: /gsd-sketch the main screen, let the user pick the winner, then fill"
+  echo "        sketch: .planning/sketches/<NNN-name>   and   pages: /path, /other/path"
+  ;;
+
+status)
+  printf 'ui_gates    %s\n' "$(gsd_ui_gates "$REPO")"
+  printf 'design      %s  (.planning/design/DESIGN.md)\n' "$(gsd_ui_design_state "$REPO")"
+  printf 'layout      %s  (%s)\n' "$(gsd_ui_layout_state "$REPO" "$PD" "$P")" "$(rel "$LAYOUT")"
+  printf 'screenshots %s  (%s)\n' "$(gsd_ui_shots_state "$PD" "$P")" "$(rel "$SHOTS_MD")"
+  ;;
+
+shots)
+  if [ "$SKIPPING" = 1 ]; then
+    printf '# Phase %s screenshots\n\nskipped: %s\n' "$N" "$SKIP" > "$SHOTS_MD"
+    echo "✔ $(rel "$SHOTS_MD") records the skip: $SKIP"; exit 0
+  fi
+  pages=$(gsd_ui_field "$LAYOUT" pages | tr ',' ' ')
+  [ -n "$pages" ] || die "no pages: in $(rel "$LAYOUT") — list the URL paths to shoot (run: gsd-ui layout $N)"
+  PW=$(gsd_ui_playwright "$REPO")
+  [ -n "$PW" ] || die "Playwright CLI not found. Install it in the app: npm i -D playwright && npx playwright install chromium
+  (or: gsd-ui shots $N --skip \"<reason>\")"
+
+  url=$(gsd_conf_get "$REPO" ui_url); url=${url:-http://localhost:\{port\}}
+  case "$url" in
+    *'{port:'*'}'*)
+      base=$(printf '%s' "$url" | sed -n -E 's/.*\{port:([0-9]+)\}.*/\1/p')
+      [ -n "$base" ] || die "ui_url has a bad {port:<number>} slot: $url"
+      url=$(printf '%s' "$url" | sed -E "s/\{port:[0-9]+\}/$((10#$base + int))/") ;;
+    *'{port}'*)
+      bases=$(find "$REPO" -maxdepth 3 -name package.json -not -path '*/node_modules/*' -print0 2>/dev/null \
+        | xargs -0 grep -hoE 'gsd-derive-port(\.sh)?[[:space:]]+[0-9]+' 2>/dev/null | grep -oE '[0-9]+$' | sort -u || true)
+      [ -n "$bases" ] || die "can't tell the app's port: no 'gsd-derive-port.sh <base>' in a package.json dev script.
+  Set it in .gsd.conf, e.g.:  ui_url = http://localhost:{port:3000}"
+      [ "$(printf '%s\n' "$bases" | wc -l | tr -d ' ')" = 1 ] || die "several base ports in package.json files ($(printf "%s" "$bases" | tr "\n" " ")) — pick one in .gsd.conf:  ui_url = http://localhost:{port:<base>}"
+      url=$(printf '%s' "$url" | sed "s/{port}/$((10#$bases + int))/") ;;
+  esac
+  url=${url%/}
+  curl -s -o /dev/null --max-time 5 "$url/" || die "nothing answers at $url — start the app (e.g. npm run dev in this worktree), then re-run
+  (or: gsd-ui shots $N --skip \"<reason>\")"
+
+  mkdir -p "$SHOTS_DIR"
+  # The PNGs stay local (large, change every run); SHOTS.md is the record.
+  [ -f "$SHOTS_DIR/.gitignore" ] || printf '*\n' > "$SHOTS_DIR/.gitignore"
+  list=""; n=0
+  for page in $pages; do
+    case "$page" in /*) ;; *) page="/$page" ;; esac
+    slug=$(printf '%s' "$page" | sed -E 's#^/##; s#[^A-Za-z0-9]+#-#g; s#-$##'); slug=${slug:-home}
+    for size in 375x812 768x1024 1440x900; do
+      w=${size%x*}; h=${size#*x}; out="$SHOTS_DIR/$slug-$w.png"
+      "$PW" screenshot --viewport-size="$w,$h" --full-page "$url$page" "$out" >/dev/null 2>&1 \
+        || die "screenshot failed: $url$page at ${w}px (try: $PW screenshot $url$page /tmp/x.png)"
+      list="${list}- $(basename "$SHOTS_DIR")/$slug-$w.png — $page at ${w}px"$'\n'; n=$((n + 1))
+    done
+  done
+  { printf '# Phase %s screenshots\n\n' "$N"
+    printf 'taken: %s\nurl: %s\nsketch: %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$url" "$(gsd_ui_field "$LAYOUT" sketch)"
+    printf 'The PNGs are local (not committed). ui-review compares them with the\nchosen sketch and the layout rules in %s.\n\n' "$(basename "$LAYOUT")"
+    printf '%s' "$list"; } > "$SHOTS_MD"
+  echo "✔ $n screenshot(s) in $(rel "$SHOTS_DIR")/, recorded in $(rel "$SHOTS_MD")"
+  ;;
+esac
