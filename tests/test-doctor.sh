@@ -179,6 +179,39 @@ before="$(git -C "$R" status --porcelain; git -C "$R" config --local --list | so
 DPATH="$WORK/nosdk" doc "$R"
 is "the repo is unchanged" "$(git -C "$R" status --porcelain; git -C "$R" config --local --list | sort)" "$before"
 
+section "--fix runs only the safe fixes, after asking"
+F="$WORK/fixme"; mkrepo "$F"
+git -C "$F" branch -q release && git -C "$F" push -q origin release && git -C "$F" branch -q -D release
+printf 'base = release\n' > "$F/.gsd.conf"
+mkdir -p "$F/scripts"; printf '#!/bin/sh\nexit 0\n' > "$F/scripts/gsd-premerge-check.sh"
+mkdir -p "$F/.git/gsd-cmd.lock"; echo 999999 > "$F/.git/gsd-cmd.lock/pid"
+git -C "$F" add -A && git -C "$F" commit -qm "fixture"; head_before=$(git -C "$F" rev-parse HEAD)
+origin_before=$(git -C "$F.origin.git" rev-parse develop)
+doc "$F"
+has "without --fix it points at --fix" "gsd-doctor --fix" "$OUT"
+PATH="$BASEPATH" gsd-doctor --fix --repo "$F" </dev/null > "$OUT" 2>&1
+has "--fix lists what it would run" "--fix will run" "$OUT"
+has "…no terminal: asks for --yes" "add --yes" "$OUT"
+[ -d "$F/.git/gsd-cmd.lock" ] && ok "…and changed nothing" || bad "…and changed nothing"
+PATH="$BASEPATH" gsd-doctor --fix --yes --repo "$F" > "$OUT" 2>&1
+[ ! -d "$F/.git/gsd-cmd.lock" ] && ok "--yes: dead lock removed (T030)" || bad "--yes: dead lock removed (T030)" "$(tail -5 "$OUT")"
+git -C "$F" show-ref --verify --quiet refs/heads/release && ok "--yes: base tracked from origin (T015)" || bad "--yes: base tracked from origin (T015)"
+[ -x "$F/scripts/gsd-premerge-check.sh" ] && ok "--yes: pre-merge script made executable (T019)" || bad "--yes: pre-merge script made executable (T019)"
+[ -f "$F/scripts/hooks/gsd-worktree-guard.sh" ] && ok "--yes: gsd-init ran (shims, T010)" || bad "--yes: gsd-init ran (shims, T010)"
+is "--yes: nothing committed" "$(git -C "$F" rev-parse HEAD)" "$head_before"
+is "--yes: nothing pushed" "$(git -C "$F.origin.git" rev-parse develop)" "$origin_before"
+has "…checks again after fixing" "Checking again" "$OUT"
+has "…and lists the changed files to review" "not committed" "$OUT"
+json "$F"
+hasnt "the safe findings are gone" '"T0\(10\|11\|12\|13\|14\|15\|19\|30\)"' "$OUT"
+printf '\n### Phase 02: dup\n' >> "$F/.planning/ROADMAP.md"
+PATH="$BASEPATH" gsd-doctor --fix --yes --repo "$F" > "$OUT" 2>&1
+has "a judgment finding (T025) is not auto-fixed" "none of these findings has a safe automatic fix" "$OUT"
+PATH="$BASEPATH" gsd-doctor --fix --json --repo "$F" > "$OUT" 2>&1
+has "--fix and --json don't mix" "don't mix" "$OUT"
+PATH="$BASEPATH" gsd-doctor --yes --repo "$F" > "$OUT" 2>&1
+has "--yes alone is refused" "only goes with --fix" "$OUT"
+
 section "install.sh --reuse-install-config keeps recorded agents"
 export GSD_BIN_DIR="$WORK/ibin" GSD_CODEX_SKILL_DIR="$WORK/codex-skills"
 export GSD_CLAUDE_SKILL_DIR="$WORK/claude-skills"

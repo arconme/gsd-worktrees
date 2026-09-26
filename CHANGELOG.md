@@ -4,6 +4,18 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.3.2
+
+- `gsd-doctor --fix`: after the normal check, runs only the safe fixes it
+  found — `gsd-init --no-launch --no-commit` (shims, merge rules, driver,
+  hook, instructions), `gsd-planning-repair` (planning damage and stale
+  STATE.md counters), `git branch --track <base>`, `chmod +x` on the pre-merge
+  script, and removing a lock whose process is gone. It lists them, asks
+  (y/N; `--yes` for scripts), runs them, checks again, and lists the changed
+  files. It never commits, pushes, checks out, deletes branches or edits
+  ROADMAP.md — those stay commands for you. Without `--fix`, doctor still
+  writes nothing, and it now says when `--fix` could help.
+
 ## 0.3.1
 
 - `gsd-ui shots`: a phase can name its app with `url:` in `<P>-LAYOUT.md`

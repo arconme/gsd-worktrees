@@ -458,12 +458,17 @@ PATH="$PKG/bin:$PATH" gsd-doctor --repo "$DOC" >/dev/null 2>&1
 is "working tree untouched"  "$(git -C "$DOC" status --porcelain)" "$before_tree"
 is "git config untouched"    "$(git -C "$DOC" config --local --list | sort)" "$before_cfg"
 is "no file contents changed" "$(find "$DOC" -type f -not -path '*/.git/*' | sort | xargs shasum 2>/dev/null | shasum)" "$before_files"
-is "no --fix flag exists" \
-   "$(PATH="$PKG/bin:$PATH" gsd-doctor --fix --repo "$DOC" 2>&1 | grep -c 'unknown argument')" 1
+# --fix is opt-in AND asks: with no terminal and no --yes it changes nothing.
+PATH="$PKG/bin:$PATH" gsd-doctor --fix --repo "$DOC" </dev/null >/dev/null 2>&1
+is "--fix unanswered: working tree untouched" "$(git -C "$DOC" status --porcelain)" "$before_tree"
+is "--fix unanswered: git config untouched"   "$(git -C "$DOC" config --local --list | sort)" "$before_cfg"
 
-# Once the repo is fitted, the repo-setup findings clear.
-PATH="$PKG/bin:$PATH" gsd-planning-repair --repo "$DOC" >/dev/null 2>&1
-( cd "$DOC" && PATH="$PKG/bin:$PATH" gsd-bootstrap-repo ) >/dev/null 2>&1
+# --fix --yes runs the scoped writers (gsd-init, gsd-planning-repair) itself;
+# the repo-setup and planning findings clear, and nothing is committed.
+head_before="$(git -C "$DOC" rev-parse HEAD)"
+out="$(PATH="$PKG/bin:$PATH" gsd-doctor --fix --yes --repo "$DOC" 2>&1)"
+is "--fix ran gsd-init and the repair" "$(grep -c '^▶ gsd-init\|^▶ gsd-planning-repair' <<<"$out")" 2
+is "--fix committed nothing"            "$(git -C "$DOC" rev-parse HEAD)" "$head_before"
 out="$(PATH="$PKG/bin:$PATH" gsd-doctor --repo "$DOC" 2>&1)"
 is "merge=union finding clears"   "$(grep -c 'still on merge=union' <<<"$out")" 0
 is "driver finding clears"        "$(grep -c 'merge driver not registered' <<<"$out")" 0

@@ -2,14 +2,15 @@
 #
 # gsd-doctor — read-only health check of a repo's GSD setup.
 #
-# Diagnoses; never fixes. Every finding names the command that fixes it, and you
-# run that yourself. There is deliberately no --fix: a command that writes
-# broadly is exactly what this toolkit does not want — the writes belong to
-# gsd-init (repo setup) and gsd-planning-repair (planning state), which are
-# scoped and reviewable. Being read-only is also what makes it safe to run
-# anywhere, any time, including on a repo you are mid-feature in.
+# Diagnoses. Every finding names the command that fixes it. Being read-only is
+# what makes it safe to run anywhere, any time, including on a repo you are
+# mid-feature in. `--fix` is opt-in and narrow: after the same read-only check
+# it runs only the mechanical, undoable fixes (the scoped writers gsd-init and
+# gsd-planning-repair, plus three one-liners), shows them first, asks, and
+# never commits. Anything that needs judgment stays a command for you.
 #
-# Nothing here writes to your repos: no fetch, no git config, no files there.
+# Without --fix nothing here writes to your repos: no fetch, no git config, no
+# files there.
 # Comparisons against origin therefore use the refs from your last fetch and are
 # marked as such. The one exception is the version check, which may ask GitHub
 # and npm for the latest versions (at most once a day) and caches the answers
@@ -17,10 +18,20 @@
 #
 # Usage:
 #   gsd-doctor [--repo <path>] [--quiet] [--json]
+#   gsd-doctor --fix [--yes] [--repo <path>]
 #
 # Options:
 #   --repo <path>  repo to inspect (default: the checkout containing cwd)
 #   --quiet        print findings and available updates only, not the checks that passed
+#   --fix          after the check, run the SAFE fixes it found — shown first,
+#                  then asked (y/N) — and check again. Safe = mechanical and
+#                  undoable: gsd-init --no-launch --no-commit (T010–T014,
+#                  T052, T058), gsd-planning-repair (T020, stale counters),
+#                  git branch --track <base> (T015), chmod +x the pre-merge
+#                  script (T019), remove a dead lock (T030). Never commits,
+#                  pushes, checks out, deletes branches or edits ROADMAP.md;
+#                  everything else stays a listed command.
+#   --yes          with --fix: don't ask (for scripts)
 #   --json         machine output, one object: repo, gsd_repo (false = not a
 #                  GSD repo, setup checks skipped), session_model, configured
 #                  (provider list), provider {name, command, available,
@@ -71,16 +82,22 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 REPO=""
 QUIET=0
 JSON=0
+FIX=0
+YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --repo) [ $# -ge 2 ] || die "--repo needs a value"; REPO="$2"; shift 2 ;;
     --quiet|-q) QUIET=1; shift ;;
     --json) JSON=1; QUIET=1; shift ;;
+    --fix|-f) FIX=1; shift ;;
+    --yes|-y) YES=1; shift ;;
     *) die "unknown argument: $1 (see gsd-doctor --help)" ;;
   esac
 done
 
+[ "$FIX" = 0 ] || [ "$JSON" = 0 ] || die "--fix and --json don't mix"
+[ "$YES" = 0 ] || [ "$FIX" = 1 ] || die "--yes only goes with --fix"
 if [ -z "$REPO" ]; then
   REPO="$(git rev-parse --show-toplevel 2>/dev/null)" \
     || die "not inside a git repository — pass --repo <path>"
@@ -101,8 +118,17 @@ update() {  # $1=name $2=installed $3=latest $4=command
 }
 JSON_ITEMS=""
 jstr() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\033' ; }
+# Safe fixes --fix may run: named actions, dispatched by run_safe below (no
+# eval of fix text). One copy each, in the order they must run.
+SAFE=""
+safe() { case $'\n'"$SAFE"$'\n' in *$'\n'"$1"$'\n'*) ;; *) SAFE="${SAFE:+$SAFE$'\n'}$1" ;; esac; }
 fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)  $3=code
   FINDINGS=$((FINDINGS + 1))
+  case "${3:-}" in
+    T010|T011|T012|T013|T014|T052|T058) safe init ;;
+    T020) safe repair ;;
+    T030) safe unlock ;;
+  esac
   if [ "$JSON" = 1 ]; then
     JSON_ITEMS="${JSON_ITEMS:+$JSON_ITEMS,}{\"code\":\"${3:-T000}\",\"message\":\"$(jstr "$1")\",\"fix\":\"$(jstr "$2")\"}"
     return 0
@@ -356,7 +382,7 @@ fi
 BASE="$(gsd_base "$MAIN")"
 if git -C "$MAIN" show-ref --verify --quiet "refs/heads/$BASE"; then :
 elif git -C "$MAIN" show-ref --verify --quiet "refs/remotes/origin/$BASE"; then
-  fail "base branch '$BASE' exists only on origin" "git branch --track $BASE origin/$BASE" "T015"
+  fail "base branch '$BASE' exists only on origin" "git branch --track $BASE origin/$BASE" "T015"; safe track
 else
   fail "base branch '$BASE' does not exist — claims and finishes have nothing to work on" "create it, or set base = <branch> in .gsd.conf" "T015"
 fi
@@ -370,7 +396,7 @@ if [ "$pm" != none ]; then
   pm_rel=${pm:-scripts/gsd-premerge-check.sh}
   case "$pm_rel" in /*) pm_abs=$pm_rel ;; *) pm_abs="$MAIN/$pm_rel" ;; esac
   if [ -e "$pm_abs" ] && [ ! -x "$pm_abs" ]; then
-    fail "pre-merge script $pm_rel is not executable — gsd-finish will refuse" "chmod +x $pm_rel (and commit it)" "T019"
+    fail "pre-merge script $pm_rel is not executable — gsd-finish will refuse" "chmod +x $pm_rel (and commit it)" "T019"; safe chmod; PM_ABS=$pm_abs
   elif [ -n "$pm" ] && [ ! -e "$pm_abs" ]; then
     fail "premerge = $pm, but that file does not exist — gsd-finish falls back to the tests" "fix premerge in .gsd.conf (or premerge = none)" "T019"
   elif [ -x "$pm_abs" ]; then
@@ -465,7 +491,9 @@ else
   out="$(gsd-planning-repair --repo "$MAIN" --check 2>&1)"; rc=$?
   case "$rc" in
     0) pass ".planning is coherent"
-       printf '%s\n' "$out" | grep -E '^  - ' | while IFS= read -r l; do note "${l#  - }"; done ;;
+       printf '%s\n' "$out" | grep -E '^  - ' | while IFS= read -r l; do note "${l#  - }"; done
+       # stale derived counters: the repair rewrites them from the plans
+       printf '%s\n' "$out" | grep -E '^  - ' >/dev/null && safe repair ;;
     1) fail ".planning contradicts itself (union-merge damage)" "gsd-planning-repair" "T020"
        printf '%s\n' "$out" | grep -E '^  • ' | sed 's/^  •/      ·/' ;;
     *) note ".planning has no ROADMAP.md — nothing to check" ;;
@@ -672,8 +700,58 @@ if [ "$JSON" = 1 ]; then
   [ "$FINDINGS" -eq 0 ]; exit $?
 fi
 echo ""
+# ── --fix: run the safe actions, then check again ────────────────────────────
+safe_label() {
+  case "$1" in
+    unlock) echo "rm -rf .git/gsd-cmd.lock          (the lock's process is gone)" ;;
+    track)  echo "git branch --track $BASE origin/$BASE" ;;
+    chmod)  echo "chmod +x ${PM_ABS#"$MAIN"/}" ;;
+    init)   echo "gsd-init --no-launch --no-commit  (shims, merge rules, driver, hook, instructions)" ;;
+    repair) echo "gsd-planning-repair               (.planning/ROADMAP.md + STATE.md)" ;;
+  esac
+}
+run_safe() {
+  case "$1" in
+    unlock) rm -rf "$MAIN/.git/gsd-cmd.lock" ;;
+    track)  git -C "$MAIN" branch -q --track "$BASE" "origin/$BASE" ;;
+    chmod)  chmod +x "$PM_ABS" ;;
+    init)   (cd "$MAIN" && "$GSD_PKG/bin/gsd-init" --no-launch --no-commit) ;;
+    repair) "$GSD_PKG/bin/gsd-planning-repair" --repo "$MAIN" ;;
+  esac
+}
+if [ "$FIX" = 1 ]; then
+  if [ -z "$SAFE" ]; then
+    [ "$FINDINGS" -eq 0 ] || echo "--fix: none of these findings has a safe automatic fix — run the commands below."
+  else
+    ordered=""
+    for a in unlock track chmod init repair; do case $'\n'"$SAFE"$'\n' in *$'\n'"$a"$'\n'*) ordered="$ordered $a" ;; esac; done
+    printf '\033[1m--fix will run (in %s):\033[0m\n' "$MAIN"
+    for a in $ordered; do printf '  %s\n' "$(safe_label "$a")"; done
+    answer=n
+    if [ "$YES" = 1 ]; then answer=y
+    elif [ -t 0 ]; then printf 'Run these? [y/N] '; read -r answer || answer=n
+    else echo "(not a terminal — add --yes to run them)"; fi
+    case "$answer" in
+      y|Y|yes|YES)
+        for a in $ordered; do
+          printf '\n▶ %s\n' "$(safe_label "$a" | sed 's/  *(.*//')"
+          run_safe "$a" || { printf '\033[31m✖ that fix failed — stopping; nothing after it ran\033[0m\n'; exit 1; }
+        done
+        echo ""
+        echo "Checking again:"
+        "$GSD_PKG/bin/gsd-doctor" --quiet --repo "$REPO"; rc=$?
+        echo ""
+        echo "Changed files (not committed — review with git diff, then commit):"
+        git -C "$MAIN" status --short | sed 's/^/  /'
+        exit "$rc" ;;
+      *) echo "Nothing changed." ;;
+    esac
+  fi
+  echo ""
+fi
 if [ "$FINDINGS" -eq 0 ]; then
   printf '\033[32m✔ no findings\033[0m\n'
+  [ "$FIX" = 1 ] || [ -z "$SAFE" ] || echo "(gsd-doctor --fix can tidy the notes above)"
   exit 0
 fi
 printf '\033[31m%d finding(s).\033[0m Run:\n\n' "$FINDINGS"
@@ -681,4 +759,5 @@ printf '\033[31m%d finding(s).\033[0m Run:\n\n' "$FINDINGS"
 printf '%s\n' "$FIXES" | while IFS= read -r fix; do printf '  %s\n' "$fix"; done
 echo ""
 echo "(then re-run gsd-doctor to confirm)"
+[ "$FIX" = 1 ] || [ -z "$SAFE" ] || echo "Some of these are safe to run for you:  gsd-doctor --fix"
 exit 1

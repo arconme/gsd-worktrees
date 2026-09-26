@@ -117,7 +117,7 @@ are marked and repeated bootstrap updates only those blocks. See
 | `gsd-start` | Claims a phase, pushes it, creates the worktree, prints the session command | Begin a feature. `-n "desc"` = new phase, `-p <N>` = existing one |
 | `gsd-list` | Table of every phase: number, plans done, stage, worktree | "What's in flight?" Read-only, safe anywhere |
 | `gsd-finish` | Merges the phase back to base, pushes, deletes worktree + branch. `--pr` pushes and opens a GitHub PR instead (branch protection) | Phase is done. No argument needed from inside the worktree |
-| `gsd-doctor` | Health check that names the command fixing each finding. `--json` for CI | Something feels off. Never writes anything |
+| `gsd-doctor` | Health check that names the command fixing each finding. `--json` for CI; `--fix` runs the safe fixes after asking | Something feels off. Writes nothing unless you pass `--fix` |
 | `gsd-update` | Installs a newer release (release installs) | When a command says a newer release is out |
 | `gsd-sync` | Updates a git-checkout toolkit, re-links commands, checks this repo's shims | Occasionally, or after a toolkit change |
 
