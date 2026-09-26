@@ -98,7 +98,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | One design system per project: `.planning/design/DESIGN.md` (stub marker until filled) + `refs/` | `gsd-ui design`, `lib/ui.sh` |
 | Per phase with screens: `<P>-LAYOUT.md` — chosen `/gsd-sketch` (`sketch:`, winner read from the sketch README) + `pages:`; `sketch: skip <reason>` | `gsd-ui layout`, `gsd-flow-next` |
 | Screenshots at 375 / 768 / 1440 px with the Playwright CLI into `<P>-SHOTS/` (not committed), recorded in `<P>-SHOTS.md`; `--skip "<reason>"` | `gsd-ui shots` |
-| App address: `ui_url` (default `http://localhost:{port}`); `{port}` = the phase's derived port, base from the `gsd-derive-port.sh <base>` dev script or `{port:<base>}` | `gsd-ui shots` |
+| App address: `url:` in `<P>-LAYOUT.md` (per phase — projects with several apps), else `ui_url` in `.gsd.conf`, else `http://localhost:{port}`; `{port}` = the phase's derived port, base from the `gsd-derive-port.sh <base>` dev script or `{port:<base>}` | `gsd-ui shots` |
 | `ui_gates = warn` (default: flow steps + doctor notes) / `strict` (guard blocks ui-phase and ui-review, doctor T080, T040 `ui-shots`) / `off` | `lib/ui.sh`, guard, doctor |
 | `gsd-init --no-ui` for projects without screens (`ui_gates = off`) | `gsd-init`, `gsd-bootstrap-repo` |
 | Optional provider tools printed by `gsd-init` (Claude: `frontend-design` plugin, Playwright MCP) — never required | `lib/provider.sh` |

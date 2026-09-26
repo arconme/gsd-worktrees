@@ -113,7 +113,7 @@ on `gsd-start` do not rewrite the set. Refer to `gsd-init --help` for setup flag
 | `tracker_command` | Executable for `tracker = custom` (see `docs/trackers.md`) |
 | `tracker_status_start`, `tracker_status_finish` | Ticket status set by `gsd-start` / `gsd-finish` |
 | `ui_gates` | UI quality gates: `warn` (default), `strict` (the guard enforces), `off` |
-| `ui_url` | App address for `gsd-ui shots`; default `http://localhost:{port}`; `{port}` / `{port:<base>}` = the phase's derived port |
+| `ui_url` | App address for `gsd-ui shots`; default `http://localhost:{port}`; `{port}` / `{port:<base>}` = the phase's derived port. A phase's `url:` in `<P>-LAYOUT.md` wins (projects with several apps) |
 
 `gsd-doctor` reports any other key as a likely typo (T017).
 

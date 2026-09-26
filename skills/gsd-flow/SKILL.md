@@ -41,7 +41,7 @@ Read `step=`, `run=`, `then=`, `stop=`, `note=`. Then:
 | `discuss` | Invoke or follow `gsd-discuss-phase <N>` live; the user answers. If `then=` says so, update the ticket to the agreed scope. |
 | `ui-decision` | Ask the user once: does this phase have screens? Re-run `gsd-flow-next` with `--ui` or `--no-ui` and keep passing that flag for the rest of this session. |
 | `design-system` | Run `gsd-ui design` (creates the stub). Agree the design system with the user — references, tokens, components, page templates — fill `.planning/design/DESIGN.md`, delete its stub line, commit. |
-| `layout` | Run `run=` (`gsd-ui layout <N>` and/or `gsd-sketch`). The user picks the winning sketch variant; write its folder in `sketch:` and the URL paths in `pages:` of `<P>-LAYOUT.md`, then commit. `sketch: skip <reason>` only when the user agrees. |
+| `layout` | Run `run=` (`gsd-ui layout <N>` and/or `gsd-sketch`). The user picks the winning sketch variant; write its folder in `sketch:` and the URL paths in `pages:` of `<P>-LAYOUT.md` (plus `url:` for the app, e.g. `http://localhost:{port:3100}`, when the project has several apps), then commit. `sketch: skip <reason>` only when the user agrees. |
 | `ui-phase` | Invoke/follow `gsd-ui-phase <N>`, following `note=` (DESIGN.md and the chosen sketch). Stop for screen approval. |
 | `plan` | Invoke/follow `gsd-plan-phase <N>`. |
 | `review` | Run the configured independent review. Stop and show verified findings, then replan with `--reviews`. If the review capability is unavailable, print the required next step and wait; do not treat the gate as complete. |

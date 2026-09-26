@@ -63,7 +63,7 @@ is "…and not overwritten" "$(cat "$R/.planning/design/DESIGN.md")" "## Tokens:
 section "gsd-ui layout"
 (cd "$R" && gsd-ui layout) > "$OUT" 2>&1
 has "phase from the branch; creates LAYOUT" "05-LAYOUT.md created" "$OUT"
-grep -q '^sketch:' "$PD/05-LAYOUT.md" && grep -q '^pages:' "$PD/05-LAYOUT.md" && ok "template has sketch: and pages:" || bad "template has sketch: and pages:"
+grep -q '^sketch:' "$PD/05-LAYOUT.md" && grep -q '^pages:' "$PD/05-LAYOUT.md" && grep -q '^url:' "$PD/05-LAYOUT.md" && ok "template has sketch:, pages: and url:" || bad "template has sketch:, pages: and url:"
 echo "pages: /, /cart" > "$PD/05-LAYOUT.md"
 (cd "$R" && gsd-ui layout 5) > "$OUT" 2>&1
 has "an existing LAYOUT is not overwritten" "already exists" "$OUT"
@@ -106,6 +106,25 @@ printf 'base = develop\ninstall = none\nui_url = http://localhost:%s\n' "$PORT" 
 (cd "$R" && gsd-ui shots 5) > "$OUT" 2>&1
 has "a fixed ui_url works too" "url: http://localhost:$PORT" "$PD/05-SHOTS.md"
 printf 'base = develop\ninstall = none\n' > "$R/.gsd.conf"
+
+section "gsd-ui shots — a project with several apps"
+mkdir -p "$R/apps/admin"
+printf '{ "scripts": { "dev": "PORT=$(bash ../../scripts/gsd-derive-port.sh 3100) next dev" } }\n' > "$R/apps/admin/package.json"
+(cd "$R" && gsd-ui shots 5) > "$OUT" 2>&1; rc=$?
+is "two base ports, no url → exit 1" "$rc" 1
+has "…asks for url: in the phase LAYOUT" "in 05-LAYOUT.md:  url: http://localhost:{port:<base>}" "$OUT"
+printf 'pages: /, /cart\nurl: http://localhost:{port:%s}\n' "$BASEPORT" > "$PD/05-LAYOUT.md"
+(cd "$R" && gsd-ui shots 5) > "$OUT" 2>&1; rc=$?
+is "url: in LAYOUT picks the app" "$rc" 0
+has "…with this phase's port" "url: http://localhost:$PORT" "$PD/05-SHOTS.md"
+printf 'base = develop\ninstall = none\nui_url = http://localhost:1\n' > "$R/.gsd.conf"
+(cd "$R" && gsd-ui shots 5) > "$OUT" 2>&1
+is "url: in LAYOUT wins over ui_url" "$?" 0
+printf 'pages: /\nurl: http://localhost:{port:x}\n' > "$PD/05-LAYOUT.md"
+(cd "$R" && gsd-ui shots 5) > "$OUT" 2>&1
+has "a bad slot names where it came from" "url: in 05-LAYOUT.md has a bad" "$OUT"
+printf 'base = develop\ninstall = none\n' > "$R/.gsd.conf"; rm -rf "$R/apps"
+echo "pages: /, /cart" > "$PD/05-LAYOUT.md"
 
 section "gsd-ui shots --skip and status"
 (cd "$R" && gsd-ui shots 5 --skip "no browser on this box") > "$OUT" 2>&1

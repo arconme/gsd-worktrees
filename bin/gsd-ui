@@ -19,7 +19,9 @@
 #
 # design and layout never overwrite a file; shots replaces the last screenshots.
 #
-# The app address: `ui_url` in .gsd.conf, default http://localhost:{port}.
+# The app address, first found: `url:` in <P>-LAYOUT.md (this phase's app —
+# for projects with several apps), `ui_url` in .gsd.conf, then
+# http://localhost:{port}.
 #   {port}       the port gsd-derive-port gives this phase, from the base port
 #                in a package.json dev script (gsd-derive-port.sh <base>)
 #   {port:5173}  the same, with the base port written here
@@ -111,18 +113,21 @@ shots)
   [ -n "$PW" ] || die "Playwright CLI not found. Install it in the app: npm i -D playwright && npx playwright install chromium
   (or: gsd-ui shots $N --skip \"<reason>\")"
 
-  url=$(gsd_conf_get "$REPO" ui_url); url=${url:-http://localhost:\{port\}}
+  url=$(gsd_ui_field "$LAYOUT" url); from="url: in $(basename "$LAYOUT")"
+  [ -n "$url" ] || { url=$(gsd_conf_get "$REPO" ui_url); from="ui_url in .gsd.conf"; }
+  [ -n "$url" ] || { url="http://localhost:{port}"; from=default; }
   case "$url" in
     *'{port:'*'}'*)
       base=$(printf '%s' "$url" | sed -n -E 's/.*\{port:([0-9]+)\}.*/\1/p')
-      [ -n "$base" ] || die "ui_url has a bad {port:<number>} slot: $url"
+      [ -n "$base" ] || die "$from has a bad {port:<number>} slot: $url"
       url=$(printf '%s' "$url" | sed -E "s/\{port:[0-9]+\}/$((10#$base + int))/") ;;
     *'{port}'*)
       bases=$(find "$REPO" -maxdepth 3 -name package.json -not -path '*/node_modules/*' -print0 2>/dev/null \
         | xargs -0 grep -hoE 'gsd-derive-port(\.sh)?[[:space:]]+[0-9]+' 2>/dev/null | grep -oE '[0-9]+$' | sort -u || true)
       [ -n "$bases" ] || die "can't tell the app's port: no 'gsd-derive-port.sh <base>' in a package.json dev script.
-  Set it in .gsd.conf, e.g.:  ui_url = http://localhost:{port:3000}"
-      [ "$(printf '%s\n' "$bases" | wc -l | tr -d ' ')" = 1 ] || die "several base ports in package.json files ($(printf "%s" "$bases" | tr "\n" " ")) — pick one in .gsd.conf:  ui_url = http://localhost:{port:<base>}"
+  Set it in $(basename "$LAYOUT"), e.g.:  url: http://localhost:{port:3000}
+  (or for every phase, in .gsd.conf:  ui_url = http://localhost:{port:3000})"
+      [ "$(printf '%s\n' "$bases" | wc -l | tr -d ' ')" = 1 ] || die "several base ports in package.json files ($(printf "%s" "$bases" | tr "\n" " ")) — say which app this phase uses, in $(basename "$LAYOUT"):  url: http://localhost:{port:<base>}"
       url=$(printf '%s' "$url" | sed "s/{port}/$((10#$bases + int))/") ;;
   esac
   url=${url%/}

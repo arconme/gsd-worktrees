@@ -100,7 +100,9 @@ change all three together, with tests in `tests/test-flow-next.sh` and
   `http://localhost:{port}`. `{port}` is the phase's derived port (base from the
   `gsd-derive-port.sh <base>` dev script); `{port:<base>}` writes the base in
   the URL. A fixed URL works but parallel phases then share one app. Pages come
-  from `pages:` in `<P>-LAYOUT.md`. The screenshot step is one command,
+  from `pages:` in `<P>-LAYOUT.md`. Projects with several apps (e.g. two
+  portals on 3000 and 3100) name the phase's app with `url:` in
+  `<P>-LAYOUT.md`, which wins over `ui_url` (0.3.1). The screenshot step is one command,
   `gsd-ui shots` (not a shim), using the Playwright CLI.
 - **On by default?** `ui_gates = warn` (default): `gsd-flow-next` shows the
   steps, doctor notes; `strict`: the guard blocks too and doctor reports T080;

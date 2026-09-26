@@ -4,6 +4,14 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.3.1
+
+- `gsd-ui shots`: a phase can name its app with `url:` in `<P>-LAYOUT.md`
+  (e.g. `url: http://localhost:{port:3100}`). It wins over `ui_url` in
+  `.gsd.conf`, so projects with several apps (two portals, an API) screenshot
+  the right one per phase. The LAYOUT template has the new `url:` line, and
+  the "several base ports" message says where to put it.
+
 ## 0.3.0
 
 UI quality gates — so phases with screens stop shipping ugly pages. See

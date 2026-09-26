@@ -8,7 +8,8 @@
 #   <P>-LAYOUT.md                per phase with screens: the chosen /gsd-sketch
 #                                (`sketch:`), the pages to shoot (`pages:`), and
 #                                the layout contract. `sketch: skip <reason>` is
-#                                an explicit, visible opt-out.
+#                                an explicit, visible opt-out. Optional `url:`
+#                                names this phase's app (several-app projects).
 #   <P>-SHOTS.md                 per phase: gsd-ui shots wrote screenshots (the
 #                                PNGs sit in <P>-SHOTS/, not committed), or
 #                                `skipped: <reason>`.
@@ -128,10 +129,13 @@ gsd_ui_layout_template() {  # $1=file $2=phase number — write the LAYOUT templ
 # Phase $2 layout
 
 <!-- gsd:layout — the layout contract for this phase's screens. gsd-flow-next
-     reads sketch: and pages:; gsd-ui shots reads pages:. -->
+     reads sketch: and pages:; gsd-ui shots reads pages: and url:.
+     url: is optional — the app to shoot when the project has several, e.g.
+     http://localhost:{port:3100} ({port:<base>} = this phase's port). -->
 
 sketch:
 pages:
+url:
 template:
 reference:
 
