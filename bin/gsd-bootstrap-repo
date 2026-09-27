@@ -107,45 +107,9 @@ if [ -f "$CANON" ] && grep -qx '<!-- gsd-worktrees:canonical -->' "$CANON"; then
   echo "• legacy canonical content backed up to $bak"
 fi
 [ -f "$CANON" ] || touch "$CANON"
-UI_TEXT=""
-if [ "$(gsd_ui_gates "$DEST")" != off ]; then
-  UI_TEXT="
-Screens: every screen uses the design system in \`.planning/design/DESIGN.md\`
-(tokens, components, page templates) — don't invent new styles. In a new
-project with screens, make the first phase \"Design system\". Each phase with
-screens picks a layout with \`/gsd-sketch\` before its UI-SPEC and records it in
-\`<P>-LAYOUT.md\`; \`gsd-ui shots <N>\` screenshots the built pages for
-ui-review. \`gsd-flow-next\` asks for each step (\`ui_gates\` in \`.gsd.conf\`).
-"
-fi
 canonical_block=$(mktemp)
-cat > "$canonical_block" <<EOF
-<!-- gsd-worktrees:canonical:start -->
-# GSD worktree workflow
-
-The shell commands are the source of truth. One feature equals one phase and
-worktree. Several configured providers may hand the same phase between their
-sessions; only one session may mutate that worktree at a time. Run \`gsd-list\`
-before claiming work; attach or hand off with
-\`gsd-start -p <N>\` or claim new work with \`gsd-start -n "<desc>"\`.
-
-Inside the worktree, run \`gsd-flow-next <N>\` before every phase action:
-ticket (with a tracker) → discuss → UI decision → with screens: design
-system, layout (sketch), UI phase → plan → independent review → replan →
-execute → verifier/gap loop → verify work → code review/fix → with screens:
-screenshots, UI review → security → done. The human decisions are discuss,
-the design system and sketch, UI approval, and review findings. Never bypass a guard unless the user explicitly requests
-\`GSD_SKIP_GUARD=1\`.
-
-\`gsd-finish\` is never automatic. Run it only with explicit user intent and as
-the final action because it removes the worktree. Provider hooks are early
-feedback only; \`gsd-flow-next\` invokes the mandatory neutral guard. Arbitrary
-shell commands outside GSD are outside this enforcement boundary.
-${UI_TEXT}
-Providers: \`$SELECTED\` (default: first, \`$DEFAULT\`); base \`$BASE\`;
-worktrees \`../$WT_DIR/\`.
-<!-- gsd-worktrees:canonical:end -->
-EOF
+ui_on=on; [ "$(gsd_ui_gates "$DEST")" != off ] || ui_on=off
+gsd_canonical_block "$SELECTED" "$DEFAULT" "$BASE" "$WT_DIR" "$ui_on" > "$canonical_block"
 gsd_replace_owned_block "$CANON" canonical "$canonical_block"
 rm -f "$canonical_block"
 echo '✔ .gsd/INSTRUCTIONS.md (canonical workflow instructions)'
@@ -159,17 +123,7 @@ preserve_legacy_claude() {
 }
 update_entrypoint() {
   local file=$1 provider=$2 block; block=$(mktemp)
-  cat > "$block" <<EOF
-<!-- gsd-worktrees:provider:start -->
-## GSD worktrees ($provider adapter)
-
-Read and follow \`.gsd/INSTRUCTIONS.md\`. Use the \`gsd-flow\` skill when it is
-available; otherwise run \`gsd-flow-next <N>\` and follow each printed action.
-For toolkit command syntax and workflow order, this marked adapter and the
-canonical document supersede older unmarked GSD text in this file. Continue to
-follow repository-specific policy from that older text.
-<!-- gsd-worktrees:provider:end -->
-EOF
+  gsd_provider_entry_block "$provider" > "$block"
   [ -f "$file" ] || touch "$file"
   gsd_replace_owned_block "$file" provider "$block"
   rm -f "$block"; echo "✔ ${file#"$DEST"/} ($provider entrypoint; unrelated content preserved)"

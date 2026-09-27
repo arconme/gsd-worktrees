@@ -26,7 +26,7 @@
 #   --fix          after the check, run the SAFE fixes it found — shown first,
 #                  then asked (y/N) — and check again. Safe = mechanical and
 #                  undoable: gsd-init --no-launch --no-commit (T010–T014,
-#                  T052, T058), gsd-planning-repair (T020, stale counters),
+#                  T016, T052, T058), gsd-planning-repair (T020, stale counters),
 #                  git branch --track <base> (T015), chmod +x the pre-merge
 #                  script (T019), remove a dead lock (T030). Never commits,
 #                  pushes, checks out, deletes branches or edits ROADMAP.md;
@@ -46,6 +46,8 @@
 #                  in repos with `flow = strict`; `flow_since = <N>` in .gsd.conf
 #                  limits it to phases >= N, `flow_skip = <N>, <N>…` leaves
 #                  out single phases, listed as a note).
+#                  T016 = the generated GSD instructions are older than this
+#                  toolkit (gsd-init refreshes them; --fix runs it).
 #                  T070–T073 = ticket tracker config (`tracker =` in .gsd.conf).
 #                  T080 = phases have screens but DESIGN.md is missing or a
 #                  stub (only with `ui_gates = strict`; a note otherwise).
@@ -126,7 +128,7 @@ safe() { case $'\n'"$SAFE"$'\n' in *$'\n'"$1"$'\n'*) ;; *) SAFE="${SAFE:+$SAFE$'
 fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)  $3=code
   FINDINGS=$((FINDINGS + 1))
   case "${3:-}" in
-    T010|T011|T012|T013|T014|T052|T058) safe init ;;
+    T010|T011|T012|T013|T014|T016|T052|T058) safe init ;;
     T020) safe repair ;;
     T030) safe unlock ;;
   esac
@@ -346,6 +348,35 @@ for f in CLAUDE.md AGENTS.md GEMINI.md; do
   for p in $members; do case "$configured" in *",$p,"*) ;; *) fail "stale $p provider block in $f" "remove only the stale provider's owned entrypoint, preserving shared providers and user content" "T054" ;; esac; done
   IFS=$oldifs
 done
+
+# T016 — the generated instruction text is older than this toolkit: compare
+# each marked block with what gsd-init would write today (the same functions
+# write it), so a release that does not change the text raises nothing.
+stale_docs=""
+canon_now=$(gsd_owned_block_get "$MAIN/.gsd/INSTRUCTIONS.md" canonical)
+if [ -n "$canon_now" ] && gsd_owned_markers_valid "$MAIN/.gsd/INSTRUCTIONS.md" canonical; then
+  ui_on=on; [ "$(gsd_ui_gates "$MAIN")" != off ] || ui_on=off
+  [ "$canon_now" = "$(gsd_canonical_block "$configured_list" "${configured_list%%,*}" "$(gsd_base "$MAIN")" "$(gsd_wtdir "$MAIN")" "$ui_on")" ] \
+    || stale_docs=" .gsd/INSTRUCTIONS.md"
+fi
+seen_files=","
+oldifs=$IFS; IFS=,
+for p in $configured_list; do
+  gsd_provider_known "$p" || continue
+  f=$(gsd_provider_instruction_file "$p")
+  case "$seen_files" in *",$f,"*) continue ;; esac
+  seen_files="$seen_files$f,"
+  members=""; for m in $configured_list; do [ "$(gsd_provider_instruction_file "$m")" != "$f" ] || members="${members:+$members,}$m"; done
+  block_now=$(gsd_owned_block_get "$MAIN/$f" provider)
+  [ -z "$block_now" ] || ! gsd_owned_markers_valid "$MAIN/$f" provider \
+    || [ "$block_now" = "$(gsd_provider_entry_block "$members")" ] || stale_docs="$stale_docs $f"
+done
+IFS=$oldifs
+if [ -n "$stale_docs" ]; then
+  fail "GSD instructions are older than this toolkit ($(gsd_version)):$stale_docs — agents follow the old rules" "gsd-init --no-launch" "T016"
+elif [ -n "$canon_now" ]; then
+  pass "GSD instructions match this toolkit ($(gsd_version))"
+fi
 
 [ -f "$MAIN/.gsd.conf" ] \
   && pass ".gsd.conf (base $(gsd_base "$MAIN"), worktrees $(gsd_wtdir "$MAIN"))" \

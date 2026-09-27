@@ -122,6 +122,66 @@ gsd_provider_instruction_integrated() { # repo, provider
     gsd_owned_markers_valid "$1/.gsd/INSTRUCTIONS.md" canonical
 }
 
+# The generated instruction blocks — one definition, written by
+# gsd-bootstrap-repo and compared by gsd-doctor (T016: out of date).
+gsd_canonical_block() { # providers, default provider, base, worktree dir, ui on|off
+  local ui_text=""
+  [ "${5:-on}" = off ] || ui_text="
+Screens: every screen uses the design system in \`.planning/design/DESIGN.md\`
+(tokens, components, page templates) — don't invent new styles. In a new
+project with screens, make the first phase \"Design system\". Each phase with
+screens picks a layout with \`/gsd-sketch\` before its UI-SPEC and records it in
+\`<P>-LAYOUT.md\`; \`gsd-ui shots <N>\` screenshots the built pages for
+ui-review. \`gsd-flow-next\` asks for each step (\`ui_gates\` in \`.gsd.conf\`).
+"
+  cat <<EOF
+<!-- gsd-worktrees:canonical:start -->
+# GSD worktree workflow
+
+The shell commands are the source of truth. One feature equals one phase and
+worktree. Several configured providers may hand the same phase between their
+sessions; only one session may mutate that worktree at a time. Run \`gsd-list\`
+before claiming work; attach or hand off with
+\`gsd-start -p <N>\` or claim new work with \`gsd-start -n "<desc>"\`.
+
+Inside the worktree, run \`gsd-flow-next <N>\` before every phase action:
+ticket (with a tracker) → discuss → UI decision → with screens: design
+system, layout (sketch), UI phase → plan → independent review → replan →
+execute → verifier/gap loop → verify work → code review/fix → with screens:
+screenshots, UI review → security → done. The human decisions are discuss,
+the design system and sketch, UI approval, and review findings. Never bypass a guard unless the user explicitly requests
+\`GSD_SKIP_GUARD=1\`.
+
+\`gsd-finish\` is never automatic. Run it only with explicit user intent and as
+the final action because it removes the worktree. Provider hooks are early
+feedback only; \`gsd-flow-next\` invokes the mandatory neutral guard. Arbitrary
+shell commands outside GSD are outside this enforcement boundary.
+${ui_text}
+Providers: \`$1\` (default: first, \`$2\`); base \`$3\`;
+worktrees \`../$4/\`.
+<!-- gsd-worktrees:canonical:end -->
+EOF
+}
+
+gsd_provider_entry_block() { # the providers sharing this instruction file
+  cat <<EOF
+<!-- gsd-worktrees:provider:start -->
+## GSD worktrees ($1 adapter)
+
+Read and follow \`.gsd/INSTRUCTIONS.md\`. Use the \`gsd-flow\` skill when it is
+available; otherwise run \`gsd-flow-next <N>\` and follow each printed action.
+For toolkit command syntax and workflow order, this marked adapter and the
+canonical document supersede older unmarked GSD text in this file. Continue to
+follow repository-specific policy from that older text.
+<!-- gsd-worktrees:provider:end -->
+EOF
+}
+
+gsd_owned_block_get() { # file, kind → the marked block as it is in the file
+  [ -f "$1" ] || return 0
+  sed -n "/^<!-- gsd-worktrees:$2:start -->\$/,/^<!-- gsd-worktrees:$2:end -->\$/p" "$1"
+}
+
 gsd_replace_owned_block() { # file, kind, new block file; caller prevalidates
   local tmp; tmp=$(mktemp) || return 1
   [ ! -f "$1" ] || cp -p "$1" "$tmp"

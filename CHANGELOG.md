@@ -4,6 +4,17 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.3.4
+
+- `gsd-doctor` T016: the project's GSD instructions (`.gsd/INSTRUCTIONS.md`
+  and the marked blocks in `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`) are older
+  than the installed toolkit, so agents follow old rules. Doctor compares
+  each block with what `gsd-init` would write today — a release that doesn't
+  change the text raises nothing, and your own text outside the blocks is
+  ignored. `gsd-doctor --fix` refreshes them (runs `gsd-init`).
+- The instruction text now has one definition in `lib/provider.sh`, shared by
+  `gsd-bootstrap-repo` and `gsd-doctor` (output unchanged).
+
 ## 0.3.3
 
 - `flow_skip` in `.gsd.conf`: leave single merged phases out of doctor's
