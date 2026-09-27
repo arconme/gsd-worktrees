@@ -323,6 +323,32 @@ gsd_ui_finish_gate() {  # $1=MAIN $2=phase branch $3=its worktree → 1 = refuse
   return 0
 }
 
+gsd_ui_stack() {  # $1=checkout → words for what the app uses: tailwind shadcn react (files only)
+  local f words=""
+  for f in "$1"/package.json "$1"/apps/*/package.json "$1"/packages/*/package.json; do
+    [ -f "$f" ] || continue
+    grep -q '"tailwindcss"' "$f" && words="$words tailwind"
+    grep -q '"react"' "$f" && words="$words react"
+  done
+  for f in "$1"/components.json "$1"/apps/*/components.json "$1"/packages/*/components.json; do
+    [ -f "$f" ] && words="$words shadcn"
+  done
+  printf '%s' "$words" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+
+gsd_ui_addon_present() {  # $1=checkout $2=addon (impeccable|shadcn-mcp) → true when it looks installed (files only)
+  local d
+  case "$2" in
+    impeccable)
+      for d in "$1/.claude/skills" "$1/.agents/skills" "$1/.gemini/skills" "$HOME/.claude/skills" "$HOME/.agents/skills" "$HOME/.gemini/skills"; do
+        [ -e "$d/impeccable" ] && return 0
+      done ;;
+    shadcn-mcp)
+      grep -qs 'shadcn' "$1/.mcp.json" "$HOME/.claude.json" "$HOME/.codex/config.toml" "$HOME/.gemini/settings.json" "$1/.gemini/settings.json" && return 0 ;;
+  esac
+  return 1
+}
+
 gsd_ui_scaffold_design() {  # $1=checkout — create the DESIGN.md stub + refs/ when missing; never overwrites
   local d="$1/.planning/design"
   mkdir -p "$d/refs"
@@ -341,13 +367,24 @@ styles: add to this file first, then use it.
 3–5 screenshots of real apps whose look you want, in `.planning/design/refs/`
 (Mobbin, Refero, or apps you use). One line each: what to take from it.
 
+Start from a real design system, not a blank page: ask the agent to browse
+https://styles.refero.design (real systems written for AI: colors, type,
+spacing) and pick the 3 closest to this product; the user chooses one, or
+which parts of each to mix. Name it here.
+
 ## Tokens
 
 Color, type scale, spacing, radius, shadow — and the file they live in.
 
+Fonts: pick them on purpose — the default font is the first sign of an
+AI-made page. Free: https://www.fontshare.com; pairs for headings and body:
+https://fontjoy.com.
+
 ## Components
 
-Name → file (seed from shadcn/Radix or the project's UI kit).
+Name → file (seed from shadcn/Radix or the project's UI kit). Take a tested
+part before drawing one: https://ui.shadcn.com, https://21st.dev,
+https://reactbits.dev (React). Icons from one set only.
 
 ## Page templates
 

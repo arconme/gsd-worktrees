@@ -56,6 +56,9 @@
 #                  stub (only with `ui_gates = strict`; a note otherwise).
 #                  T081 = pictures in a <P>-SHOTS/ folder are committed (the
 #                  same: a note unless `ui_gates = strict`).
+#                  Projects with screens also get notes (never findings) for
+#                  optional add-ons that fit their stack: the Impeccable
+#                  design skill, and the shadcn MCP for Tailwind / shadcn.
 #   -h, --help     show this help
 #
 # Exit status: 0 when everything checks out, 1 when there is a finding.
@@ -617,6 +620,21 @@ if [ "$UI_GATES" != off ] && gsd_ui_has_screens "$HERE"; then
   gsd_ui_playwright_installed "$HERE" \
     || note "no Playwright package for gsd-ui check (looked in the repo root, apps/*, packages/*) — in the app: npm i -D playwright && npx playwright install chromium"
   command -v node >/dev/null 2>&1 || note "no node on PATH — gsd-ui check needs it"
+  # Optional add-ons for better first drafts: notes only, never findings, and
+  # only what the project's files say fits. Nothing is run or installed.
+  ui_stack=" $(gsd_ui_stack "$HERE") "
+  ui_addons="impeccable"
+  case "$ui_stack" in *" tailwind "*|*" shadcn "*) ui_addons="$ui_addons shadcn-mcp" ;; esac
+  for addon in $ui_addons; do
+    gsd_ui_addon_present "$HERE" "$addon" && continue
+    oldifs=$IFS; IFS=,
+    for p in ${configured_list:-claude}; do
+      IFS=$oldifs
+      tip=$(gsd_provider_ui_addon "$p" "$addon") && note "optional for $p — $tip"
+      IFS=,
+    done
+    IFS=$oldifs
+  done
   # The pictures are large and change on every run: they stay local.
   shots_in_git=$(git -C "$HERE" ls-files -- .planning/phases 2>/dev/null | grep -E '/[0-9.]+-SHOTS/[^/]*[.](png|html)$' | sed -E 's#/[^/]*$##' | sort -u || true)
   if [ -n "$shots_in_git" ]; then

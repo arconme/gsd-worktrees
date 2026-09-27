@@ -57,6 +57,10 @@ section "gsd-ui design"
 has "creates the stub" "stub) and .planning/design/refs/ created" "$OUT"
 [ -f "$R/.planning/design/refs/.gitkeep" ] && ok "refs/ is kept in git" || bad "refs/ is kept in git"
 grep -q 'gsd:design-stub' "$R/.planning/design/DESIGN.md" && ok "stub carries the marker" || bad "stub carries the marker"
+has "stub: start from a real design system" "styles.refero.design" "$R/.planning/design/DESIGN.md"
+has "stub: pick fonts on purpose" "fontshare.com" "$R/.planning/design/DESIGN.md"
+has "stub: take tested parts" "21st.dev" "$R/.planning/design/DESIGN.md"
+has "stub: the layout rules R1–R10" "^- R10: Matches the chosen sketch" "$R/.planning/design/DESIGN.md"
 echo "## Tokens: ours" > "$R/.planning/design/DESIGN.md"
 (cd "$R" && gsd-ui design) > "$OUT" 2>&1
 has "a filled DESIGN.md is left alone" "is filled" "$OUT"
@@ -433,6 +437,25 @@ printf 'base = develop\ninstall = none\nflow = strict\n' > "$D/.gsd.conf"
 gsd-doctor --json --repo "$D" > "$OUT" 2>&1
 has "flow = strict alone: the flow steps…" "Phase 3 merged without:.* ui-review" "$OUT"
 hasnt "…but not the UI checks" "ui-check" "$OUT"
+section "gsd-doctor — optional add-ons (notes only)"
+printf 'base = develop\ninstall = none\n' > "$D/.gsd.conf"
+gsd-doctor --json --repo "$D" > "$OUT" 2>&1
+has "screens → Impeccable is suggested" "optional for claude — Impeccable design skill" "$OUT"
+hasnt "no Tailwind / shadcn → no shadcn MCP" "shadcn MCP" "$OUT"
+hasnt "…suggestions are never findings" '"T0[0-9]*","message":"[^"]*optional' "$OUT"
+printf '{ "devDependencies": { "tailwindcss": "^4" } }\n' > "$D/package.json"
+gsd-doctor --json --repo "$D" > "$OUT" 2>&1
+has "Tailwind → the shadcn MCP too" "shadcn MCP (the agent picks real components): npx shadcn@latest mcp init --client claude" "$OUT"
+rm "$D/package.json"; mkdir -p "$D/apps/web"; echo '{}' > "$D/apps/web/components.json"
+gsd-doctor --json --repo "$D" > "$OUT" 2>&1
+has "a components.json in apps/* → the shadcn MCP" "shadcn MCP" "$OUT"
+mkdir -p "$D/.claude/skills/impeccable"; printf '{"mcpServers":{"shadcn":{}}}\n' > "$D/.mcp.json"
+gsd-doctor --json --repo "$D" > "$OUT" 2>&1
+hasnt "installed add-ons are not suggested again" "optional for" "$OUT"
+printf 'base = develop\ninstall = none\nproviders = codex\n' > "$D/.gsd.conf"; rm -rf "$D/.claude" "$D/.mcp.json"
+gsd-doctor --json --repo "$D" > "$OUT" 2>&1
+has "the text follows the provider" "optional for codex — shadcn MCP: add \[mcp_servers.shadcn\]" "$OUT"
+rm -rf "$D/apps"; printf 'base = develop\ninstall = none\n' > "$D/.gsd.conf"
 B="$WORK/backend"; git init -q -b develop "$B"; mkdir -p "$B/.planning/phases/01-api"
 printf '# Roadmap\n' > "$B/.planning/ROADMAP.md"; git -C "$B" add -A && git -C "$B" commit -qm init
 gsd-doctor --repo "$B" > "$OUT" 2>&1

@@ -272,8 +272,9 @@ ui-check → ui-look → ui-approve → ui-review
   `storageState` file made by the project's own login script. It holds login
   secrets: the toolkit passes it to the browser, refuses a tracked file, and
   never copies it into a report.
-- **Add-on suggestions in doctor:** shadcn MCP (Tailwind / `components.json`),
-  MUI MCP, Figma MCP, the `frontend-design` plugin, Playwright MCP.
+- **Add-on suggestions in doctor:** built in 0.4.1 as Impeccable + the shadcn
+  MCP (Tailwind / `components.json`). MUI and Figma MCPs left out until their
+  setup can be checked.
 
 ## Not adopted (from the review)
 

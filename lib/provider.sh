@@ -73,6 +73,31 @@ gsd_provider_ui_tip() {
   esac
 }
 
+# Add-ons gsd-doctor suggests for a project with screens (notes, never
+# findings). $1=provider $2=addon → one line on how to get it; 1 = no text.
+#   impeccable  design skill: audit/critique/polish commands and automatic
+#               checks for AI-made pages (github.com/pbakaus/impeccable)
+#   shadcn-mcp  the shadcn registry as an MCP server (ui.shadcn.com/docs/mcp)
+gsd_provider_ui_addon() {
+  case "$2" in
+    impeccable)
+      case "$1" in
+        claude) printf '%s\n' 'Impeccable design skill (/impeccable audit, polish): copy dist/claude-code/.claude from github.com/pbakaus/impeccable into the project' ;;
+        codex)  printf '%s\n' 'Impeccable design skill: copy dist/agents/.agents and dist/codex/.codex/hooks.json from github.com/pbakaus/impeccable into the project' ;;
+        gemini) printf '%s\n' 'Impeccable design skill: copy dist/gemini/.gemini from github.com/pbakaus/impeccable into the project (needs Gemini skills enabled)' ;;
+        *) return 1 ;;
+      esac ;;
+    shadcn-mcp)
+      case "$1" in
+        claude) printf '%s\n' 'shadcn MCP (the agent picks real components): npx shadcn@latest mcp init --client claude' ;;
+        codex)  printf '%s\n' 'shadcn MCP: add [mcp_servers.shadcn] command = "npx", args = ["shadcn@latest", "mcp"] to ~/.codex/config.toml' ;;
+        gemini) printf '%s\n' 'shadcn MCP: add a server running npx shadcn@latest mcp to .gemini/settings.json' ;;
+        *) return 1 ;;
+      esac ;;
+    *) return 1 ;;
+  esac
+}
+
 # Shared registration metadata. Unsupported providers have no settings file.
 gsd_provider_hook_metadata() {
   case "$1" in

@@ -4,6 +4,24 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.1
+
+Better first drafts, from the "25 tricks for Claude design" tips that fit a
+code project.
+
+- The `DESIGN.md` stub (new projects) now says where to start: a real design
+  system from styles.refero.design (the agent offers the 3 closest, you
+  pick or mix), fonts chosen on purpose (Fontshare, FontJoy), and tested
+  parts before drawn ones (shadcn, 21st.dev, React Bits). It also lists the
+  layout rules R1–R10 that `gsd-ui look` uses. An existing `DESIGN.md` is
+  never touched.
+- The `design-system` flow step asks the agent to offer those real systems.
+- `gsd-doctor` suggests optional add-ons for projects with screens, as notes
+  (never findings), in the words of each configured provider: the Impeccable
+  design skill (audit / polish commands, automatic checks), and the shadcn
+  MCP when the app uses Tailwind or shadcn. It reads files only and stops
+  suggesting what is already installed.
+
 ## 0.4.0
 
 The UI steps now look at the built page, not only at the code

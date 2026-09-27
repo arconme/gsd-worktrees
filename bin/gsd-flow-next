@@ -160,7 +160,7 @@ fi
 if [ "$UI" = yes ] && [ "$GATES" != off ] && ! has UI-SPEC.md; then
   case "$(gsd_ui_design_state "$REPO")" in
     ok) ;;
-    *) emit design-system "gsd-ui design" "" "agree the design system with the user and fill .planning/design/DESIGN.md (references, tokens, components, page templates), then delete its stub line" "one design system for every phase with screens; it is filled once, usually by the first such phase. ui_gates = off in .gsd.conf turns the UI gates off" ;;
+    *) emit design-system "gsd-ui design" "" "agree the design system with the user and fill .planning/design/DESIGN.md (references, tokens, components, page templates), then delete its stub line. Start from real systems: offer the user the 3 closest from styles.refero.design, and chosen fonts, not the default" "one design system for every phase with screens; it is filled once, usually by the first such phase. ui_gates = off in .gsd.conf turns the UI gates off" ;;
   esac
   lrel="${pd#"$REPO"/}/$P-LAYOUT.md"
   case "$(gsd_ui_layout_state "$REPO" "$pd" "$P")" in

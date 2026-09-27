@@ -132,6 +132,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | `--fix` (asks y/N, `--yes` for scripts): runs only the safe fixes — gsd-init (T010–T014, T016, T052, T058), gsd-planning-repair (T020, stale counters), `git branch --track` (T015), `chmod +x` pre-merge (T019), dead lock (T030) — then checks again; never commits | `gsd-doctor` |
 | Finding codes: T001–T007 toolkit (incl. T005 no gsd-sdk, T006 no perl, T007 stale skills), T010–T019 repo setup (T015 base branch, T016 instructions older than the toolkit, T017 unknown `.gsd.conf` key, T018 bad value, T019 pre-merge gate), T020–T025 planning (T025 duplicate phase heading), T030–T032 hygiene (T032 failed worktree install), T040 flow debt, T050–T060 providers, T070–T073 tracker (T073 no ClickUp token), T080 no design system and T081 committed pictures (`ui_gates = strict`; notes otherwise), W017 / W027 shared with `/gsd-health` | `gsd-doctor` |
 | `--json` lists the notes too (`"notes"`) | `gsd-doctor` |
+| Optional add-on notes for projects with screens, per provider and stack (files only): Impeccable design skill; shadcn MCP for Tailwind / shadcn | `gsd-doctor`, `lib/ui.sh` (`gsd_ui_stack`), `lib/provider.sh` (`gsd_provider_ui_addon`) |
 | Checks for a newer GSD on npm and branches whose upstream is gone | `gsd-doctor` |
 
 ## 9. Install and maintenance

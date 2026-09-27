@@ -102,6 +102,7 @@ ustep() { "$NEXT" 5 --repo "$U" "$@" | sed -n 's/^step=//p'; }
 urun()  { "$NEXT" 5 --repo "$U" "$@" | sed -n 's/^run=//p'; }
 is "--ui, no DESIGN.md → design-system"        "$(ustep --ui)" design-system
 is "…run= gsd-ui design"                        "$(urun --ui)" "gsd-ui design"
+is "…stop= offers real design systems"          "$("$NEXT" 5 --repo "$U" --ui | grep -c '^stop=.*styles.refero.design')" 1
 PATH="$PKG/bin:$PATH" gsd-ui design --repo "$U" >/dev/null
 is "stub DESIGN.md → still design-system"       "$(ustep --ui)" design-system
 sed -i.bak '/gsd:design-stub/d' "$U/.planning/design/DESIGN.md"
