@@ -182,7 +182,8 @@ All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
   (+ `tracker_command`, `tracker_status_start` / `_finish`); keys are optional,
   falling back to auto-detection (develop/main, `<repo>-worktrees`, lockfile).
   `flow = strict` turns on the guard's phase-flow rule (below) and gsd-doctor's
-  phase-flow debt report (T040); `flow_since = <N>` limits that report to phases >= N.
+  phase-flow debt report (T040); `flow_since = <N>` limits that report to phases >= N,
+  and `flow_skip = <N>, <N>` leaves out single phases (listed as a note — a record, not a gap).
 - **`.gsd/INSTRUCTIONS.md`** — canonical marked workflow block. Selected providers
   get minimal entrypoints in `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`, plus
   optional native-hook settings where supported. Unrelated content is preserved.

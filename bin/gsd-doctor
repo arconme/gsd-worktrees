@@ -44,7 +44,8 @@
 #                  toolkit-only findings use T0xx.
 #                  T040 = a merged phase skipped a mandatory flow step (only
 #                  in repos with `flow = strict`; `flow_since = <N>` in .gsd.conf
-#                  limits it to phases >= N).
+#                  limits it to phases >= N, `flow_skip = <N>, <N>…` leaves
+#                  out single phases, listed as a note).
 #                  T070–T073 = ticket tracker config (`tracker =` in .gsd.conf).
 #                  T080 = phases have screens but DESIGN.md is missing or a
 #                  stub (only with `ui_gates = strict`; a note otherwise).
@@ -359,7 +360,7 @@ if [ -f "$MAIN/.gsd.conf" ]; then
     case "$line" in *=*) ;; *) bad_lines=$((bad_lines + 1)); continue ;; esac
     key=$(printf '%s' "${line%%=*}" | sed 's/[[:space:]]*$//')
     case "$key" in
-      base|wtdir|install|test|premerge|flow|flow_since|providers|provider|agent_command|review_provider|start_mode) ;;
+      base|wtdir|install|test|premerge|flow|flow_since|flow_skip|providers|provider|agent_command|review_provider|start_mode) ;;
       tracker|tracker_command|tracker_status_start|tracker_status_finish) ;;
       ui_gates|ui_url) ;;
       claude_command|codex_command|gemini_command|custom_command|claude_model|codex_model|gemini_model|custom_model) ;;
@@ -372,6 +373,9 @@ if [ -f "$MAIN/.gsd.conf" ]; then
   case "$v" in ''|strict|off|none) ;; *) fail "flow = '$v' is not a value (use strict, or remove it)" "edit .gsd.conf" "T018" ;; esac
   v=$(gsd_conf_get "$MAIN" flow_since)
   [ -z "$v" ] || printf '%s' "$v" | grep -qE '^[0-9]+(\.[0-9]+)?$' || fail "flow_since = '$v' is not a phase number" "edit .gsd.conf" "T018"
+  for v in $(gsd_conf_get "$MAIN" flow_skip | tr ',' ' '); do
+    printf '%s' "$v" | grep -qE '^[0-9]+(\.[0-9]+)?$' || fail "flow_skip has '$v', which is not a phase number" "edit .gsd.conf (e.g. flow_skip = 13.1, 14)" "T018"
+  done
   v=$(gsd_conf_get "$MAIN" start_mode)
   case "$v" in ''|discuss|flow) ;; *) fail "start_mode = '$v' is not a value (use discuss or flow)" "edit .gsd.conf" "T018" ;; esac
   v=$(gsd_conf_get "$MAIN" ui_gates)
@@ -576,13 +580,23 @@ fi
 if [ "$(gsd_conf_get "$MAIN" flow)" = "strict" ] && [ -f "$MAIN/.planning/ROADMAP.md" ]; then
   section "phase flow (flow = strict)"
   SINCE="$(gsd_conf_get "$MAIN" flow_since)"; SINCE="${SINCE:-0}"
+  # flow_skip: single phases accepted as they are (a record in .gsd.conf, not
+  # a silent gap). Compared normalized: 07 = 7, 02.1 = 2.1.
+  pn() { case "$1" in *[!0-9.]*|'') return 1 ;; *.*) printf '%s.%s' "$((10#${1%%.*}))" "${1#*.}" ;; *) printf '%s' "$((10#$1))" ;; esac; }
+  SKIP=" "; for v in $(gsd_conf_get "$MAIN" flow_skip | tr ',' ' '); do v=$(pn "$v") && SKIP="$SKIP$v "; done
   flow_has() { [ -f "$pd/$p-$1" ]; }
-  debt=0; checked=0
+  debt=0; checked=0; skipped=""
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     awk -v a="$n" -v b="$SINCE" 'BEGIN{exit !(a+0 >= b+0)}' || continue
-    case "$n" in *.*) p="$n" ;; *) p=$(printf '%02d' "$n") ;; esac
-    pd=""; for d in "$MAIN/.planning/phases/$p"-*; do [ -d "$d" ] && { pd="$d"; break; }; done
+    case "$SKIP" in *" $(pn "$n") "*) skipped="$skipped $n"; continue ;; esac
+    # dirs come padded (07-, 02.1- from gsd-sdk) or not (7.1-): try both, and
+    # take the artifact prefix from the dir that exists
+    ni=$((10#${n%%.*})); case "$n" in *.*) nd=".${n#*.}" ;; *) nd="" ;; esac
+    pd=""; for c in "$(printf '%02d' "$ni")$nd" "$ni$nd"; do
+      for d in "$MAIN/.planning/phases/$c"-*; do [ -d "$d" ] && { pd="$d"; p=$c; break 2; }; done
+    done
+    [ -n "$pd" ] || p="$(printf '%02d' "$ni")$nd"
     [ -n "$pd" ] || { note "Phase $n: no .planning/phases/$p-* directory (archived?) — skipped"; continue; }
     checked=$((checked + 1)); miss=""; fix=""
     # Only steps that still have an action AFTER the merge. Discuss and the
@@ -611,6 +625,7 @@ if [ "$(gsd_conf_get "$MAIN" flow)" = "strict" ] && [ -f "$MAIN/.planning/ROADMA
       fail "Phase $n merged without:$miss" "in a phase-$n worktree:${fix%;}" "T040"
     fi
   done < <(sed -n -E 's/^- \[x\] \*\*Phase ([0-9]+(\.[0-9]+)?):.*/\1/p' "$MAIN/.planning/ROADMAP.md")
+  [ -z "$skipped" ] || note "not checked (flow_skip in .gsd.conf):$skipped"
   [ "$debt" -eq 0 ] && pass "every merged phase since $SINCE carries its mandatory artifacts ($checked checked)"
 fi
 fi  # IS_GSD_REPO

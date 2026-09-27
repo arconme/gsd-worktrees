@@ -89,7 +89,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Guard check before every step it returns | `gsd-flow-next` |
 | Configurable cross-AI reviewer (`review_provider`, default `codex`) | `gsd-flow-next`, `lib/provider.sh` |
 | Agent-facing driver skill with human stop points (discuss, design system + sketch, screens, review) | `skills/gsd-flow` |
-| Doctor report of merged phases that skipped a mandatory step (T040, `flow_since`) | `gsd-doctor` |
+| Doctor report of merged phases that skipped a mandatory step (T040, `flow_since` cutoff, `flow_skip` single phases shown as a note) | `gsd-doctor` |
 
 ## 6b. UI quality gates ([ui-quality-plan.md](ui-quality-plan.md))
 

@@ -174,6 +174,25 @@ CLICKUP_API_TOKEN=pk_env json "$R"
 hasnt "a token in the env → no T073" '"T073"' "$OUT"
 cp "$WORK/conf.bak" "$R/.gsd.conf"
 
+section "flow debt: flow_skip leaves out single phases (T040)"
+S="$WORK/skip"; mkrepo "$S"
+mkdir -p "$S/.planning/phases/03-a" "$S/.planning/phases/04-b" "$S/.planning/phases/04.1-c"
+printf '# Roadmap\n\n- [x] **Phase 3: A**\n- [x] **Phase 4: B**\n- [x] **Phase 4.1: C**\n\n### Phase 3: A\n\n### Phase 4: B\n\n### Phase 4.1: C\n' > "$S/.planning/ROADMAP.md"
+printf 'base = develop\nflow = strict\n' > "$S/.gsd.conf"
+git -C "$S" add -A && git -C "$S" commit -qm phases
+json "$S"
+is "no flow_skip → 3 phases in debt" "$(grep -o '"T040"' "$OUT" | wc -l | tr -d ' ')" 3
+printf 'base = develop\nflow = strict\nflow_skip = 03, 4.1   # shipped before the rules\n' > "$S/.gsd.conf"
+json "$S"
+is "flow_skip = 03, 4.1 → only phase 4 left" "$(grep -o '"T040"' "$OUT" | wc -l | tr -d ' ')" 1
+has "…and it is phase 4" 'Phase 4 merged without' "$OUT"
+hasnt "flow_skip is a known key" '"T017"' "$OUT"
+doc "$S"
+has "skipped phases are listed as a note" 'not checked (flow_skip in .gsd.conf): 3 4.1' "$OUT"
+printf 'base = develop\nflow = strict\nflow_skip = 3, four\n' > "$S/.gsd.conf"
+json "$S"
+has "a bad flow_skip entry → T018" "flow_skip has 'four'" "$OUT"
+
 section "doctor only reads"
 before="$(git -C "$R" status --porcelain; git -C "$R" config --local --list | sort)"
 DPATH="$WORK/nosdk" doc "$R"

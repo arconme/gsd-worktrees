@@ -4,6 +4,15 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.3.3
+
+- `flow_skip` in `.gsd.conf`: leave single merged phases out of doctor's
+  flow-debt report (T040), e.g. `flow_skip = 13.1, 14   # shipped before the
+  rules`. Unlike `flow_since` (a cutoff), phases around them are still
+  checked, and doctor lists the skipped ones as a note. Bad entries are T018.
+- Fix: the T040 report now finds zero-padded decimal phase folders
+  (`04.1-…`, as gsd-sdk writes them) — such phases were silently skipped.
+
 ## 0.3.2
 
 - `gsd-doctor --fix`: after the normal check, runs only the safe fixes it

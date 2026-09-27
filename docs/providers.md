@@ -109,6 +109,7 @@ on `gsd-start` do not rewrite the set. Refer to `gsd-init --help` for setup flag
 | `test` | Test command; detected by project type, `none` skips tests |
 | `flow` | `strict` enables prerequisite checks; unset preserves legacy non-strict behavior |
 | `flow_since` | Minimum phase included in doctor's historical flow-debt report |
+| `flow_skip` | Phases left out of that report, e.g. `flow_skip = 13.1, 14` (accepted as they are; doctor lists them as a note) |
 | `tracker` | Ticket tracker: `none` (default), `clickup`, or `custom` |
 | `tracker_command` | Executable for `tracker = custom` (see `docs/trackers.md`) |
 | `tracker_status_start`, `tracker_status_finish` | Ticket status set by `gsd-start` / `gsd-finish` |
