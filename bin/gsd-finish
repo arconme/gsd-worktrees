@@ -114,6 +114,8 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 . "$GSD_PKG/lib/common.sh"
 # shellcheck source=../lib/tracker.sh
 . "$GSD_PKG/lib/tracker.sh"
+# shellcheck source=../lib/ui.sh
+. "$GSD_PKG/lib/ui.sh"
 
 MAIN=$(gsd_main .)
 FINISH="$GSD_PKG/bin/gsd-wt-finish"
@@ -185,6 +187,10 @@ if [ "$PR" = 1 ]; then
   PHASE_N=$(printf '%s' "$BR" | sed -E 's/^phase-([0-9]+(\.[0-9]+)?)-.*/\1/')
   HEAD_BR="$BR"
   git -C "$MAIN" show-ref --verify --quiet "refs/heads/$BR-pr" && HEAD_BR="$BR-pr"
+  # The same UI gate as the merge path (the PR is how this phase reaches the base).
+  PR_WT=$(git -C "$MAIN" worktree list --porcelain \
+            | awk -v b="branch refs/heads/$BR" '/^worktree /{w=substr($0,10)} $0==b{print w; exit}')
+  gsd_ui_finish_gate "$MAIN" "$BR" "${PR_WT:-}" || die "no PR was opened"
   echo "▶ pushing '$HEAD_BR'…"
   # No retry loop here: a rejected push means origin has commits this branch
   # lacks, and only the user can say how to integrate them.

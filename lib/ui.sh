@@ -10,13 +10,26 @@
 #                                the layout contract. `sketch: skip <reason>` is
 #                                an explicit, visible opt-out. Optional `url:`
 #                                names this phase's app (several-app projects).
-#   <P>-SHOTS.md                 per phase: gsd-ui shots wrote screenshots (the
-#                                PNGs sit in <P>-SHOTS/, not committed), or
-#                                `skipped: <reason>`.
+#                                For the check: `app:` (where Playwright is
+#                                installed), and per page `main_button:`,
+#                                `expect:`, `waive:`.
+#   <P>-UI-CHECK.md              per phase: what gsd-ui check measured on the
+#                                rendered pages. One run = one capture; the
+#                                pictures and the sheet sit in <P>-SHOTS/ (not
+#                                committed).
+#   <P>-UI-LOOK.md               per phase: what the agent saw, per picture and
+#                                rule, for that capture.
+#   <P>-UI-APPROVAL.md           per phase: the user's yes to that capture (or a
+#                                recorded waiver).
+#   <P>-SHOTS.md                 gsd-ui shots (manual, no checks; the flow step
+#                                before 0.4.0).
 #
 # ui_gates in .gsd.conf (main checkout): warn (default) = gsd-flow-next shows
-# the steps, doctor notes; strict = the guard blocks too, doctor reports
-# findings; off = none of it.
+# the steps, gsd-finish warns; strict = the guard and gsd-finish block too,
+# doctor reports findings; off = none of it.
+#
+# gsd_ui_gate is the one answer to "which UI step is open": gsd-flow-next, the
+# guard, gsd-wt-finish and gsd-doctor all ask it (docs/plan-ui-check.md).
 # Needs lib/common.sh.
 
 GSD_UI_STUB='<!-- gsd:design-stub'
@@ -75,11 +88,239 @@ gsd_ui_has_screens() {  # $1=checkout → true when any phase has a UI-SPEC or L
   return 1
 }
 
-gsd_ui_playwright() {  # $1=checkout → the playwright CLI to use ('' = none)
-  if [ -n "${GSD_PLAYWRIGHT:-}" ]; then printf '%s' "$GSD_PLAYWRIGHT"
-  elif [ -x "$1/node_modules/.bin/playwright" ]; then printf '%s' "$1/node_modules/.bin/playwright"
-  elif command -v playwright >/dev/null 2>&1; then command -v playwright
+gsd_ui_phase_screens() {  # $1=phase dir $2=P → true when this phase has screens
+  [ -f "$1/$2-UI-SPEC.md" ] || [ -f "$1/$2-LAYOUT.md" ]
+}
+
+gsd_ui_playwright() {  # $1=checkout $2=app: from LAYOUT ('' = none) → the playwright CLI ('' = none)
+  local d
+  if [ -n "${GSD_PLAYWRIGHT:-}" ]; then printf '%s' "$GSD_PLAYWRIGHT"; return 0; fi
+  for d in ${2:+"$1/$2"} "$1" "$1"/apps/* "$1"/packages/*; do
+    [ -x "$d/node_modules/.bin/playwright" ] && { printf '%s' "$d/node_modules/.bin/playwright"; return 0; }
+  done
+  if command -v playwright >/dev/null 2>&1; then command -v playwright; fi
+}
+
+gsd_ui_playwright_installed() {  # $1=checkout → true when a Playwright package is on disk (files only: nothing is run)
+  local d
+  for d in ${GSD_PLAYWRIGHT_ROOT:+"$GSD_PLAYWRIGHT_ROOT"} "$1" "$1"/apps/* "$1"/packages/*; do
+    [ -e "$d/node_modules/playwright/package.json" ] || [ -e "$d/node_modules/@playwright/test/package.json" ] || continue
+    return 0
+  done
+  return 1
+}
+
+# ── the rendered-page check (gsd-ui check / look / approve) ──────────────────
+# shellcheck disable=SC2034  # read by bin/gsd-ui
+GSD_UI_WIDTHS='375 768 1440'
+GSD_UI_RULES='R1|One main focus per screen
+R2|The main button is on the first screen, never covered
+R3|More than ~12 items → search, filters or tabs
+R4|One alignment system per page
+R5|Consistent title casing
+R6|Header and footer are lighter than the content
+R7|No large empty areas; cards in a row have equal structure
+R8|Images: same shape and treatment; no blank or near-empty images
+R9|Nothing wraps alone onto its own row at any size
+R10|Matches the chosen sketch: same sections, same order'
+
+gsd_ui_rules() {  # $1=checkout → `R<n>|<rule>` lines: the project's (DESIGN.md `- R<n>: …`), else the defaults
+  local r
+  r=$(sed -n -E 's/^- (R[0-9]+):[[:space:]]*(.*[^[:space:]])[[:space:]]*$/\1|\2/p' "$(gsd_ui_design_file "$1")" 2>/dev/null)
+  printf '%s\n' "${r:-$GSD_UI_RULES}"
+}
+
+gsd_ui_fm() {  # $1=file $2=key → the value in the file's frontmatter
+  sed -n '/^---$/,/^---$/p' "$1" 2>/dev/null | sed -n -E "s/^$2:[[:space:]]*//p" | head -1 | sed -e 's/[[:space:]]*$//'
+}
+
+gsd_ui_fields() {  # $1=file $2=key → the value of EVERY `key: value` line, one per line
+  [ -f "$1" ] || return 0
+  sed -n -E "s/^$2:[[:space:]]*//p" "$1" | sed -e 's/[[:space:]]*$//' -e '/^$/d'
+}
+
+gsd_ui_page_hash() {  # $1=page path → 6 hex; picture names carry it so /a/b and /a-b differ
+  printf '%s' "$1" | git hash-object --stdin | cut -c1-6
+}
+
+gsd_ui_min_font() {  # $1=checkout → ui_min_font (8–32), default 12
+  local v; v=$(gsd_conf_get "$(gsd_main "$1" 2>/dev/null || true)" ui_min_font)
+  [ -n "$v" ] || v=$(gsd_conf_get "$1" ui_min_font)
+  case "$v" in ''|*[!0-9]*) printf 12; return ;; esac
+  if [ "$((10#$v))" -ge 8 ] && [ "$((10#$v))" -le 32 ]; then printf '%s' "$((10#$v))"; else printf 12; fi
+}
+
+gsd_ui_code_state() {  # $1=checkout → a hash of the working tree outside .planning/ ('' = unknown)
+  # The tree git would write for the files as they are on disk now, so a commit
+  # of unchanged content keeps the hash. Built in a throwaway index and object
+  # directory: the checkout, its index and its object store are not touched.
+  local top idx objs tmp h
+  top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 0
+  idx=$(git -C "$top" rev-parse --git-path index 2>/dev/null) || return 0
+  objs=$(git -C "$top" rev-parse --git-path objects 2>/dev/null) || return 0
+  case "$idx" in /*) ;; *) idx="$top/$idx" ;; esac
+  case "$objs" in /*) ;; *) objs="$top/$objs" ;; esac
+  tmp=$(mktemp -d 2>/dev/null) || return 0
+  mkdir -p "$tmp/objects"
+  [ ! -f "$idx" ] || cp "$idx" "$tmp/index"
+  h=$(cd "$top" \
+    && GIT_INDEX_FILE="$tmp/index" GIT_OBJECT_DIRECTORY="$tmp/objects" GIT_ALTERNATE_OBJECT_DIRECTORIES="$objs" \
+       git add -A -- . ':(exclude).planning' >/dev/null 2>&1 \
+    && GIT_INDEX_FILE="$tmp/index" GIT_OBJECT_DIRECTORY="$tmp/objects" GIT_ALTERNATE_OBJECT_DIRECTORIES="$objs" \
+       git rm -r -q --cached --ignore-unmatch -- .planning >/dev/null 2>&1 \
+    && GIT_INDEX_FILE="$tmp/index" GIT_OBJECT_DIRECTORY="$tmp/objects" GIT_ALTERNATE_OBJECT_DIRECTORIES="$objs" \
+       git write-tree 2>/dev/null) || h=""
+  rm -rf "$tmp"
+  printf '%s' "$h"
+}
+
+gsd_ui_exempt() {  # $1=checkout $2=phase dir $3=P → true when the phase's UI review is already on the base branch
+  # Only a review that was MERGED exempts a phase from the newer steps; one
+  # written in the phase's own worktree exempts nothing.
+  local base rel ref
+  base=$(gsd_base "$(gsd_main "$1" 2>/dev/null || printf '%s' "$1")")
+  rel="${2#"$1"/}/$3-UI-REVIEW.md"
+  for ref in "refs/remotes/origin/$base" "refs/heads/$base"; do
+    git -C "$1" cat-file -e "$ref:$rel" 2>/dev/null && return 0
+  done
+  return 1
+}
+
+gsd_ui_check_state() {  # $1=checkout $2=phase dir $3=P $4=nostale ('' = compare the code) → missing|error|failed|skipped|stale|passed
+  local f="$2/$3-UI-CHECK.md" st code now
+  [ -f "$f" ] || { printf missing; return; }
+  st=$(gsd_ui_fm "$f" status)
+  case "$st" in
+    skipped) printf skipped; return ;;
+    passed|failed) ;;
+    *) printf error; return ;;
+  esac
+  code=$(gsd_ui_fm "$f" code)
+  if [ -z "${4:-}" ] && [ -n "$code" ]; then
+    now=$(gsd_ui_code_state "$1")
+    [ -z "$now" ] || [ "$now" = "$code" ] || { printf stale; return; }
   fi
+  printf '%s' "$st"
+}
+
+gsd_ui_check_list() {  # $1=UI-CHECK.md $2=section (Shots, Questions, …) → its `- a | b | c` lines, without the `- `
+  [ -f "$1" ] || return 0
+  awk -v want="## $2" '/^## /{on = ($0 == want); next} on && /^- /{print substr($0, 3)}' "$1"
+}
+
+gsd_ui_look_keys() {  # $1=checkout $2=phase dir $3=P → the answers a complete look file holds: `page|width|id` lines
+  local f="$2/$3-UI-CHECK.md" rules
+  rules=$(gsd_ui_rules "$1" | cut -d'|' -f1)
+  gsd_ui_check_list "$f" Shots | while IFS= read -r line; do
+    page=$(printf '%s' "$line" | awk -F' [|] ' '{print $1}'); w=$(printf '%s' "$line" | awk -F' [|] ' '{print $2}')
+    for r in $rules; do printf '%s|%s|%s\n' "$page" "$w" "$r"; done
+    gsd_ui_check_list "$f" Questions | awk -F' [|] ' -v p="$page" -v w="$w" '$2 == p && $3 == w {print p "|" w "|" $1}'
+  done
+}
+
+gsd_ui_look_answers() {  # $1=UI-LOOK.md → `page|width|id|verdict|text` for every answered line
+  [ -f "$1" ] || return 0
+  LC_ALL=C awk '
+    /^## / { page = ""; w = ""
+      n = split($0, a, " ")
+      if (n == 4 && a[3] == "at" && a[4] ~ /^[0-9]+px$/) { page = a[2]; w = a[4]; sub(/px$/, "", w) }
+      next }
+    page != "" && /^- [RQ][0-9]+:/ {
+      id = $2; sub(/:$/, "", id)
+      rest = $0; sub(/^- [RQ][0-9]+:[ \t]*/, "", rest)
+      verdict = rest; sub(/[ \t].*$/, "", verdict)
+      text = rest; sub(/^[^ \t]+[ \t]*/, "", text)
+      sub(/^(—|--|-|:)[ \t]*/, "", text); sub(/[ \t]+$/, "", text)
+      if (verdict == "ok" || verdict == "fixed" || verdict == "bad" || verdict == "n/a")
+        print page "|" w "|" id "|" verdict "|" text
+    }' "$1"
+}
+
+gsd_ui_look_state() {  # $1=checkout $2=phase dir $3=P → missing|stale|open|bad|complete
+  local f="$2/$3-UI-LOOK.md" cap
+  [ -f "$f" ] || { printf missing; return; }
+  cap=$(gsd_ui_fm "$2/$3-UI-CHECK.md" capture)
+  [ -n "$cap" ] && [ "$(gsd_ui_fm "$f" capture)" = "$cap" ] || { printf stale; return; }
+  { gsd_ui_look_keys "$1" "$2" "$3" | sed 's/^/K|/'; gsd_ui_look_answers "$f" | sed 's/^/A|/'; } | LC_ALL=C awk -F'|' '
+    $1 == "K" { want[$2 "|" $3 "|" $4] = 1; n++ }
+    $1 == "A" { k = $2 "|" $3 "|" $4; text = $6; for (i = 7; i <= NF; i++) text = text "|" $i
+                if (length(text) >= 3) got[k] = $5 }
+    END { if (n == 0) { print "open"; exit }
+          for (k in want) { if (!(k in got)) { open = 1 } else if (got[k] == "bad") bad = 1 }
+          if (open) print "open"; else if (bad) print "bad"; else print "complete" }' | tr -d '\n'
+}
+
+gsd_ui_approval_state() {  # $1=phase dir $2=P → missing|stale|ok|waived
+  local f="$1/$2-UI-APPROVAL.md"
+  [ -f "$f" ] || { printf missing; return; }
+  case "$(gsd_ui_fm "$f" status)" in
+    waived) [ -n "$(gsd_ui_fm "$f" reason)" ] && printf waived || printf missing ;;
+    approved)
+      if [ -n "$(gsd_ui_fm "$f" capture)" ] && [ "$(gsd_ui_fm "$f" capture)" = "$(gsd_ui_fm "$1/$2-UI-CHECK.md" capture)" ]; then printf ok
+      else printf stale; fi ;;
+    *) printf missing ;;
+  esac
+}
+
+gsd_ui_gate() {  # $1=checkout $2=phase dir $3=P $4=nostale → `step|state|what is open` for the first open UI step ('' = none)
+  local cs ls as
+  cs=$(gsd_ui_check_state "$1" "$2" "$3" "${4:-}")
+  case "$cs" in
+    missing) printf 'ui-check|missing|the rendered pages were never checked (no %s-UI-CHECK.md)' "$3"; return ;;
+    error)   printf 'ui-check|error|the last check could not run: %s' "$(gsd_ui_fm "$2/$3-UI-CHECK.md" error)"; return ;;
+    failed)  printf 'ui-check|failed|the check found %s problem(s) — see %s-UI-CHECK.md' "$(gsd_ui_fm "$2/$3-UI-CHECK.md" failures)" "$3"; return ;;
+    stale)   printf 'ui-check|stale|the code changed after the last check'; return ;;
+  esac
+  if [ "$cs" = passed ]; then
+    ls=$(gsd_ui_look_state "$1" "$2" "$3")
+    case "$ls" in
+      complete) ;;
+      missing) printf 'ui-look|missing|nobody wrote down what the pictures show (no %s-UI-LOOK.md)' "$3"; return ;;
+      stale)   printf 'ui-look|stale|%s-UI-LOOK.md describes older pictures' "$3"; return ;;
+      bad)     printf 'ui-look|bad|%s-UI-LOOK.md has a line marked bad — fix the page, then check again' "$3"; return ;;
+      *)       printf 'ui-look|open|%s-UI-LOOK.md has lines without an answer' "$3"; return ;;
+    esac
+  fi
+  as=$(gsd_ui_approval_state "$2" "$3")
+  case "$as" in
+    ok|waived) ;;
+    stale) printf 'ui-approve|stale|the user approved older pictures' ;;
+    *)     printf 'ui-approve|missing|the user has not approved the pages' ;;
+  esac
+}
+
+gsd_ui_step_cmd() {  # $1=step $2=phase number → the command that closes it
+  case "$1" in
+    ui-check)   printf 'gsd-ui check %s' "$2" ;;
+    ui-look)    printf 'gsd-ui look %s, then answer every line' "$2" ;;
+    ui-approve) printf 'show the user the sheet (gsd-ui sheet %s); on a yes: gsd-ui approve %s' "$2" "$2" ;;
+  esac
+}
+
+gsd_ui_finish_gate() {  # $1=MAIN $2=phase branch $3=its worktree → 1 = refuse the finish (ui_gates = strict)
+  local gates n ni nd c d pd="" p="" gate
+  gates=$(gsd_ui_gates "$1")
+  [ "$gates" != off ] || return 0
+  [ -d "$3" ] || return 0
+  n=$(printf '%s' "$2" | sed -n -E 's/^phase-([0-9]+([.][0-9]+)?)-.*/\1/p')
+  [ -n "$n" ] || return 0
+  ni=$((10#${n%%.*})); case "$n" in *.*) nd=".${n#*.}" ;; *) nd="" ;; esac
+  for c in "$(printf '%02d' "$ni")$nd" "$ni$nd"; do
+    for d in "$3/.planning/phases/$c"-*; do [ -d "$d" ] && { pd=$d; p=$c; break 2; }; done
+  done
+  [ -n "$pd" ] || return 0
+  gsd_ui_phase_screens "$pd" "$p" || return 0
+  ! gsd_ui_exempt "$3" "$pd" "$p" || return 0
+  gate=$(gsd_ui_gate "$3" "$pd" "$p")
+  [ -n "$gate" ] || return 0
+  if [ "$gates" = strict ] && [ "${GSD_SKIP_GUARD:-}" != 1 ]; then
+    echo "✗ phase $n has screens and its UI steps are open (ui_gates = strict): ${gate##*|}." >&2
+    echo "  In the phase worktree: $(gsd_ui_step_cmd "${gate%%|*}" "$n")   (or GSD_SKIP_GUARD=1 if the user asked to skip it)" >&2
+    return 1
+  fi
+  echo "⚠ phase $n has screens and its UI steps are open: ${gate##*|} — next: $(gsd_ui_step_cmd "${gate%%|*}" "$n")" >&2
+  [ "$gates" != strict ] || echo "  (GSD_SKIP_GUARD=1 — finishing anyway)" >&2
+  return 0
 }
 
 gsd_ui_scaffold_design() {  # $1=checkout — create the DESIGN.md stub + refs/ when missing; never overwrites
@@ -115,12 +356,11 @@ screens use in `<P>-LAYOUT.md`.
 
 ## Layout rules
 
-- One main focus per screen.
-- More than ~12 items → search, filters or tabs.
-- The main button is on the first screen and never covered (cookie banner,
-  chat bubble).
-- One alignment system per page; consistent title casing.
+Every picture of a built page is held against these (`gsd-ui look`). Edit
+them for this project; keep the `- R<n>: ` form.
+
 EOF
+  printf '%s\n' "$GSD_UI_RULES" | sed -E 's/^(R[0-9]+)[|]/- \1: /' >> "$d/DESIGN.md"
 }
 
 gsd_ui_layout_template() {  # $1=file $2=phase number — write the LAYOUT template; never overwrites
@@ -129,15 +369,25 @@ gsd_ui_layout_template() {  # $1=file $2=phase number — write the LAYOUT templ
 # Phase $2 layout
 
 <!-- gsd:layout — the layout contract for this phase's screens. gsd-flow-next
-     reads sketch: and pages:; gsd-ui shots reads pages: and url:.
-     url: is optional — the app to shoot when the project has several, e.g.
-     http://localhost:{port:3100} ({port:<base>} = this phase's port). -->
+     reads sketch: and pages:; gsd-ui check reads the rest.
+     - url (optional): the app to open when the project has several, e.g.
+       http://localhost:{port:3100} ({port:<base>} = this phase's port).
+     - app (optional): the folder where Playwright is installed, e.g. apps/web.
+     - main_button: one line per page — "/path = Button text", or
+       "/path = css=<selector>", or "/path = none". Without "/path =" the
+       line holds for every page.
+     - expect (optional): "/path = text that must be visible on that page".
+     - waive (only with the user's yes), one line per accepted finding:
+       "<check> | <page> | <width> | <target> | <reason>"  (* = any). -->
 
 sketch:
 pages:
 url:
+app:
 template:
 reference:
+main_button:
+expect:
 
 ## Sections, top to bottom
 

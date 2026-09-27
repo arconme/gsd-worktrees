@@ -23,8 +23,13 @@
 #                                ui-phase   needs a filled DESIGN.md and a
 #                                           <P>-LAYOUT.md with a chosen sketch
 #                                           (or sketch: skip <reason>)
-#                                ui-review  needs <P>-SHOTS.md (gsd-ui shots,
-#                                           or its --skip record)
+#                                ui-review  needs the checks of the built
+#                                           pages, each current: a passed
+#                                           <P>-UI-CHECK.md (gsd-ui check), a
+#                                           complete <P>-UI-LOOK.md, and
+#                                           <P>-UI-APPROVAL.md (the user's
+#                                           yes). Exempt: a phase whose UI
+#                                           review is already on the base
 #
 # Block = exit 2 (stderr shown). Escape hatch: GSD_SKIP_GUARD=1.
 # Repo settings (base branch, install cmd, flow): .gsd.conf, see gsd-bootstrap-repo.
@@ -219,7 +224,13 @@ if [ "$UI_STRICT" = 1 ]; then
         *) ui_block "$P-LAYOUT.md with a chosen sketch and pages" "gsd-ui layout $N, /gsd-sketch, then fill sketch: and pages:" ;;
       esac ;;
     gsd-ui-review)
-      [ -n "$pdir" ] && [ "$(gsd_ui_shots_state "$pdir" "$P")" != missing ] || ui_block "$P-SHOTS.md (screenshots of the built pages)" "gsd-ui shots $N  (or gsd-ui shots $N --skip \"<reason>\")" ;;
+      # check → look → approval, each for the pages as they are now. A phase
+      # whose UI review is already on the base branch predates these steps.
+      [ -n "$pdir" ] || ui_block "a phase folder with the UI check of the built pages" "gsd-ui check $N"
+      if ! gsd_ui_exempt "$dir" "$pdir" "$P"; then
+        gate=$(gsd_ui_gate "$dir" "$pdir" "$P")
+        [ -z "$gate" ] || ui_block "the UI steps before it — ${gate##*|}" "$(gsd_ui_step_cmd "${gate%%|*}" "$N")"
+      fi ;;
   esac
 fi
 [ "$FLOW_STRICT" = 1 ] || exit 0

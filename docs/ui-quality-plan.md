@@ -1,5 +1,9 @@
 # UI quality plan
 
+Follow-up: **0.4.0** adds the check of the rendered pages, the look file and
+the approval — see [plan-ui-check.md](plan-ui-check.md). `gsd-ui check`
+replaces `gsd-ui shots` as the flow step.
+
 Status: **built in 0.3.0** (2026-09-26). Items 1–7 below are in `lib/ui.sh`,
 `bin/gsd-ui`, `gsd-flow-next`, the guard (rule 5), doctor (T080) and bootstrap.
 The answers to the open questions are at the end. Written 2026-09-25.

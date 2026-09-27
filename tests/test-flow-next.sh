@@ -8,6 +8,8 @@ ok()  { PASS=$((PASS + 1)); printf '  ✔ %s\n' "$1"; }
 bad() { FAIL=$((FAIL + 1)); printf '  ✘ %s\n' "$1"; [ $# -gt 1 ] && printf '      %s\n' "$2"; }
 is()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 section() { printf '\n%s\n' "$1"; }
+# shellcheck source=ui-fixture.sh
+. "$HERE/ui-fixture.sh"
 
 REPO="$WORK/r"; PD="$REPO/.planning/phases/07-thing"; mkdir -p "$PD"
 git -C "$REPO" init -q -b develop
@@ -46,8 +48,12 @@ fm VERIFICATION.md passed;     is "passed → verify-work"       "$(step)" verif
 fm HUMAN-UAT.md partial;       is "partial UAT → verify-work"  "$(step)" verify-work
 fm HUMAN-UAT.md complete;      is "UAT complete → code-review (missing)" "$(step)" code-review
 fm REVIEW.md issues_found;     is "issues_found, no FIX → code-review" "$(step)" code-review
-: > "$PD/07-REVIEW-FIX.md";    is "FIX present → screenshots"   "$(step)" screenshots
-printf 'taken: x\n' > "$PD/07-SHOTS.md"; is "SHOTS → ui-review"     "$(step)" ui-review
+: > "$PD/07-REVIEW-FIX.md";    is "FIX present → ui-check"      "$(step)" ui-check
+printf 'taken: x\n' > "$PD/07-SHOTS.md"; is "0.3.x SHOTS.md alone → still ui-check" "$(step)" ui-check
+ui_fix_check "$PD" 07 failed;  is "check failed → ui-check"     "$(step)" ui-check
+ui_fix_check "$PD" 07 passed;  is "check passed → ui-look"      "$(step)" ui-look
+ui_fix_look "$PD" 07;          is "look complete → ui-approve"  "$(step)" ui-approve
+ui_fix_approval "$PD" 07;      is "approved → ui-review"        "$(step)" ui-review
 : > "$PD/07-UI-REVIEW.md";     is "UI-REVIEW → secure"          "$(step)" secure
 fm SECURITY.md verified "threats_open: 2"; is "2 open threats → secure" "$(step)" secure
 fm SECURITY.md verified "threats_open: 0"; is "0 open → done"  "$(step)" "done"
@@ -57,6 +63,9 @@ is "done run= is gsd-finish" "$("$NEXT" 7 --repo "$REPO" | sed -n 's/^run=//p')"
 is "--all lists every remaining step" "$("$NEXT" 7 --repo "$REPO" --all | grep -c '^step=')" 1
 rm "$PD/07-REVIEWS.md" "$PD/07-UI-REVIEW.md"
 is "--all with two gaps lists 3 (review, ui-review, done)" "$("$NEXT" 7 --repo "$REPO" --all | grep -c '^step=')" 3
+rm "$PD/07-UI-APPROVAL.md"
+is "--all with the approval gone lists 4" "$("$NEXT" 7 --repo "$REPO" --all | sed -n 's/^step=//p' | tr '\n' ' ')" "review ui-approve ui-review done "
+ui_fix_approval "$PD" 07
 is "--json emits one object" "$("$NEXT" 7 --repo "$REPO" --json | head -1 | grep -c '"step":"review"')" 1
 is "review has a then= replan" "$("$NEXT" 7 --repo "$REPO" | sed -n 's/^then=//p')" "/gsd-plan-phase 7 --reviews"
 git -C "$REPO" checkout -q -b phase-8-thing
@@ -82,7 +91,7 @@ git -C "$REPO" checkout -q phase-7-thing
 printf 'flow = strict\ninstall = none\n' > "$REPO/.gsd.conf"
 "$NEXT" 7 --repo "$REPO" --all >/dev/null 2>&1; is "preview does not enforce gates of future steps" "$?" 0
 
-section "UI gates (design system, layout, screenshots)"
+section "UI gates (design system, layout, the checks of the rendered pages)"
 unset GSD_TRACKER
 U="$WORK/u"; UPD="$U/.planning/phases/05-shop"; mkdir -p "$UPD"
 git -C "$U" init -q -b develop
@@ -121,14 +130,57 @@ is "ui_gates = off → straight to ui-phase"      "$(ustep --ui)" ui-phase
 : > "$UPD/05-UI-SPEC.md"; : > "$UPD/05-01-PLAN.md"; : > "$UPD/05-01-SUMMARY.md"; : > "$UPD/05-REVIEWS.md"; : > "$UPD/05-VERIFICATION.md"
 printf -- '---\nstatus: complete\n---\n' > "$UPD/05-UAT.md"; : > "$UPD/05-REVIEW.md"
 git -C "$U" add -A >/dev/null; git -C "$U" -c user.name=t -c user.email=t@t commit -qm all
-is "ui_gates = off → no screenshots step"       "$(ustep)" ui-review
+is "ui_gates = off → no ui-check step"          "$(ustep)" ui-review
 rm "$U/.gsd.conf"
-is "warn (default) → screenshots before ui-review" "$(ustep)" screenshots
-is "…run= gsd-ui shots 5"                       "$(urun)" "gsd-ui shots 5"
-printf 'skipped: no browser\n' > "$UPD/05-SHOTS.md"
-is "a skip record → ui-review"                  "$(ustep)" ui-review
-is "…skip: note stays plain"                    "$("$NEXT" 5 --repo "$U" | sed -n 's/^note=//p')" "phase has screens"
-printf 'taken: now\n' > "$UPD/05-SHOTS.md"
-is "real shots → ui-review note compares them"  "$("$NEXT" 5 --repo "$U" | grep -c '^note=.*compare the screenshots')" 1
+unote() { "$NEXT" 5 --repo "$U" | sed -n 's/^note=//p'; }
+is "warn (default) → ui-check before ui-review" "$(ustep)" ui-check
+is "…run= gsd-ui check 5"                       "$(urun)" "gsd-ui check 5"
+is "…--all lists check, look, approve, review"  "$("$NEXT" 5 --repo "$U" --all | sed -n 's/^step=//p' | tr '\n' ' ')" "ui-check ui-look ui-approve ui-review secure done "
+printf -- '---\nstatus: error\nerror: nothing answers at http://localhost:3005\n---\n' > "$UPD/05-UI-CHECK.md"
+is "a run that could not finish → ui-check"     "$(ustep)" ui-check
+is "…the note says why"                         "$(unote | grep -c 'nothing answers')" 1
+ui_fix_check "$UPD" 05 failed
+is "failed check → ui-check, note names waive:" "$(ustep)/$(unote | grep -c 'waive:')" "ui-check/1"
+ui_fix_check "$UPD" 05 passed cap1 0000000000000000000000000000000000000000
+is "code changed since the check → ui-check"    "$(ustep)" ui-check
+is "…the note says the code changed"            "$(unote | grep -c 'the code changed after the last check')" 1
+. "$PKG/lib/common.sh"; . "$PKG/lib/ui.sh"
+ui_fix_check "$UPD" 05 passed cap1 "$(gsd_ui_code_state "$U")"
+is "check made on this code → ui-look"          "$(ustep)" ui-look
+is "…run= gsd-ui look 5"                        "$(urun)" "gsd-ui look 5"
+git -C "$U" add -A >/dev/null; git -C "$U" -c user.name=t -c user.email=t@t commit -qm "ui check"
+is "a commit of .planning files keeps it fresh" "$(ustep)" ui-look
+echo code > "$U/app.js"
+is "a new code file → ui-check again"           "$(ustep)" ui-check
+rm "$U/app.js"
+ui_fix_look "$UPD" 05 cap1 ok "R1 R2 R3"
+is "a look with rules deleted → still ui-look"  "$(ustep)" ui-look
+ui_fix_look "$UPD" 05 cap1 bad
+is "a line marked bad → ui-look"                "$(ustep)/$(unote | grep -c 'marked bad')" "ui-look/1"
+ui_fix_look "$UPD" 05 cap0
+is "a look of older pictures → ui-look"         "$(ustep)" ui-look
+ui_fix_look "$UPD" 05 cap1
+sed -i.bak 's/^- R4: ok — seen in the picture$/- R4: ok/' "$UPD/05-UI-LOOK.md"; rm -f "$UPD/05-UI-LOOK.md.bak"
+is "an answer without its text → ui-look"       "$(ustep)" ui-look
+ui_fix_look "$UPD" 05 cap1
+is "every picture and rule answered → ui-approve" "$(ustep)" ui-approve
+is "…stop= asks the user first"                 "$("$NEXT" 5 --repo "$U" | grep -c '^stop=show the user the sheet')" 1
+is "…then= gsd-ui approve 5"                    "$("$NEXT" 5 --repo "$U" | sed -n 's/^then=//p')" "gsd-ui approve 5"
+ui_fix_approval "$UPD" 05 cap0
+is "an approval of older pictures → ui-approve" "$(ustep)" ui-approve
+ui_fix_approval "$UPD" 05 cap1
+is "approved → ui-review"                       "$(ustep)" ui-review
+is "…the note holds the pictures against the sketch" "$(unote | grep -c 'hold the pictures in 05-SHOTS/')" 1
+printf -- '---\nstatus: skipped\nskipped: the app needs a VPN\n---\n' > "$UPD/05-UI-CHECK.md"
+is "skipped check, approval of pictures → ui-approve" "$(ustep)" ui-approve
+printf -- '---\nstatus: waived\nreason: the app needs a VPN\n---\n' > "$UPD/05-UI-APPROVAL.md"
+is "skipped check + waived approval → ui-review" "$(ustep)/$(unote)" "ui-review/phase has screens"
+# A review written in the phase's own worktree exempts nothing…
+rm "$UPD/05-UI-CHECK.md" "$UPD/05-UI-APPROVAL.md" "$UPD/05-UI-LOOK.md"; : > "$UPD/05-UI-REVIEW.md"
+git -C "$U" add -A >/dev/null; git -C "$U" -c user.name=t -c user.email=t@t commit -qm "review in the worktree"
+is "UI-REVIEW.md only in this branch → ui-check" "$(ustep)" ui-check
+# …one that is already on the base branch does (the phase predates the checks).
+git -C "$U" branch -f develop phase-5-shop
+is "UI-REVIEW.md on the base branch → no UI steps" "$(ustep)" secure
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; [ "$FAIL" -eq 0 ]

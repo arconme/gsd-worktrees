@@ -165,14 +165,37 @@ allowed "design + chosen sketch + pages → allowed" gsd-ui-phase "5"
 printf 'sketch: skip one button\n' > "$PDIR/05-LAYOUT.md"
 allowed "sketch: skip <reason> → allowed"        gsd-ui-phase "5"
 
-section "ui_gates = strict — ui-review needs the screenshots"
-blocked "no SHOTS.md → blocked"                  gsd-ui-review "5"
-printf 'skipped: no browser in CI\n' > "$PDIR/05-SHOTS.md"
-allowed "a skip record → allowed"                gsd-ui-review "5"
+section "ui_gates = strict — ui-review needs the check, the look and the approval"
+# shellcheck source=ui-fixture.sh
+. "$(dirname "$0")/ui-fixture.sh"
+blocked_why() {  # label, text the block must carry
+  out=$("$GUARD" --command gsd-ui-review --phase 5 --repo "$REPO" 2>&1); rc=$?
+  if [ "$rc" = 2 ] && printf '%s' "$out" | grep -q -- "$2"; then ok "$1"; else bad "$1" "exit $rc: $out"; fi
+}
+blocked_why "no UI-CHECK.md → blocked, run gsd-ui check"   "Run: gsd-ui check 5"
 printf 'taken: now\n' > "$PDIR/05-SHOTS.md"
-allowed "screenshots → allowed"                  gsd-ui-review "5"
-allowed "other commands are not UI-gated"        gsd-plan-phase "5"
+blocked_why "0.3.x SHOTS.md alone → still blocked"         "never checked"
 rm "$PDIR/05-SHOTS.md"
+ui_fix_check "$PDIR" 05 failed
+blocked_why "a failed check → blocked"                     "the check found 2 problem"
+ui_fix_check "$PDIR" 05 passed cap1 0000000000000000000000000000000000000000
+blocked_why "code changed after the check → blocked"       "the code changed after the last check"
+ui_fix_check "$PDIR" 05 passed
+blocked_why "check passed, no look → blocked"              "Run: gsd-ui look 5"
+ui_fix_look "$PDIR" 05 cap1 ok "R1 R2"
+blocked_why "a look with rules deleted → blocked"          "lines without an answer"
+ui_fix_look "$PDIR" 05
+blocked_why "look complete, no approval → blocked"         "the user has not approved"
+ui_fix_approval "$PDIR" 05 cap0
+blocked_why "an approval of older pictures → blocked"      "approved older pictures"
+ui_fix_approval "$PDIR" 05
+allowed "check + look + approval → allowed"      gsd-ui-review "5"
+printf -- '---\nstatus: skipped\nskipped: no browser here\n---\n' > "$PDIR/05-UI-CHECK.md"
+blocked_why "a skipped check needs a waived approval"      "approved older pictures"
+printf -- '---\nstatus: waived\nreason: no browser here\n---\n' > "$PDIR/05-UI-APPROVAL.md"
+allowed "skipped check + waived approval → allowed" gsd-ui-review "5"
+allowed "other commands are not UI-gated"        gsd-plan-phase "5"
+rm "$PDIR/05-UI-CHECK.md" "$PDIR/05-UI-LOOK.md" "$PDIR/05-UI-APPROVAL.md"
 rc=$(GSD_SKIP_GUARD=1 "$GUARD" --command gsd-ui-review --phase 5 --repo "$REPO" 2>/dev/null; echo $?)
 [ "$rc" = 0 ] && ok "GSD_SKIP_GUARD=1 still escapes" || bad "GSD_SKIP_GUARD=1 still escapes" "rc=$rc"
 

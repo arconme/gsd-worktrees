@@ -63,8 +63,8 @@ gsd_provider_review_flag() {
 }
 
 # Optional UI tools (ui_gates): gsd-init prints these as a tip, nothing checks
-# or requires them — gsd-ui shots uses the Playwright CLI, which every provider
-# can run.
+# or requires them — gsd-ui check runs the project's Playwright from the
+# shell, which every provider can do.
 gsd_provider_ui_tip() {
   case "$1" in
     claude) printf '%s\n' '/plugin marketplace add anthropics/claude-code  then  /plugin install frontend-design@claude-code-plugins;  claude mcp add playwright npx @playwright/mcp@latest' ;;
@@ -131,8 +131,13 @@ Screens: every screen uses the design system in \`.planning/design/DESIGN.md\`
 (tokens, components, page templates) — don't invent new styles. In a new
 project with screens, make the first phase \"Design system\". Each phase with
 screens picks a layout with \`/gsd-sketch\` before its UI-SPEC and records it in
-\`<P>-LAYOUT.md\`; \`gsd-ui shots <N>\` screenshots the built pages for
-ui-review. \`gsd-flow-next\` asks for each step (\`ui_gates\` in \`.gsd.conf\`).
+\`<P>-LAYOUT.md\`. After the code review, look at the built pages, not only the
+code: \`gsd-ui check <N>\` opens them in a browser, measures them and takes the
+pictures; \`gsd-ui look <N>\` lists what to answer for every picture — open each
+one and write what you saw; then show the user the sheet (\`gsd-ui sheet <N>\`)
+and run \`gsd-ui approve <N>\` only after their yes. Never waive a finding or
+skip a step without asking. \`gsd-flow-next\` asks for each step (\`ui_gates\` in
+\`.gsd.conf\`).
 "
   cat <<EOF
 <!-- gsd-worktrees:canonical:start -->
@@ -148,7 +153,7 @@ Inside the worktree, run \`gsd-flow-next <N>\` before every phase action:
 ticket (with a tracker) → discuss → UI decision → with screens: design
 system, layout (sketch), UI phase → plan → independent review → replan →
 execute → verifier/gap loop → verify work → code review/fix → with screens:
-screenshots, UI review → security → done. The human decisions are discuss,
+UI check, UI look, UI approval, UI review → security → done. The human decisions are discuss,
 the design system and sketch, UI approval, and review findings. Never bypass a guard unless the user explicitly requests
 \`GSD_SKIP_GUARD=1\`.
 

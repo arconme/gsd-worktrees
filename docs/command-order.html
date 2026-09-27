@@ -310,7 +310,7 @@
 
         <div class="branch">
           <span class="dash"></span>
-          <span class="opt"><span class="n-cmd">gsd-ui shots N → /gsd-ui-review N</span><span class="n-sub">if it has screens, after code fixes</span></span>
+          <span class="opt"><span class="n-cmd">gsd-ui check N → look → approve → /gsd-ui-review N</span><span class="n-sub">if it has screens, after code fixes</span></span>
         </div>
 
         <div class="node">
@@ -383,7 +383,7 @@
       <li class="step">
         <span class="num">9</span>
         <span class="cmd">/gsd-ui-review N<span class="tag tag-fe">screens only</span></span>
-        <span class="why">First <code>gsd-ui shots N</code> (app running) takes screenshots at phone, tablet and desktop size. Then the review scores the built screens and compares them with the chosen sketch. Do it after the code review, not before.</span>
+        <span class="why">First <code>gsd-ui check N</code> (app running) opens each page at phone, tablet and desktop size, measures it and takes the pictures. <code>gsd-ui look N</code> lists what the agent must answer for every picture. Then you look at the sheet and say yes (<code>gsd-ui approve N</code>). Then the review scores the built screens and compares them with the chosen sketch. Do it after the code review, not before.</span>
       </li>
 
       <li class="step">

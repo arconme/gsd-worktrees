@@ -38,19 +38,24 @@
 #                  instruction_file, instruction_integrated, skill_installed,
 #                  command_guard, native_hook}, count, findings [{code,message,fix}],
 #                  updates [{name,installed,latest,fix}] (newer gsd-worktrees /
-#                  GSD; shown with --quiet too, never a finding)
+#                  GSD; shown with --quiet too, never a finding),
+#                  notes [text] (what the text report shows as • lines)
 #                  Codes shared with gsd-core's /gsd-health where they mean the
 #                  same thing (W017 orphan branch, W027 stale worktree record);
 #                  toolkit-only findings use T0xx.
-#                  T040 = a merged phase skipped a mandatory flow step (only
-#                  in repos with `flow = strict`; `flow_since = <N>` in .gsd.conf
-#                  limits it to phases >= N, `flow_skip = <N>, <N>…` leaves
-#                  out single phases, listed as a note).
+#                  T040 = a merged phase skipped a mandatory step: the flow
+#                  steps with `flow = strict`, the checks of the rendered
+#                  pages (ui-check, ui-approve) with `ui_gates = strict`.
+#                  `flow_since = <N>` in .gsd.conf limits it to phases >= N,
+#                  `flow_skip = <N>, <N>…` leaves out single phases, listed
+#                  as a note.
 #                  T016 = the generated GSD instructions are older than this
 #                  toolkit (gsd-init refreshes them; --fix runs it).
 #                  T070–T073 = ticket tracker config (`tracker =` in .gsd.conf).
 #                  T080 = phases have screens but DESIGN.md is missing or a
 #                  stub (only with `ui_gates = strict`; a note otherwise).
+#                  T081 = pictures in a <P>-SHOTS/ folder are committed (the
+#                  same: a note unless `ui_gates = strict`).
 #   -h, --help     show this help
 #
 # Exit status: 0 when everything checks out, 1 when there is a finding.
@@ -111,7 +116,11 @@ MAIN="$(gsd_main "$REPO")"
 FINDINGS=0
 FIXES=""        # the distinct commands to run, ONE PER LINE, in the order first needed
 pass() { [ "$QUIET" = 1 ] || printf '  \033[32m✔\033[0m %s\n' "$1"; }
-note() { [ "$QUIET" = 1 ] || printf '  • %s\n' "$1"; }
+NOTES_JSON=""
+note() {
+  [ "$JSON" = 0 ] || NOTES_JSON="${NOTES_JSON:+$NOTES_JSON,}\"$(jstr "$1")\""
+  [ "$QUIET" = 1 ] || printf '  • %s\n' "$1"
+}
 # A newer version: shown even with --quiet, listed under "updates" in --json,
 # but not a finding (the exit status stays 0 — updating is the user's call).
 UPDATES_JSON=""
@@ -393,7 +402,7 @@ if [ -f "$MAIN/.gsd.conf" ]; then
     case "$key" in
       base|wtdir|install|test|premerge|flow|flow_since|flow_skip|providers|provider|agent_command|review_provider|start_mode) ;;
       tracker|tracker_command|tracker_status_start|tracker_status_finish) ;;
-      ui_gates|ui_url) ;;
+      ui_gates|ui_url|ui_min_font) ;;
       claude_command|codex_command|gemini_command|custom_command|claude_model|codex_model|gemini_model|custom_model) ;;
       *) bad_keys="$bad_keys $key" ;;
     esac
@@ -411,6 +420,12 @@ if [ -f "$MAIN/.gsd.conf" ]; then
   case "$v" in ''|discuss|flow) ;; *) fail "start_mode = '$v' is not a value (use discuss or flow)" "edit .gsd.conf" "T018" ;; esac
   v=$(gsd_conf_get "$MAIN" ui_gates)
   case "$v" in ''|warn|strict|off) ;; *) fail "ui_gates = '$v' is not a value (use warn, strict or off)" "edit .gsd.conf" "T018" ;; esac
+  v=$(gsd_conf_get "$MAIN" ui_min_font)
+  case "$v" in
+    '') ;;
+    *[!0-9]*) fail "ui_min_font = '$v' is not a number of pixels (8 to 32)" "edit .gsd.conf (e.g. ui_min_font = 12)" "T018" ;;
+    *) { [ "$((10#$v))" -ge 8 ] && [ "$((10#$v))" -le 32 ]; } || fail "ui_min_font = '$v' is out of range (8 to 32) — 12 is used" "edit .gsd.conf (e.g. ui_min_font = 12)" "T018" ;;
+  esac
 fi
 
 # The base branch every claim and finish works against.
@@ -598,18 +613,37 @@ if [ "$UI_GATES" != off ] && gsd_ui_has_screens "$HERE"; then
   elif [ "$UI_GATES" = strict ]; then
     fail "phases have screens but .planning/design/DESIGN.md is $ds — each phase invents its own styles" "gsd-ui design, then fill it with the user (in the next phase with screens)" "T080"
   else note "phases have screens but .planning/design/DESIGN.md is $ds — gsd-ui design, then fill it (ui_gates = strict makes this a finding)"; fi
-  [ -n "$(gsd_ui_playwright "$HERE")" ] \
-    || note "no Playwright CLI for gsd-ui shots — npm i -D playwright && npx playwright install chromium"
+  # Files only: doctor never imports or launches the project's Playwright.
+  gsd_ui_playwright_installed "$HERE" \
+    || note "no Playwright package for gsd-ui check (looked in the repo root, apps/*, packages/*) — in the app: npm i -D playwright && npx playwright install chromium"
+  command -v node >/dev/null 2>&1 || note "no node on PATH — gsd-ui check needs it"
+  # The pictures are large and change on every run: they stay local.
+  shots_in_git=$(git -C "$HERE" ls-files -- .planning/phases 2>/dev/null | grep -E '/[0-9.]+-SHOTS/[^/]*[.](png|html)$' | sed -E 's#/[^/]*$##' | sort -u || true)
+  if [ -n "$shots_in_git" ]; then
+    shots_dirs=$(printf '%s' "$shots_in_git" | tr '\n' ' ')
+    if [ "$UI_GATES" = strict ]; then
+      fail "pictures are committed in: ${shots_dirs% } — they belong on disk only" "git rm -r --cached ${shots_dirs% }, then commit" "T081"
+    else note "pictures are committed in: ${shots_dirs% } — git rm -r --cached them (ui_gates = strict makes this a finding)"; fi
+  fi
 fi
 
-# ── phase flow (opt-in: flow = strict) ──────────────────────────────────────
+# ── phase flow (opt-in: flow = strict, ui_gates = strict) ───────────────────
 # Which MERGED phases skipped a mandatory step. Same artifact list the guard's
 # flow rule and a repo's pre-merge gate enforce going forward; this is the
 # backlog view over phases finished before those gates existed. Scoped to
 # $MAIN (merged = on the base branch). `flow_since = <N>` in .gsd.conf limits
 # it to phases >= N — older phases predate the rules and would only be noise.
-if [ "$(gsd_conf_get "$MAIN" flow)" = "strict" ] && [ -f "$MAIN/.planning/ROADMAP.md" ]; then
-  section "phase flow (flow = strict)"
+#
+#                     off    warn (default)     strict
+#   flow steps        —      —                  T040        (flow = strict)
+#   ui-check/approve  —      —                  T040        (ui_gates = strict)
+# The two keys are independent: either one turns this section on.
+FLOW_ON=0; [ "$(gsd_conf_get "$MAIN" flow)" != "strict" ] || FLOW_ON=1
+UI_ON=0; [ "$UI_GATES" != strict ] || UI_ON=1
+if { [ "$FLOW_ON" = 1 ] || [ "$UI_ON" = 1 ]; } && [ -f "$MAIN/.planning/ROADMAP.md" ]; then
+  flow_modes=""; [ "$FLOW_ON" = 0 ] || flow_modes="flow = strict"
+  [ "$UI_ON" = 0 ] || flow_modes="${flow_modes:+$flow_modes, }ui_gates = strict"
+  section "phase flow ($flow_modes)"
   SINCE="$(gsd_conf_get "$MAIN" flow_since)"; SINCE="${SINCE:-0}"
   # flow_skip: single phases accepted as they are (a record in .gsd.conf, not
   # a silent gap). Compared normalized: 07 = 7, 02.1 = 2.1.
@@ -634,6 +668,7 @@ if [ "$(gsd_conf_get "$MAIN" flow)" = "strict" ] && [ -f "$MAIN/.planning/ROADMA
     # cross-AI plan review shape the plan; redoing them on built code changes
     # nothing (plan-phase --reviews refuses closed phases). The guard and the
     # pre-merge gate hold those going forward.
+    if [ "$FLOW_ON" = 1 ]; then
     if [ "$TRACKER" != none ] && ! flow_has TICKET.md && ! flow_has STORY.md; then
       case "$pd" in *cu_*) ;; *)
         tk=$(gsd_ticket_extract "$(basename "$pd")")
@@ -647,10 +682,26 @@ if [ "$(gsd_conf_get "$MAIN" flow)" = "strict" ] && [ -f "$MAIN/.planning/ROADMA
     else miss="$miss secure-phase"; fix="$fix /gsd-secure-phase $n;"; fi
     flow_has VERIFICATION.md || { miss="$miss verifier";        fix="$fix /gsd-execute-phase $n (runs the verifier);"; }
     ls "$pd/$p"-*UAT.md >/dev/null 2>&1 || { miss="$miss verify-work"; fix="$fix /gsd-verify-work $n;"; }
-    if flow_has UI-SPEC.md && ! flow_has UI-REVIEW.md; then miss="$miss ui-review"; fix="$fix /gsd-ui-review $n;"; fi
-    # UI gates: only screenshots still have an action after the merge; the
-    # design system and layout shaped the spec, like discuss shapes the plan.
-    if [ "$UI_GATES" = strict ] && flow_has UI-SPEC.md && ! flow_has SHOTS.md; then miss="$miss ui-shots"; fix="$fix gsd-ui shots $n;"; fi
+    # screens: the same test gsd-flow-next uses (a UI-SPEC or a LAYOUT)
+    if gsd_ui_phase_screens "$pd" "$p" && ! flow_has UI-REVIEW.md; then miss="$miss ui-review"; fix="$fix /gsd-ui-review $n;"; fi
+    fi
+    # UI gates: the checks of the rendered pages still have an action after
+    # the merge; the design system and layout shaped the spec, like discuss
+    # shapes the plan. The code moved on since, so staleness is not judged
+    # here. A phase merged with 0.3.x screenshots (SHOTS.md) is not in debt.
+    if [ "$UI_ON" = 1 ] && gsd_ui_phase_screens "$pd" "$p"; then
+      if flow_has UI-CHECK.md; then
+        case "$(gsd_ui_check_state "$MAIN" "$pd" "$p" nostale)" in
+          passed|skipped)
+            case "$(gsd_ui_approval_state "$pd" "$p")" in
+              ok|waived) ;;
+              *) miss="$miss ui-approve"; fix="$fix gsd-ui sheet $n, then with the user's yes gsd-ui approve $n;" ;;
+            esac ;;
+          *) miss="$miss ui-check"; fix="$fix gsd-ui check $n;" ;;
+        esac
+      elif ! flow_has SHOTS.md; then miss="$miss ui-check"; fix="$fix gsd-ui check $n;"
+      fi
+    fi
     if [ -n "$miss" ]; then
       debt=$((debt + 1))
       fail "Phase $n merged without:$miss" "in a phase-$n worktree:${fix%;}" "T040"
@@ -742,7 +793,7 @@ if [ "$JSON" = 1 ]; then
   # false = not a GSD repo: its setup/planning checks were skipped, so a zero
   # count means "nothing to check", not "healthy".
   printf '"gsd_repo":%s,' "$([ "$IS_GSD_REPO" = 1 ] && echo true || echo false)"
-  printf '"repo":"%s","configured":[%s],"provider":{"name":"%s","command":"%s","available":%s,"instruction_file":"%s","instruction_integrated":%s,"skill_installed":%s,"command_guard":%s,"native_hook":"%s"},"count":%d,"findings":[%s],"updates":[%s]}\n' "$(jstr "$MAIN")" "$configured_json" "$(jstr "$DOCTOR_PROVIDER")" "$(jstr "$DOCTOR_COMMAND")" "$PROVIDER_AVAILABLE" "$(jstr "$instruction_file")" "$instruction_integrated" "$skill_installed" "$command_guard" "$native_hook" "$FINDINGS" "$JSON_ITEMS" "$UPDATES_JSON"
+  printf '"repo":"%s","configured":[%s],"provider":{"name":"%s","command":"%s","available":%s,"instruction_file":"%s","instruction_integrated":%s,"skill_installed":%s,"command_guard":%s,"native_hook":"%s"},"count":%d,"findings":[%s],"updates":[%s],"notes":[%s]}\n' "$(jstr "$MAIN")" "$configured_json" "$(jstr "$DOCTOR_PROVIDER")" "$(jstr "$DOCTOR_COMMAND")" "$PROVIDER_AVAILABLE" "$(jstr "$instruction_file")" "$instruction_integrated" "$skill_installed" "$command_guard" "$native_hook" "$FINDINGS" "$JSON_ITEMS" "$UPDATES_JSON" "$NOTES_JSON"
   [ "$FINDINGS" -eq 0 ]; exit $?
 fi
 echo ""

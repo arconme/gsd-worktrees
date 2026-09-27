@@ -34,6 +34,11 @@
 # and every remote retry, before pushing. Ensure its test dependencies exist
 # there too. Failure keeps any local merge and the phase worktree for recovery.
 #
+# UI steps: for a phase with screens, the rendered-page check, the look file
+# and the user's approval must be current (lib/ui.sh, gsd_ui_gate). With
+# `ui_gates = strict` an open step refuses the finish with nothing merged;
+# with `warn` (default) it prints a warning. GSD_SKIP_GUARD=1 is the escape.
+#
 # Repo settings (base branch, worktree dir): .gsd.conf, see gsd-bootstrap-repo.
 # The old per-repo copy of this logic (scripts/gsd-finish-worktree-feature.sh)
 # is now a shim that delegates here.
@@ -47,6 +52,8 @@ done
 GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 # shellcheck source=../lib/common.sh
 . "$GSD_PKG/lib/common.sh"
+# shellcheck source=../lib/ui.sh
+. "$GSD_PKG/lib/ui.sh"
 
 ID="${1:-}"
 if [ -z "$ID" ]; then
@@ -145,6 +152,13 @@ if [ "$HAS_ORIGIN" = 1 ]; then
     exit 1
   fi
 fi
+
+# ── UI steps of a phase with screens (ui_gates) ──────────────────────────────
+# After the sync: a phase whose UI review is already on the base branch is left
+# alone. strict refuses while a step is open or stale; warn only says so.
+gsd_ui_finish_gate "$MAIN" "$BRANCH" "$DEST" || {
+  echo "  Nothing was merged. Phase worktree retained." >&2; exit 1;
+}
 
 # ── pre-merge check hook (repo-specific validations) ─────────────────────────
 # Runs after the sync so it sees the freshest $BASE; nonzero exit aborts with

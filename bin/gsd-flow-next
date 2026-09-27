@@ -29,7 +29,11 @@
 #   gaps         <P>-VERIFICATION.md status gaps_found      --gaps / --gaps-only
 #   verify-work  a <P>-*UAT.md not pending/partial          /gsd-verify-work
 #   code-review  <P>-REVIEW.md; not clean → <P>-REVIEW-FIX  /gsd-code-review [--fix]
-#   screenshots  <P>-SHOTS.md (screens only)                gsd-ui shots
+#   ui-check     <P>-UI-CHECK.md passed, code unchanged     gsd-ui check
+#                since (screens only)
+#   ui-look      <P>-UI-LOOK.md: every picture and rule     gsd-ui look
+#                answered, for that capture
+#   ui-approve   <P>-UI-APPROVAL.md names that capture      gsd-ui sheet, gsd-ui approve
 #   ui-review    <P>-UI-REVIEW.md (screens only)            /gsd-ui-review
 #   secure       <P>-SECURITY.md, threats_open: 0           /gsd-secure-phase
 #   done         → gsd-finish
@@ -42,9 +46,10 @@
 #     --all     print every remaining step, not just the next one
 #     --json    one JSON object per step
 #
-# design-system, layout and screenshots are the UI gates (lib/ui.sh); `ui_gates
-# = off` in .gsd.conf drops them. Phases whose UI-SPEC predates them skip the
-# two pre-spec steps.
+# design-system, layout, ui-check, ui-look and ui-approve are the UI gates
+# (lib/ui.sh); `ui_gates = off` in .gsd.conf drops them. Phases whose UI-SPEC
+# predates them skip the two pre-spec steps; a phase whose UI-REVIEW.md is
+# already on the base branch skips the three checks of the rendered pages.
 #
 # review_provider = claude|codex|gemini|custom selects the independent reviewer.
 # The external gsd-review skill performs delegation, not this shell command.
@@ -159,11 +164,11 @@ if [ "$UI" = yes ] && [ "$GATES" != off ] && ! has UI-SPEC.md; then
   esac
   lrel="${pd#"$REPO"/}/$P-LAYOUT.md"
   case "$(gsd_ui_layout_state "$REPO" "$pd" "$P")" in
-    missing)   emit layout "gsd-ui layout $N" "/gsd-sketch <this phase's main screen>" "the user picks the winning sketch variant; then write its folder in sketch: and the pages (URL paths) in pages: of $lrel" "sketch: skip <reason> only when the user agrees (e.g. a small change on an existing page)" ;;
+    missing)   emit layout "gsd-ui layout $N" "/gsd-sketch <this phase's main screen>" "the user picks the winning sketch variant; then write its folder in sketch:, the pages (URL paths) in pages:, and each page's main button in main_button: of $lrel" "sketch: skip <reason> only when the user agrees (e.g. a small change on an existing page)" ;;
     nosketch)  emit layout "/gsd-sketch <this phase's main screen>" "" "the user picks the winning sketch variant; then write its folder in sketch: of $lrel" "sketch: skip <reason> only when the user agrees" ;;
     badsketch) emit layout "" "" "sketch: in $lrel does not name a sketch folder — fix it (e.g. .planning/sketches/003-catalog)" "" ;;
     nowinner)  emit layout "" "" "the sketch in $lrel has no winner yet — ask the user to pick a variant and mark winner: in its README.md" "" ;;
-    nopages)   emit layout "" "" "list the pages this phase builds (URL paths) in pages: of $lrel — gsd-ui shots uses them" "" ;;
+    nopages)   emit layout "" "" "list the pages this phase builds (URL paths) in pages: of $lrel — gsd-ui check opens them" "" ;;
   esac
 fi
 # 4 ui-phase
@@ -214,13 +219,31 @@ else
   st=$(fm REVIEW.md status)
   case "$st" in ""|clean|skipped) ;; *) has REVIEW-FIX.md || emit code-review "/gsd-code-review $N --fix" "" "" "REVIEW.md status: $st" ;; esac
 fi
-# 11 screenshots, then ui-review — the review looks at the rendered pages, not only the code
-if [ "$UI" = yes ] && [ "$GATES" != off ] && ! has UI-REVIEW.md && ! has SHOTS.md; then
-  emit screenshots "gsd-ui shots $N" "" "" "start the app in this worktree first; if screenshots are impossible: gsd-ui shots $N --skip \"<reason>\""
+# 11 the rendered pages: check → look → approve, then ui-review. gsd_ui_gate
+# (lib/ui.sh) names the first open one; the guard and gsd-finish ask it too.
+if [ "$UI" = yes ] && [ "$GATES" != off ] && ! gsd_ui_exempt "$REPO" "$pd" "$P"; then
+  gate=$(gsd_ui_gate "$REPO" "$pd" "$P"); gstep=${gate%%|*}; gwhy=${gate##*|}
+  gstate=${gate#*|}; gstate=${gstate%%|*}
+  crel="${pd#"$REPO"/}/$P-UI-CHECK.md"
+  if [ "$gstep" = ui-check ]; then
+    case "$gstate" in
+      failed) emit ui-check "gsd-ui check $N" "" "" "$gwhy: fix the pages, then check again. A finding the user accepts becomes a waive: line in $P-LAYOUT.md — never waive without asking" ;;
+      stale)  emit ui-check "gsd-ui check $N" "" "" "$gwhy; start the app in this worktree first. Pages that look the same keep their look and approval" ;;
+      *)      emit ui-check "gsd-ui check $N" "" "" "$gwhy; start the app in this worktree first. It opens each page at 3 widths, measures it and writes $crel and the pictures. If the pages cannot be checked, ask the user, then: gsd-ui check $N --skip \"<reason>\"" ;;
+    esac
+  fi
+  case "$gstep" in ui-check|ui-look)
+    [ "$gstep" = ui-look ] || gwhy="after the check"
+    emit ui-look "gsd-ui look $N" "" "" "$gwhy: open every picture in $P-SHOTS/ and answer each line of $P-UI-LOOK.md (ok / fixed / bad / n/a — what you saw), then commit it. A bad line means: fix the page and check again" ;;
+  esac
+  case "$gstep" in ui-check|ui-look|ui-approve)
+    [ "$gstep" = ui-approve ] || gwhy="after the look"
+    emit ui-approve "gsd-ui sheet $N" "gsd-ui approve $N" "show the user the sheet and ask for a yes BEFORE gsd-ui approve; if the user does not want to look (or there are no pictures): gsd-ui approve $N --waive \"<reason>\"" "$gwhy" ;;
+  esac
 fi
 if [ "$UI" = yes ] && ! has UI-REVIEW.md; then
   rv_note="phase has screens"
-  [ "$GATES" = off ] || [ "$(gsd_ui_shots_state "$pd" "$P")" != ok ] || rv_note="phase has screens: compare the screenshots in $P-SHOTS/ with the chosen sketch and the layout rules in $P-LAYOUT.md / DESIGN.md, not only the code"
+  [ "$GATES" = off ] || [ "$(gsd_ui_check_state "$REPO" "$pd" "$P" nostale)" != passed ] || rv_note="phase has screens: hold the pictures in $P-SHOTS/ and $P-UI-LOOK.md against the chosen sketch and the layout rules in $P-LAYOUT.md / DESIGN.md, not only the code"
   emit ui-review "/gsd-ui-review $N" "" "" "$rv_note"
 fi
 # 12 secure — the last code gate

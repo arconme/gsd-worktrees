@@ -1,6 +1,6 @@
 # Plan: UI checks that look at the rendered page (0.4.0)
 
-Status: **revision 2, being built.** Written 2026-09-27, revised the same day
+Status: **built in 0.4.0** (revision 2). Written 2026-09-27, revised the same day
 after the review in `docs/plan-ui-check-review.md` (31 findings; the accepted
 ones are marked `[#n]` below). Builds on the UI gates from 0.3.0 / 0.3.1
 (`docs/ui-quality-plan.md`, `lib/ui.sh`, `bin/gsd-ui`).

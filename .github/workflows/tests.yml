@@ -30,6 +30,7 @@ jobs:
           done
           python3 -c "import ast, pathlib; ast.parse(pathlib.Path('lib/gsd_planning.py').read_text())"
           python3 -c "import ast, pathlib; ast.parse(pathlib.Path('lib/gsd_hook_payload.py').read_text())"
+          node --check lib/ui-check.mjs
       - name: shellcheck
         # Ubuntu only: shellcheck is static analysis, so its verdict does not
         # differ per platform, and the macOS runner has no shellcheck (a brew
@@ -66,5 +67,17 @@ jobs:
         run: tests/test-ui.sh
       - name: doctor checks suite
         run: tests/test-doctor.sh
+      - name: a browser for the UI check suite
+        # The runner behind `gsd-ui check` is only tested when it drives a real
+        # browser: a pinned Playwright and its Chromium, outside the checkout.
+        run: |
+          mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw"
+          printf '{"name":"pw","private":true}\n' > package.json
+          npm install --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: UI check suite (real browser)
+        env:
+          GSD_TEST_REQUIRE_BROWSER: 1   # a skip here would mean an untested checker
+        run: GSD_PLAYWRIGHT_ROOT="$RUNNER_TEMP/pw" tests/test-ui-browser.sh
       - name: end-to-end suite (skips without gsd-sdk)
         run: tests/test-e2e.sh

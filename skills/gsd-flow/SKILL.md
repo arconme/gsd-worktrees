@@ -50,8 +50,10 @@ Read `step=`, `run=`, `then=`, `stop=`, `note=`. Then:
 | `gaps` | Plan with `--gaps`, then execute with `--gaps-only`. |
 | `verify-work` | Invoke/follow `gsd-verify-work <N>` and record agent-driven UAT. |
 | `code-review` | Invoke/follow `gsd-code-review <N> --fix` when issues exist. |
-| `screenshots` | Start the app in this worktree (its dev script), then run `gsd-ui shots <N>` and commit `<P>-SHOTS.md`. If that is impossible, ask the user, then `gsd-ui shots <N> --skip "<reason>"`. |
-| `ui-review` | Invoke/follow `gsd-ui-review <N>`; look at the screenshots in `<P>-SHOTS/` and compare them with the chosen sketch and the layout rules, as `note=` says. |
+| `ui-check` | Start the app in this worktree (its dev script), then run `gsd-ui check <N>`. It opens every page at 3 widths, measures it, and writes `<P>-UI-CHECK.md` plus the pictures. Exit 1 = problems: fix the page and run it again. Exit 2 = it could not run: fix what it names. Never add a `waive:` line or use `--skip "<reason>"` without asking the user. Commit `<P>-UI-CHECK.md`. |
+| `ui-look` | Run `gsd-ui look <N>`. Open **every** picture named in `<P>-UI-LOOK.md` (read the image file) and answer every line: `ok — <what you saw>`, `fixed — …`, `bad — <what is wrong>`, `n/a — <why>`. Write what is in the picture, not what the code should produce. A `bad` line means: fix the page, run `gsd-ui check <N>` again, then `gsd-ui look <N>`. Commit the file. |
+| `ui-approve` | Run `gsd-ui sheet <N>` and give the user the path of the sheet. **Stop** and ask for a yes. Only after it: `gsd-ui approve <N>`, then commit. If the user does not want to look: `gsd-ui approve <N> --waive "<their reason>"`. |
+| `ui-review` | Invoke/follow `gsd-ui-review <N>`; hold the pictures in `<P>-SHOTS/` and the look file against the chosen sketch and the layout rules, as `note=` says. |
 | `secure` | Invoke/follow `gsd-secure-phase <N>` as the last code gate. |
 | `done` | Print the finish line. Do **not** run `gsd-finish` unless the user says so: it deletes the directory this session stands in and must be the session's last action. |
 
@@ -68,6 +70,8 @@ steps; use a normal `gsd-flow-next` call at each step.
    system once per project, and picks the sketch for each phase.
 3. ui-phase — the user agrees the screens.
 4. review — the user sees the configured reviewer's findings before the replan.
+5. ui-approve (phases with screens) — the user looks at the sheet of the built
+   pages and says yes. Waivers and skips in the UI steps are the user's too.
 
 The ticket may require clarification, and `ui-decision` asks whether the phase
 has screens. Never guess those answers. A `stop=` line describes required user

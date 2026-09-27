@@ -28,6 +28,11 @@ install_copy
 [ "$(cat "$COPY/unrelated-dir/file")" = keep ]
 [ -f "$COPY/shims/scripts/gsd-init.sh" ] || [ -d "$COPY/shims/scripts" ]
 [ -f "$COPY/skills/gsd-flow/SKILL.md" ]
+# the page checker travels with the runtime: the Node script and the pinned axe-core
+[ -f "$COPY/lib/ui-check.mjs" ]
+[ -f "$COPY/lib/vendor/axe-core/axe.min.js" ]
+[ -f "$COPY/lib/vendor/axe-core/LICENSE" ]
+[ -f "$COPY/lib/vendor/axe-core/VERSION" ]
 [ -f "$SKILLS/gsd-flow/SKILL.md" ]
 
 before=$(find "$WORK" -name '*.bak*' | wc -l | tr -d ' ')

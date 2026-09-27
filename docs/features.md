@@ -50,6 +50,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Push with up to 3 retries (pull + repair + re-validate between) | `gsd-wt-finish` |
 | Removes worktree + branch; ticket → "in testing" when a tracker is set (also on `--pr`) | `gsd-wt-finish`, `gsd-finish`, `gsd-tracker` |
 | `--pr [--draft]`: push (prefers the `*-pr` branch) and open a GitHub PR instead of merging | `gsd-finish` |
+| UI gate for a phase with screens: the check of the rendered pages, the look file and the user's approval must be current. `ui_gates = strict` refuses (nothing merged, no PR), `warn` prints a warning; `GSD_SKIP_GUARD=1` escapes | `gsd-wt-finish`, `gsd-finish`, `lib/ui.sh` (`gsd_ui_finish_gate`) |
 | Post-finish warning if the roadmap ticks look wrong | `gsd-finish` |
 
 ## 4. Planning-file integrity
@@ -73,7 +74,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Rule 2: per-phase commands only inside the matching `phase-<N>-*` worktree (nested agent worktrees inherit identity) | `gsd-worktree-guard` |
 | Rule 3: `/gsd-execute-phase` blocked while the install is `running` / `fail` | `gsd-worktree-guard` |
 | Rule 4 (`flow = strict`): plan needs CONTEXT, execute needs REVIEWS, secure needs REVIEW (+ UI-REVIEW when a UI-SPEC exists); `--prd` / `--gaps-only` exemptions | `gsd-worktree-guard` |
-| Rule 5 (`ui_gates = strict`): ui-phase needs a filled DESIGN.md + a LAYOUT with a chosen sketch and pages; ui-review needs SHOTS.md | `gsd-worktree-guard` |
+| Rule 5 (`ui_gates = strict`): ui-phase needs a filled DESIGN.md + a LAYOUT with a chosen sketch and pages; ui-review needs a passed, current UI check, a complete look file and the user's approval (a phase whose UI review is already on the base branch is exempt) | `gsd-worktree-guard`, `lib/ui.sh` (`gsd_ui_gate`) |
 | Native hooks: Claude `UserPromptExpansion` + `PreToolUse(Skill)`, Gemini `BeforeTool` (skill activation + direct `gsd-*` shell calls) | `gsd-worktree-guard`, `lib/gsd_hook_payload.py` |
 | Hook JSON parsed without `jq` (Python fallback); compound shell text naming `gsd-` is blocked, not guessed | `lib/gsd_hook_payload.py` |
 | Escape hatch `GSD_SKIP_GUARD=1`; shim fails open when the toolkit is not installed | `gsd-worktree-guard`, `shims/` |
@@ -82,14 +83,14 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 
 | Feature | Where |
 |---|---|
-| Resumable step engine: ticket (only with a tracker) → discuss → ui-decision → design-system → layout → ui-phase → plan → review → replan → execute → verifier → gaps → verify-work → code-review → screenshots → ui-review → secure → done | `gsd-flow-next` |
+| Resumable step engine: ticket (only with a tracker) → discuss → ui-decision → design-system → layout → ui-phase → plan → review → replan → execute → verifier → gaps → verify-work → code-review → ui-check → ui-look → ui-approve → ui-review → secure → done | `gsd-flow-next` |
 | Reads artifacts only, so it survives crashes and `/clear` | `gsd-flow-next` |
 | Detects an unfolded review (`replan`) from commit times of REVIEWS vs PLAN | `gsd-flow-next` |
 | `--all` preview, `--json`, `--ui` / `--no-ui` | `gsd-flow-next` |
 | Guard check before every step it returns | `gsd-flow-next` |
 | Configurable cross-AI reviewer (`review_provider`, default `codex`) | `gsd-flow-next`, `lib/provider.sh` |
-| Agent-facing driver skill with human stop points (discuss, design system + sketch, screens, review) | `skills/gsd-flow` |
-| Doctor report of merged phases that skipped a mandatory step (T040, `flow_since` cutoff, `flow_skip` single phases shown as a note) | `gsd-doctor` |
+| Agent-facing driver skill with human stop points (discuss, design system + sketch, screens, review, UI approval) | `skills/gsd-flow` |
+| Doctor report of merged phases that skipped a mandatory step (T040: flow steps with `flow = strict`, `ui-check` / `ui-approve` with `ui_gates = strict`; `flow_since` cutoff, `flow_skip` single phases shown as a note) | `gsd-doctor` |
 
 ## 6b. UI quality gates ([ui-quality-plan.md](ui-quality-plan.md))
 
@@ -97,9 +98,17 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 |---|---|
 | One design system per project: `.planning/design/DESIGN.md` (stub marker until filled) + `refs/` | `gsd-ui design`, `lib/ui.sh` |
 | Per phase with screens: `<P>-LAYOUT.md` — chosen `/gsd-sketch` (`sketch:`, winner read from the sketch README) + `pages:`; `sketch: skip <reason>` | `gsd-ui layout`, `gsd-flow-next` |
-| Screenshots at 375 / 768 / 1440 px with the Playwright CLI into `<P>-SHOTS/` (not committed), recorded in `<P>-SHOTS.md`; `--skip "<reason>"` | `gsd-ui shots` |
-| App address: `url:` in `<P>-LAYOUT.md` (per phase — projects with several apps), else `ui_url` in `.gsd.conf`, else `http://localhost:{port}`; `{port}` = the phase's derived port, base from the `gsd-derive-port.sh <base>` dev script or `{port:<base>}` | `gsd-ui shots` |
-| `ui_gates = warn` (default: flow steps + doctor notes) / `strict` (guard blocks ui-phase and ui-review, doctor T080, T040 `ui-shots`) / `off` | `lib/ui.sh`, guard, doctor |
+| **Check of the rendered pages** ([plan-ui-check.md](plan-ui-check.md)): every `pages:` entry at 375 / 768 / 1440 px in the project's own Playwright; writes `<P>-UI-CHECK.md`, the pictures and a sheet (`<P>-SHOTS/index.html`, not committed). Exit 0 passed / 1 failed / 2 could not run; `--skip "<reason>"` | `gsd-ui check`, `lib/ui-check.mjs` |
+| Checks: C1 sideways scroll, C2 possible clipped text (a question), C3 contrast (pinned axe-core; "could not measure" = a question), C4 text under `ui_min_font`, C5 broken `<img>`, C6 uncaught page errors (console errors are listed), C7 the page's main button (one match, on the first screen, not covered), C8 failed load / another page / missing `expect:` text | `lib/ui-check.mjs`, `lib/vendor/axe-core/` |
+| Per page in `<P>-LAYOUT.md`: `main_button:` (text, `css=<selector>`, `none`), `expect:`; `app:` = the folder with Playwright; `waive: <check> \| <page> \| <width> \| <target> \| <reason>` lists a finding without counting it. A page without `main_button:` is "not checked" — a failure under `strict` | `gsd-ui check` |
+| Playwright lookup with `createRequire`: `GSD_PLAYWRIGHT_ROOT`, `app:`, the repo root, then `apps/*` and `packages/*`; several installs and no `app:` → refuses. Never loads a Playwright config | `lib/ui-check.mjs` |
+| One run = one capture (id = hash of the pictures). `<P>-UI-CHECK.md` also records a hash of the code outside `.planning/`; a later code change makes the check stale. Same pictures → same id, so look and approval stay valid | `lib/ui.sh` (`gsd_ui_code_state`, `gsd_ui_check_state`) |
+| Staged output: a run that cannot finish records `status: error` and removes the old pictures — an old pass never stays | `gsd-ui check` |
+| Look file `<P>-UI-LOOK.md`: one answer (`ok` / `fixed` / `bad` / `n/a` + text) per picture and layout rule (R1–R10, or the project's `- R<n>:` lines in DESIGN.md) and per question; the expected set comes from the check, not the look file | `gsd-ui look`, `lib/ui.sh` (`gsd_ui_look_state`) |
+| Approval `<P>-UI-APPROVAL.md` names the capture; `--waive "<reason>"` records that the user chose not to look | `gsd-ui approve`, `gsd-ui sheet` |
+| Screenshots only, with the Playwright CLI (no checks), recorded in `<P>-SHOTS.md`; `--skip "<reason>"` | `gsd-ui shots` |
+| App address: `url:` in `<P>-LAYOUT.md` (per phase — projects with several apps), else `ui_url` in `.gsd.conf`, else `http://localhost:{port}`; `{port}` = the phase's derived port, base from the `gsd-derive-port.sh <base>` dev script or `{port:<base>}` | `gsd-ui check`, `gsd-ui shots` |
+| `ui_gates = warn` (default: flow steps, a warning at finish, doctor notes) / `strict` (guard blocks ui-phase and ui-review, finish refuses, doctor T080 / T081 / T040 `ui-check`, `ui-approve`) / `off` | `lib/ui.sh`, guard, finish, doctor |
 | `gsd-init --no-ui` for projects without screens (`ui_gates = off`) | `gsd-init`, `gsd-bootstrap-repo` |
 | Optional provider tools printed by `gsd-init` (Claude: `frontend-design` plugin, Playwright MCP) — never required | `lib/provider.sh` |
 
@@ -121,7 +130,8 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Phase table: number, title, plans done/total, stage, worktree; wraps to the terminal (`--compact` for one line) | `gsd-list` |
 | Read-only health check, every finding names its fix command; `--quiet`, `--json` | `gsd-doctor` |
 | `--fix` (asks y/N, `--yes` for scripts): runs only the safe fixes — gsd-init (T010–T014, T016, T052, T058), gsd-planning-repair (T020, stale counters), `git branch --track` (T015), `chmod +x` pre-merge (T019), dead lock (T030) — then checks again; never commits | `gsd-doctor` |
-| Finding codes: T001–T007 toolkit (incl. T005 no gsd-sdk, T006 no perl, T007 stale skills), T010–T019 repo setup (T015 base branch, T016 instructions older than the toolkit, T017 unknown `.gsd.conf` key, T018 bad value, T019 pre-merge gate), T020–T025 planning (T025 duplicate phase heading), T030–T032 hygiene (T032 failed worktree install), T040 flow debt, T050–T060 providers, T070–T073 tracker (T073 no ClickUp token), T080 no design system (`ui_gates = strict`), W017 / W027 shared with `/gsd-health` | `gsd-doctor` |
+| Finding codes: T001–T007 toolkit (incl. T005 no gsd-sdk, T006 no perl, T007 stale skills), T010–T019 repo setup (T015 base branch, T016 instructions older than the toolkit, T017 unknown `.gsd.conf` key, T018 bad value, T019 pre-merge gate), T020–T025 planning (T025 duplicate phase heading), T030–T032 hygiene (T032 failed worktree install), T040 flow debt, T050–T060 providers, T070–T073 tracker (T073 no ClickUp token), T080 no design system and T081 committed pictures (`ui_gates = strict`; notes otherwise), W017 / W027 shared with `/gsd-health` | `gsd-doctor` |
+| `--json` lists the notes too (`"notes"`) | `gsd-doctor` |
 | Checks for a newer GSD on npm and branches whose upstream is gone | `gsd-doctor` |
 
 ## 9. Install and maintenance

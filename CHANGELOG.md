@@ -4,6 +4,46 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.0
+
+The UI steps now look at the built page, not only at the code
+(`docs/plan-ui-check.md`).
+
+- `gsd-ui check <N>`: opens every page of the phase at 375, 768 and 1440 px
+  in the project's own Playwright, measures it, takes the pictures, and
+  writes `<P>-UI-CHECK.md` and a sheet (`<P>-SHOTS/index.html`). Checks: the
+  page scrolls sideways (C1), text may be cut off (C2), contrast (C3, a
+  pinned axe-core ships with the toolkit), small text (C4, `ui_min_font`,
+  default 12), broken images (C5), page errors (C6), the main button is
+  missing, below the first screen or covered (C7), the page did not load or
+  is another page such as a login (C8). Exit 0 passed, 1 failed, 2 could not
+  run. Needs Node and Playwright in the project.
+- New lines in `<P>-LAYOUT.md`: `main_button: /path = Text` (or
+  `css=<selector>`, or `none`), `expect: /path = text on the page`,
+  `app: <folder with Playwright>`, and
+  `waive: <check> | <page> | <width> | <target> | <reason>` for a finding you
+  accept.
+- `gsd-ui look <N>` writes `<P>-UI-LOOK.md`: the agent answers one line per
+  picture and layout rule (R1–R10; edit them in `DESIGN.md`) with what it
+  saw. `gsd-ui sheet <N>` shows you the pictures; `gsd-ui approve <N>`
+  records your yes (`--waive "<reason>"` when you choose not to look).
+- Flow: `ui-check → ui-look → ui-approve → ui-review` replaces the
+  `screenshots` step. The check remembers the code it ran on: change the code
+  and the step opens again. Pages that still look the same keep their look
+  and approval.
+- `ui_gates = strict`: the guard blocks `/gsd-ui-review`, and `gsd-finish`
+  (also `--pr`) refuses, until check, look and approval are current.
+  `warn` (default) shows the steps and warns at finish. A phase whose UI
+  review is already merged is left alone.
+- `gsd-doctor`: UI debt of merged phases (T040 `ui-check`, `ui-approve`) no
+  longer needs `flow = strict`; T081 = pictures committed by mistake;
+  `ui_min_font` is checked (T018); notes are listed in `--json`; the
+  Playwright note also looks in `apps/*` and `packages/*`.
+- `gsd-ui shots` stays for pictures without checks. Picture names now carry a
+  short hash, so `/a/b` and `/a-b` no longer share one file.
+- **After updating:** the instruction text changed, so `gsd-doctor` reports
+  T016 in each project. `gsd-doctor --fix` refreshes it.
+
 ## 0.3.4
 
 - `gsd-doctor` T016: the project's GSD instructions (`.gsd/INSTRUCTIONS.md`
