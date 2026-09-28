@@ -4,6 +4,17 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.2
+
+- `gsd-ui check` works without Playwright in the project: when the project
+  has none of its own, it uses the machine's global install. Once per
+  machine: `npm i -g playwright && npx playwright install chromium`. A
+  project's own Playwright still wins, and the report says which one ran
+  (`runner: … (global)`). The browser was always shared; now the package is
+  too.
+- `gsd-doctor` looks in the global npm folder too before it notes a missing
+  Playwright, and its tip says to install it once per machine.
+
 ## 0.4.1
 
 Better first drafts, from the "25 tricks for Claude design" tips that fit a

@@ -617,8 +617,8 @@ if [ "$UI_GATES" != off ] && gsd_ui_has_screens "$HERE"; then
     fail "phases have screens but .planning/design/DESIGN.md is $ds — each phase invents its own styles" "gsd-ui design, then fill it with the user (in the next phase with screens)" "T080"
   else note "phases have screens but .planning/design/DESIGN.md is $ds — gsd-ui design, then fill it (ui_gates = strict makes this a finding)"; fi
   # Files only: doctor never imports or launches the project's Playwright.
-  gsd_ui_playwright_installed "$HERE" \
-    || note "no Playwright package for gsd-ui check (looked in the repo root, apps/*, packages/*) — in the app: npm i -D playwright && npx playwright install chromium"
+  gsd_ui_playwright_installed "$HERE" >/dev/null \
+    || note "no Playwright for gsd-ui check (looked in the project and the global npm folder) — once per machine: npm i -g playwright && npx playwright install chromium"
   command -v node >/dev/null 2>&1 || note "no node on PATH — gsd-ui check needs it"
   # Optional add-ons for better first drafts: notes only, never findings, and
   # only what the project's files say fits. Nothing is run or installed.

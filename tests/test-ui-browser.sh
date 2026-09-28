@@ -31,6 +31,8 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export GSD_NO_UPDATE_CHECK=1 GSD_UI_BUDGET_MS=4000
 unset GSD_PLAYWRIGHT GSD_UI_RUNNER GSD_SKIP_GUARD
+# The machine's own global npm folder must not change the results.
+export GSD_NPM_GLOBAL_ROOT="$WORK/global/node_modules"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ✔ %s\n' "$1"; }
 bad() { FAIL=$((FAIL + 1)); printf '  ✘ %s\n' "$1"; [ $# -gt 1 ] && printf '%s\n' "$2" | sed 's/^/      /'; }
@@ -158,12 +160,17 @@ fake() {
 printf 'node_modules/\n' > "$R/.gitignore"
 nocheck; rc=$?
 is "no Playwright anywhere → exit 2" "$rc" 2
-has "…says how to install it" "npm i -D playwright" "$OUT"
+has "…says how to install it once per machine" "npm i -g playwright" "$OUT"
+mkdir -p "$WORK/global"; ln -s "$PWROOT/node_modules" "$WORK/global/node_modules"
+nocheck; rc=$?
+is "no Playwright in the project → the global one" "$rc/$(fmv status)" "0/passed"
+has "…and the report says so" "^runner: .* (global)$" "$CHECK"
 fake apps/web; fake apps/admin
 nocheck; rc=$?
+# (the global install is still there: a project with its own installs never falls back to it)
 is "two installs, no app: → exit 2" "$rc" 2
 has "…asks for app: and names both" "several Playwright installs (apps/admin, apps/web)" "$OUT"
-rm -rf "$R/apps/admin" "$R/apps/web"
+rm -rf "$R/apps/admin" "$R/apps/web" "$WORK/global"
 mkdir -p "$R/apps/web"; printf '{"name":"web"}\n' > "$R/apps/web/package.json"; ln -s "$PWROOT/node_modules" "$R/apps/web/node_modules"
 nocheck; rc=$?
 is "one install in apps/* is found" "$rc/$(fmv status)" "0/passed"

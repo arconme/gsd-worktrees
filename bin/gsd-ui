@@ -49,9 +49,10 @@
 #   {port:5173}  the same, with the base port written here
 # A fixed address (no {port}) works too, but then parallel phases share it.
 #
-# check needs Node and the project's Playwright package: GSD_PLAYWRIGHT_ROOT,
-# `app:` in LAYOUT, the repo root, then apps/* and packages/*. Install:
-#   npm i -D playwright && npx playwright install chromium
+# check needs Node and a Playwright package: GSD_PLAYWRIGHT_ROOT, `app:` in
+# LAYOUT, the repo root, apps/* and packages/*, then the global one. Install
+# once per machine (projects without their own then share it):
+#   npm i -g playwright && npx playwright install chromium
 # It runs the project's Playwright with your rights, like the project's tests.
 # shots needs only the Playwright CLI (GSD_PLAYWRIGHT overrides).
 #
@@ -225,6 +226,7 @@ check)
     printf 'layout\t%s\nshots\t%s\nminfont\t%s\nstrict\t%s\n' "$(basename "$LAYOUT")" "$(basename "$SHOTS_DIR")" "$(gsd_ui_min_font "$REPO")" "$strict"
     printf 'code\t%s\nsketch\t%s\n' "$(gsd_ui_code_state "$REPO")" "$(gsd_ui_field "$LAYOUT" sketch)"
     [ -z "${GSD_UI_BUDGET_MS:-}" ] || printf 'budget\t%s\n' "$GSD_UI_BUDGET_MS"
+    printf 'globalroot\t%s\n' "$(gsd_ui_global_root)"
     [ -z "$approot" ] || printf 'approot\t%s\napproot_from\t%s\n' "$approot" "$approot_from"
     if [ -f "$GSD_PKG/lib/vendor/axe-core/axe.min.js" ]; then
       printf 'axe\t%s\naxever\t%s\n' "$GSD_PKG/lib/vendor/axe-core/axe.min.js" "$(tr -d '[:space:]' < "$GSD_PKG/lib/vendor/axe-core/VERSION" 2>/dev/null || true)"

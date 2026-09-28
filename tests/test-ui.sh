@@ -17,6 +17,8 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export GSD_NO_UPDATE_CHECK=1 GSD_CLAUDE_SKILL_DIR="$WORK/skills"
 unset GSD_PLAYWRIGHT GSD_PLAYWRIGHT_ROOT GSD_UI_RUNNER GSD_UI_BUDGET_MS GSD_SKIP_GUARD GSD_TRACKER
+# The machine's own global npm folder must not change the results.
+export GSD_NPM_GLOBAL_ROOT="$WORK/global/node_modules"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ✔ %s\n' "$1"; }
 bad() { FAIL=$((FAIL + 1)); printf '  ✘ %s\n' "$1"; [ $# -gt 1 ] && printf '%s\n' "$2" | sed 's/^/      /'; }
@@ -192,6 +194,7 @@ is "job: main_button lines" "$(job main_button | tr '\n' ';')" "/ = Start now;/c
 is "job: expect and waive lines" "$(job expect)|$(job waive)" "/cart = cart|C3 | * | * | .brand | agreed with the user"
 is "job: app: from LAYOUT" "$(job approot)/$(job approot_from)" "apps/web/app: in 05-LAYOUT.md"
 is "job: default minimum font" "$(job minfont)" 12
+is "job: the global npm folder" "$(job globalroot)" "$WORK/global/node_modules"
 is "job: warn → not strict" "$(job strict)" 0
 is "job: the pinned axe-core" "$(basename "$(job axe)")/$(job axever)" "axe.min.js/$(cat "$PKG/lib/vendor/axe-core/VERSION")"
 is "job: the code state is recorded" "$(job code)" "$(. "$PKG/lib/common.sh"; . "$PKG/lib/ui.sh"; gsd_ui_code_state "$R")"
@@ -386,13 +389,18 @@ printf 'base = develop\ninstall = none\nui_min_font = 14\n' > "$D/.gsd.conf"
 gsd-doctor --json --repo "$D" > "$OUT" 2>&1
 hasnt "ui_min_font = 14 is fine" '"T01[78]"' "$OUT"
 has "--json lists the notes" '"notes":\[".*DESIGN.md is missing' "$OUT"
-has "…the missing Playwright among them" "no Playwright package for gsd-ui check" "$OUT"
+has "…the missing Playwright among them" "no Playwright for gsd-ui check" "$OUT"
+has "…it says install it once per machine" "npm i -g playwright" "$OUT"
+mkdir -p "$WORK/global/node_modules/playwright"; echo '{}' > "$WORK/global/node_modules/playwright/package.json"
+gsd-doctor --json --repo "$D" > "$OUT" 2>&1
+hasnt "a global Playwright → no note" "no Playwright for" "$OUT"
+rm -rf "$WORK/global"
 mkdir -p "$D/node_modules/@playwright/test"; echo '{}' > "$D/node_modules/@playwright/test/package.json"
 gsd-doctor --json --repo "$D" > "$OUT" 2>&1
-hasnt "a Playwright package on disk → no note (files only, nothing is run)" "no Playwright package" "$OUT"
+hasnt "a Playwright package on disk → no note (files only, nothing is run)" "no Playwright for" "$OUT"
 rm -rf "$D/node_modules"; mkdir -p "$D/apps/web/node_modules/playwright"; echo '{}' > "$D/apps/web/node_modules/playwright/package.json"
 gsd-doctor --json --repo "$D" > "$OUT" 2>&1
-hasnt "…also found in apps/*" "no Playwright package" "$OUT"
+hasnt "…also found in apps/*" "no Playwright for" "$OUT"
 rm -rf "$D/apps"
 mkdir -p "$D/.planning/phases/03-web/03-SHOTS"; echo png > "$D/.planning/phases/03-web/03-SHOTS/home-375-aaaaaa.png"
 git -C "$D" add -A && git -C "$D" commit -qm "pictures committed"

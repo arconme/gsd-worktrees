@@ -101,12 +101,24 @@ gsd_ui_playwright() {  # $1=checkout $2=app: from LAYOUT ('' = none) → the pla
   if command -v playwright >/dev/null 2>&1; then command -v playwright; fi
 }
 
-gsd_ui_playwright_installed() {  # $1=checkout → true when a Playwright package is on disk (files only: nothing is run)
-  local d
+gsd_ui_global_root() {  # → the global npm node_modules folder ('' = none); GSD_NPM_GLOBAL_ROOT overrides
+  local r
+  if [ -n "${GSD_NPM_GLOBAL_ROOT+x}" ]; then printf '%s' "$GSD_NPM_GLOBAL_ROOT"; return 0; fi
+  command -v npm >/dev/null 2>&1 || return 0
+  r=$(npm root -g 2>/dev/null) || return 0
+  [ -d "$r" ] && printf '%s' "$r"
+}
+
+gsd_ui_playwright_installed() {  # $1=checkout → where a Playwright package is: project|global ('' + 1 = none; files only, nothing is run)
+  local d g
   for d in ${GSD_PLAYWRIGHT_ROOT:+"$GSD_PLAYWRIGHT_ROOT"} "$1" "$1"/apps/* "$1"/packages/*; do
     [ -e "$d/node_modules/playwright/package.json" ] || [ -e "$d/node_modules/@playwright/test/package.json" ] || continue
-    return 0
+    printf project; return 0
   done
+  g=$(gsd_ui_global_root)
+  if [ -n "$g" ] && { [ -e "$g/playwright/package.json" ] || [ -e "$g/@playwright/test/package.json" ]; }; then
+    printf global; return 0
+  fi
   return 1
 }
 
