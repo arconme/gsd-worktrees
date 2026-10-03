@@ -31,6 +31,19 @@ is "…discuss then= updates the ticket" "$("$NEXT" 7 --repo "$REPO" | sed -n 's
 is "ui-decision --no-ui → plan"       "$(step --no-ui)" plan
 is "ui-decision --ui → design-system" "$(step --ui)" design-system
 : > "$PD/07-UI-SPEC.md";    is "UI-SPEC → plan (no flag needed)" "$(step)" plan
+planrun() { "$NEXT" 7 --repo "$REPO" | sed -n 's/^run=//p'; }
+is "plan: no RESEARCH.md, no config → --research (never asks)" "$(planrun)" "/gsd-plan-phase 7 --research"
+printf '{"workflow":{"research":false}}' > "$REPO/.planning/config.json"
+is "plan: workflow.research false → --skip-research" "$(planrun)" "/gsd-plan-phase 7 --skip-research"
+printf '{"workflow":{"research":true}}' > "$REPO/.planning/config.json"
+is "plan: workflow.research true → --research" "$(planrun)" "/gsd-plan-phase 7 --research"
+printf 'not json' > "$REPO/.planning/config.json"
+is "plan: broken config → --research" "$(planrun)" "/gsd-plan-phase 7 --research"
+rm -f "$REPO/.planning/config.json"
+: > "$PD/07-RESEARCH.md"
+is "plan: RESEARCH.md exists → plain (reuses it, no prompt)" "$(planrun)" "/gsd-plan-phase 7"
+rm -f "$PD/07-RESEARCH.md"
+is "plan: never --auto (it would skip the review gate)" "$("$NEXT" 7 --repo "$REPO" | grep -c -- '--auto')" 0
 : > "$PD/07-01-PLAN.md"; : > "$PD/07-02-PLAN.md"
 is "plans → review"                   "$(step)" review
 : > "$PD/07-REVIEWS.md";    is "REVIEWS uncommitted → replan"  "$(step)" replan

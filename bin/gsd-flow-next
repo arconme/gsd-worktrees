@@ -176,8 +176,28 @@ if [ "$UI" = yes ] && ! has UI-SPEC.md; then
   ui_note=""; [ "$GATES" = off ] || ui_note="follow .planning/design/DESIGN.md and ${pd#"$REPO"/}/$P-LAYOUT.md (the chosen sketch); add the layout: sections top to bottom, the one main focus, the main button"
   emit ui-phase "/gsd-ui-phase $N" "" "the user must agree the screens before planning" "$ui_note"
 fi
-# 5 plan
-[ -n "$PLANS" ] || emit plan "/gsd-plan-phase $N" "" "" ""
+# 5 plan — always settle the research question, or plan-phase stops to ask
+# it (it asks whenever RESEARCH.md is missing and no flag was given). Never
+# --auto: that also chains into execute and skips the review gate.
+# workflow.research in .planning/config.json (GSD's own setting) picks the
+# answer; unreadable or unset = research (the plan checker wants its test list).
+if [ -z "$PLANS" ]; then
+  if has RESEARCH.md; then plan_run="/gsd-plan-phase $N"
+  else
+    research=$({ python3 - "$REPO/.planning/config.json" 2>/dev/null || true; } <<'PY'
+import json, sys
+try:
+    v = json.load(open(sys.argv[1])).get("workflow", {}).get("research", True)
+except Exception:
+    v = True
+print("no" if v is False else "yes")
+PY
+)
+    if [ "$research" = no ]; then plan_run="/gsd-plan-phase $N --skip-research"
+    else plan_run="/gsd-plan-phase $N --research"; fi
+  fi
+  emit plan "$plan_run" "" "" ""
+fi
 # 6 cross-AI review
 if ! has REVIEWS.md; then
   if review_flag=$(gsd_provider_review_flag "$REVIEW_PROVIDER"); then
