@@ -4,6 +4,22 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## Unreleased
+
+- New `gsd-codex-wait`: waits out a Codex usage limit instead of failing.
+  `gsd-codex-wait -- <command>` runs the command; if it fails on "You've hit
+  your usage limit … try again at <time>", it waits until that time (+2m)
+  and runs it again. Any other result passes through with its exit code.
+  `--wait-only` just waits, for `/gsd-review`. The reset time comes from
+  Codex's message or its session log; without one it re-checks every 30m.
+  It gives up past `--max-wait` (24h) with exit 75 — never a pass. It never
+  calls Codex. Run it as a background job; on macOS it keeps the Mac awake.
+- A `REVIEWS.md` whose reviewer failed (an empty or error-only Codex section,
+  e.g. after a usage limit) no longer counts: `gsd-flow-next` asks for the
+  review again, and the guard (`flow = strict`) blocks `/gsd-execute-phase`.
+- With `review_provider = codex`, the review step says what to do on a usage
+  limit.
+
 ## 0.4.2
 
 - `gsd-ui check` works without Playwright in the project: when the project

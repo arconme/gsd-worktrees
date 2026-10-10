@@ -89,6 +89,8 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | `--all` preview, `--json`, `--ui` / `--no-ui` | `gsd-flow-next` |
 | Guard check before every step it returns | `gsd-flow-next` |
 | Configurable cross-AI reviewer (`review_provider`, default `codex`) | `gsd-flow-next`, `lib/provider.sh` |
+| A `REVIEWS.md` whose configured reviewer failed (empty section, Codex usage limit) passes neither the review step nor the guard's execute rule | `gsd-flow-next`, `gsd-worktree-guard`, `lib/common.sh` (`gsd_reviews_problem`) |
+| Wait out a Codex usage limit: wrap a command (re-run after the reset) or `--wait-only`; reset time from Codex's message or session log, `--interval` fallback, `--max-wait` cap (exit 75, never a pass); never calls Codex; keeps a Mac awake | `gsd-codex-wait`, `lib/gsd_codex_limit.py` |
 | Agent-facing driver skill with human stop points (discuss, design system + sketch, screens, review, UI approval) | `skills/gsd-flow` |
 | Doctor report of merged phases that skipped a mandatory step (T040: flow steps with `flow = strict`, `ui-check` / `ui-approve` with `ui_gates = strict`; `flow_since` cutoff, `flow_skip` single phases shown as a note) | `gsd-doctor` |
 
@@ -166,10 +168,11 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 
 | Module | Provides |
 |---|---|
-| `lib/common.sh` | `.gsd.conf` reader, main-checkout / base / wtdir detection, checkout lock (`mkdir`, dead-PID reclaim, re-entrant), merge-driver registration, planning-safety status/apply, Python 3.7+ discovery, install/test command detection |
+| `lib/common.sh` | `.gsd.conf` reader, main-checkout / base / wtdir detection, checkout lock (`mkdir`, dead-PID reclaim, re-entrant), merge-driver registration, planning-safety status/apply, Python 3.7+ discovery, install/test command detection, the usable-review test (`gsd_reviews_problem`) |
 | `lib/provider.sh` | provider identity/validation, instruction file + skill root per provider, native-hook capability + state, resolution chains, argv rendering, owned-marker block helpers |
 | `lib/gsd_planning.py` | `reconcile` and `repair` engines for ROADMAP.md / STATE.md |
 | `lib/gsd_hook_payload.py` | Claude/Gemini hook JSON → guard input |
+| `lib/gsd_codex_limit.py` | Codex usage-limit message parsing and session-log scan, for `gsd-codex-wait` |
 | `lib/roadmap-audit.pl` | read-only ROADMAP bookkeeping audit |
 | `lib/roadmap-rows.pl` | adds a claimed phase's missing checklist + Progress rows (the ones `gsd-sdk` leaves out) |
 | `lib/version.sh` | this package's version, version compare, the cached latest-release check and notice |

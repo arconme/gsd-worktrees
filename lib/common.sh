@@ -48,6 +48,47 @@ gsd_register_merge_driver() {  # $1=repo root — register the .planning merge d
     "GSD planning files: union, then reconcile single-value lines"
 }
 
+gsd_reviews_problem() {  # $1=<P>-REVIEWS.md  $2=review_provider → why it is no usable review
+  # The one test of "the cross-AI review really happened", shared by
+  # gsd-flow-next (review step) and the guard (flow = strict, execute-phase).
+  # /gsd-review keeps going when a reviewer fails (e.g. a Codex usage limit,
+  # its stderr discarded) and can still write the file, with that reviewer's
+  # "## <Name> Review" section empty or holding only the error. Not usable:
+  # the configured reviewer's section failed, or every review section did.
+  # Failed = empty, or a short body (≤ 5 lines) carrying a limit/failure
+  # message — a long one is a real review that quotes it. A file without
+  # such sections (hand-recorded review) is not judged. Prints the reason
+  # and returns 0 when unusable; returns 1 when fine.
+  [ -f "$1" ] || return 1
+  awk -v want="$(printf '%s review' "${2:-}" | tr '[:upper:]' '[:lower:]')" '
+    function done_sec(   bad, what) {
+      if (sec == "") return
+      total++
+      bad = (lines == 0 || (mark != "" && lines <= 5))
+      if (bad) {
+        failed++; what = sec (lines == 0 ? " is empty" : " — " mark)
+        if (first == "") first = what
+        if (tolower(sec) == want) own = what
+      }
+      sec = ""
+    }
+    NR == 1 && /^---[[:space:]]*$/ { fm = 1; next }
+    fm { if (/^---[[:space:]]*$/) fm = 0; next }
+    /^## / || /^---[[:space:]]*$/ { done_sec() }
+    /^## / {
+      h = substr($0, 4); sub(/[[:space:]]+$/, "", h)
+      if (tolower(h) ~ /review$/) { sec = h; lines = 0; mark = "" }
+      next
+    }
+    sec != "" && /[^[:space:]]/ {
+      lines++; l = tolower($0)
+      if (l ~ /hit your usage limit/) mark = "usage limit hit"
+      else if (mark == "" && l ~ /failed or returned empty|returned empty content/) mark = "reviewer failed"
+    }
+    END { done_sec(); if (own != "") print own; else if (total > 0 && failed == total) print first }
+  ' "$1" | grep .
+}
+
 gsd_python() {  # → the interpreter for lib/gsd_planning.py; nonzero when none
   # Most systems have `python3`, but minimal images (and Windows) name it
   # `python`. Checking the NAME is not enough: `python` is still Python 2 on

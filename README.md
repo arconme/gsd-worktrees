@@ -128,6 +128,7 @@ are marked and repeated bootstrap updates only those blocks. See
 | `gsd-bootstrap-repo` | Writes neutral config/shims/instructions plus selected provider adapters | Usually called by `gsd-init`. Re-running is safe |
 | `gsd-planning-repair` | Fixes `ROADMAP.md` / `STATE.md` after a merge scrambles them | When `gsd-doctor` tells you to |
 | `gsd-tracker` | Moves the phase's ticket to "in progress" / "in testing"; saves it as `<P>-TICKET.md` | Only with `tracker =` set — see [docs/trackers.md](docs/trackers.md) |
+| `gsd-codex-wait` | Waits out a Codex usage limit: `-- <command>` runs the command again after the reset Codex gave; `--wait-only` only waits. Never calls Codex; gives up (exit 75, never a pass) past `--max-wait` (24h) | A Codex review stopped on "hit your usage limit". Agents run it as a background job |
 | `gsd-ui` | UI quality steps: `design` (DESIGN.md stub), `layout <N>` (the phase's layout contract), `check <N>` (opens the built pages in a browser, measures them, takes the pictures), `look <N>` (what to answer per picture), `sheet <N>` + `approve <N>` (your yes), `status <N>` | When `gsd-flow-next` asks, in a phase with screens |
 
 **Lower-level APIs — usually called by other commands or skills:**
@@ -164,6 +165,7 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 | `gsd-doctor` | Read-only health check of a repo's GSD setup: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene, gsd-core workstreams (not supported here — flagged loud), branches whose upstream is gone, newer GSD on npm. Diagnoses only — every finding names the command that fixes it and carries a code (`W017`/`W027` shared with `/gsd-health`, `T0xx` toolkit-only); `--json` emits them for CI. No `--fix`, by design. |
 | `gsd-worktree-guard` | Shared guard API used by `gsd-flow-next`: phase/worktree matching, base restrictions, dependency/install state, and strict phase order. Provider hooks may invoke the same API. |
 | `gsd-derive-port` | Per-worktree dev ports (base + phase N), so parallel worktrees never collide on a port. |
+| `gsd-codex-wait` | Wait out a Codex usage limit instead of failing. Wrap a command (`gsd-codex-wait -- ./review.sh`): if it fails on Codex's limit, wait until the reset time Codex gave (+2m) and run it again; any other result passes through with its exit code. `--wait-only` just waits (for `/gsd-review`, which cannot be wrapped). The reset time comes from Codex's message or its session log (`$CODEX_HOME/sessions`), else `--interval` (30m); `--max-wait` (24h) caps it — exit 75, never a pass. Run it in the background; on macOS it keeps the Mac awake. |
 
 **`skills/` — canonical agent-facing skills** (installed per selected provider):
 
@@ -414,6 +416,7 @@ tests/test-ui.sh         # UI gates: gsd-ui design/layout/shots/check/look/appro
 tests/test-ui-browser.sh # the real page checker in a browser (needs GSD_PLAYWRIGHT_ROOT=<folder with playwright>; skips without)
 tests/test-doctor.sh     # doctor checks: missing tools, stale skills, .gsd.conf typos, base branch, pre-merge gate, …
 tests/test-tracker.sh    # tickets: id parsing, none/custom/fake-ClickUp, start/finish/doctor paths
+tests/test-codex-wait.sh # Codex usage limit: gsd-codex-wait (fake clock), the usable-review test
 tests/test-e2e.sh        # whole journey in a fake project; needs gsd-sdk (skips without it)
 ```
 

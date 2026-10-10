@@ -124,6 +124,9 @@ on `gsd-start` do not rewrite the set. Refer to `gsd-init --help` for setup flag
 must be checked by the active agent. If absent, or for `custom`, use a separate
 reviewer session and record verified findings in `<P>-REVIEWS.md`. The toolkit
 does not invent `--custom`, silently skip review, or promise automatic delegation.
+A `<P>-REVIEWS.md` whose configured reviewer's section is empty or holds only
+an error (a Codex usage limit) does not count. On a Codex usage limit, run
+`gsd-codex-wait --wait-only` as a background job, then review again.
 
 Doctor checks complete instruction blocks and actual command routes. Native-hook
 states are `present`, `absent`, `invalid`, `unverified` (no jq), or `unsupported`.

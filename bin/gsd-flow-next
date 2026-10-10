@@ -54,6 +54,8 @@
 # review_provider = claude|codex|gemini|custom selects the independent reviewer.
 # The external gsd-review skill performs delegation, not this shell command.
 # Missing capabilities require a separate review session, never a skipped gate.
+# A REVIEWS.md whose reviewer failed (Codex usage limit) does not count; with
+# Codex the note points at gsd-codex-wait --wait-only.
 #
 # Output (text): key=value lines — step, run, then (optional second command),
 # stop (why the skill must pause for the user after this step), note.
@@ -198,19 +200,24 @@ PY
   fi
   emit plan "$plan_run" "" "" ""
 fi
-# 6 cross-AI review
-if ! has REVIEWS.md; then
+# 6 cross-AI review — a REVIEWS.md whose reviewer failed (e.g. hit the Codex
+# usage limit) is no review: same test as the guard (gsd_reviews_problem).
+rev_bad=""; has REVIEWS.md && rev_bad=$(gsd_reviews_problem "$pd/$P-REVIEWS.md" "$REVIEW_PROVIDER")
+if ! has REVIEWS.md || [ -n "$rev_bad" ]; then
   if review_flag=$(gsd_provider_review_flag "$REVIEW_PROVIDER"); then
     review_run="/gsd-review --phase $N $review_flag"
   else
     review_run="request an independent custom-provider review of $pd and save verified findings to $P-REVIEWS.md"
   fi
-  emit review "$review_run" "/gsd-plan-phase $N --reviews" "show the user the independent findings before the replan; verify each against the plans, never accept on trust" "independent reviewer: $REVIEW_PROVIDER; external gsd-review capability required for automatic delegation. If unavailable, hand off the plans to a separate reviewer session and record $P-REVIEWS.md; never skip the gate."
+  review_note="independent reviewer: $REVIEW_PROVIDER; external gsd-review capability required for automatic delegation. If unavailable, hand off the plans to a separate reviewer session and record $P-REVIEWS.md; never skip the gate."
+  [ -z "$rev_bad" ] || review_note="$P-REVIEWS.md is not a usable review ($rev_bad): delete it and run the review again. $review_note"
+  [ "$REVIEW_PROVIDER" != codex ] || review_note="$review_note On a Codex usage limit: run gsd-codex-wait --wait-only as a background job (it waits for the reset Codex gave, without calling Codex), delete $P-REVIEWS.md if one was written, then run this step again."
+  emit review "$review_run" "/gsd-plan-phase $N --reviews" "show the user the independent findings before the replan; verify each against the plans, never accept on trust" "$review_note"
 fi
 # 6b replan — the --reviews replan leaves no artifact of its own, so use git:
 # a plan committed after REVIEWS.md means it happened (commit_docs is on in a
 # GSD repo). Same commit counts as done; REVIEWS.md uncommitted = not yet.
-if has REVIEWS.md && [ -n "$PLANS" ]; then
+if has REVIEWS.md && [ -z "$rev_bad" ] && [ -n "$PLANS" ]; then
   rt=$(git -C "$REPO" log -1 --format=%ct -- "$pd/$P-REVIEWS.md" 2>/dev/null || true)
   pt=0; for f in "$pd/$P"-[0-9]*-PLAN.md; do [ -f "$f" ] || continue; t=$(git -C "$REPO" log -1 --format=%ct -- "$f" 2>/dev/null || true); [ "${t:-0}" -gt "$pt" ] && pt="$t"; done
   if [ -z "$rt" ] || [ "$pt" -lt "$rt" ]; then

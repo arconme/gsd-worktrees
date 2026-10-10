@@ -14,7 +14,9 @@
 #                                plan-phase     needs <P>-CONTEXT.md   (discuss)
 #                                               — unless --prd (express path)
 #                                execute-phase  needs <P>-REVIEWS.md   (cross-AI
-#                                               review) — unless --gaps-only
+#                                               review; one whose reviewer
+#                                               failed does not count) —
+#                                               unless --gaps-only
 #                                secure-phase   needs <P>-REVIEW.md    (code
 #                                               review) and, when a UI-SPEC
 #                                               exists, <P>-UI-REVIEW.md — it is
@@ -238,7 +240,14 @@ case "$cmd" in
   gsd-plan-phase)
     case " $args " in *" --prd "*|*" --prd="*) ;; *) need CONTEXT.md "discuss-phase" "/gsd-discuss-phase $N" ;; esac ;;
   gsd-execute-phase)
-    case " $args " in *" --gaps-only "*) ;; *) need REVIEWS.md "the cross-AI plan review" "/gsd-review --phase $N  then  /gsd-plan-phase $N --reviews" ;; esac ;;
+    case " $args " in *" --gaps-only "*) ;; *)
+      need REVIEWS.md "the cross-AI plan review" "/gsd-review --phase $N  then  /gsd-plan-phase $N --reviews"
+      rp=$(gsd_conf_get "$(gsd_main "$dir" 2>/dev/null || echo "$dir")" review_provider)
+      if why=$(gsd_reviews_problem "$pdir/$P-REVIEWS.md" "${rp:-codex}"); then
+        block "BLOCKED (flow = strict): /$cmd $N needs a usable $P-REVIEWS.md — $why." \
+              "Delete it and run: /gsd-review --phase $N  then  /gsd-plan-phase $N --reviews   (Codex usage limit: gsd-codex-wait --wait-only first, as a background job; or GSD_SKIP_GUARD=1 if the user asked to skip it)"
+      fi ;;
+    esac ;;
   gsd-secure-phase)
     need REVIEW.md "the code review" "/gsd-code-review $N"
     [ -f "$pdir/$P-UI-SPEC.md" ] && need UI-REVIEW.md "ui-review (this phase has screens)" "/gsd-ui-review $N" ;;

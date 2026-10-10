@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An extension to GSD, written as a bash toolkit (plus two Python modules, two Perl scripts, and one Node script for the browser check). It does three things:
+An extension to GSD, written as a bash toolkit (plus three Python modules, two Perl scripts, and one Node script for the browser check). It does three things:
 
 1. **Adds worktree support to GSD.** Each phase runs in its own `phase-<N>-<slug>` git worktree, so phases can run in parallel.
 2. **Wraps repeated GSD steps in simple commands.** `gsd-start`, `gsd-list`, `gsd-finish`, `gsd-doctor`, and the others replace multi-step manual sequences (for example: claim phase → push → create worktree → open session).
@@ -38,6 +38,7 @@ tests/test-update.sh                  # releases: get.sh, gsd-update, checksums,
 tests/test-ui.sh                      # UI gates: gsd-ui design/layout/shots/check/look/approve (stub Playwright, stub runner, local http server), finish gate, doctor T080/T081/T018/UI debt, bootstrap --no-ui
 GSD_PLAYWRIGHT_ROOT=<dir> tests/test-ui-browser.sh   # the REAL runner (lib/ui-check.mjs) in a browser against tests/fixtures/ui/; <dir> has playwright + chromium installed. Skips without it; CI installs one.
 tests/test-doctor.sh                  # doctor checks T005–T007, T015–T019, T025, T032, T073; reinstall command; install --reuse-install-config + --agent
+tests/test-codex-wait.sh              # gsd-codex-wait (fake clock via GSD_CODEX_WAIT_CLOCK, stub Codex, CODEX_HOME), gsd_reviews_problem
 tests/test-e2e.sh                     # END-TO-END: fake project + real gsd-sdk (skips without it), ~15s.
                                       # Run it after ANY change to start/finish/guard/flow/planning code —
                                       # it caught 4 bugs the unit suites missed (fix-plan R15–R18).
@@ -57,10 +58,11 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 
 **Core vs adapters.** The core is `bin/`, `lib/common.sh`, the planning reconciler, the worktree rules, and `gsd-flow-next`. It may call `lib/provider.sh`, but adapters must never hold phase state, merge, claim, or safety policy. To add a provider, extend `lib/provider.sh` (identity, instruction file, skill root, argv renderer, review flag, hook metadata), the CLI allowlists/help, docs, and `tests/test-providers.sh` — see `docs/architecture.md`.
 
-- **`bin/`** — user-facing: `gsd-init`, `gsd-start`, `gsd-list`, `gsd-finish`, `gsd-doctor`, `gsd-sync`, `gsd-bootstrap-repo`, `gsd-planning-repair`, `gsd-tracker` (`gsd-clickup` = old alias), `gsd-ui`. Internal: `gsd-wt-new` / `gsd-wt-finish` (worker halves of start/finish), `gsd-worktree-guard`, `gsd-flow-next`, `gsd-planning-merge` (git merge driver), `gsd-derive-port`. Each script finds its package via `GSD_PKG` (from its own resolved path) and sources `lib/`.
+- **`bin/`** — user-facing: `gsd-init`, `gsd-start`, `gsd-list`, `gsd-finish`, `gsd-doctor`, `gsd-sync`, `gsd-bootstrap-repo`, `gsd-planning-repair`, `gsd-tracker` (`gsd-clickup` = old alias), `gsd-ui`, `gsd-codex-wait`. Internal: `gsd-wt-new` / `gsd-wt-finish` (worker halves of start/finish), `gsd-worktree-guard`, `gsd-flow-next`, `gsd-planning-merge` (git merge driver), `gsd-derive-port`. Each script finds its package via `GSD_PKG` (from its own resolved path) and sources `lib/`.
 - **`lib/common.sh`** — config (`gsd_conf_get` reads `.gsd.conf`; keys fall back to detection), `gsd_main`, base branch, worktree dir, the checkout lock (`.git/gsd-cmd.lock`, dead-PID reclaim), merge-driver registration, and `gsd_planning_status`/`gsd_planning_apply` — the one definition of "installed" shared by doctor and bootstrap.
 - **`lib/provider.sh`** — the provider adapters. No workflow logic. Resolves provider, executable, model and start mode (precedence tables in `docs/providers.md`); renders argv safely (never `eval`); owns the marked-block helpers for generated instruction files.
 - **`lib/gsd_hook_payload.py`** — turns native hook JSON (Claude, Gemini) into the guard's NUL-delimited input. It rejects any compound/wrapped shell command that mentions a `gsd-` name instead of guessing.
+- **`lib/gsd_codex_limit.py`** — for `gsd-codex-wait`: parses Codex's usage-limit message ("try again at Oct 11th, 2026 1:22 AM" = local time, minutes only) and finds the newest limited run in `$CODEX_HOME/sessions/**.jsonl`. Reads files only; nothing here may call Codex.
 - **`lib/gsd_planning.py`** — `reconcile` (one file, structural only, run mid-merge by the driver) and `repair` (both files + recompute counters from `.planning/phases/*/*-PLAN.md`/`*-SUMMARY.md`; `--check` for CI).
 - **`lib/roadmap-rows.pl`** — run by `gsd-start` after each claim: adds the checklist + Progress rows `gsd-sdk` omits, so the new phase passes `roadmap-audit.pl`.
 - **`lib/tracker.sh`** + **`lib/trackers/<name>.sh`** — tickets (see `docs/trackers.md`). `tracker =` in `.gsd.conf` picks `none` (default), `clickup`, or `custom` (a repo script). A phase links to a ticket by the tag `tk-<id>` at the end of its title and slug; the id is read back from the ROADMAP title first (the slug is lowercased). Legacy `cu_<id>` tags, `--cu`, and `STORY.md` are read, never written. Tracker calls are best-effort: failures print a note and never block start/finish. To add a tracker, add `lib/trackers/<name>.sh` defining `tracker_run`, then extend `gsd_tracker_known`.
@@ -82,6 +84,7 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 - One phase = one `phase-<N>-<slug>` worktree. The main checkout stays on the base branch.
 - Claims serialize through the base branch (pull, push, rebase-and-retry; the loser renumbers).
 - A failed merge or validation must leave the remote base branch untouched.
+- A `<P>-REVIEWS.md` counts only when `gsd_reviews_problem` (`lib/common.sh`) finds nothing: `gsd-flow-next` and the guard share it. A review cut short by a usage limit is never a pass.
 - The phase-flow artifact list (`<P>-CONTEXT.md`, `<P>-REVIEWS.md`, `<P>-REVIEW.md`, `<P>-UI-REVIEW.md`, `<P>-LAYOUT.md`, `<P>-UI-CHECK.md`, `<P>-UI-LOOK.md`, `<P>-UI-APPROVAL.md`, …) is shared by `gsd-flow-next`, the guard's `flow = strict` and `ui_gates = strict` rules, the finish gate, and gsd-doctor's T040 report. Change them together.
 - A UI check that could not run must never leave an older pass in place, and "not checked" is never reported as passed.
 - Planning reconcile: keyed lines keep the **first** occurrence's position and the **best** occurrence's content (`[x]` beats `[ ]`, longer wins among equals). Single-value lines keep the last copy (the incoming branch). STATE.md's `## Session Continuity` must stay byte-identical — a test asserts it.

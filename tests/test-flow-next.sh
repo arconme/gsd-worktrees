@@ -46,6 +46,11 @@ rm -f "$PD/07-RESEARCH.md"
 is "plan: never --auto (it would skip the review gate)" "$("$NEXT" 7 --repo "$REPO" | grep -c -- '--auto')" 0
 : > "$PD/07-01-PLAN.md"; : > "$PD/07-02-PLAN.md"
 is "plans → review"                   "$(step)" review
+is "review note (codex): gsd-codex-wait on a usage limit" "$("$NEXT" 7 --repo "$REPO" | grep -c 'gsd-codex-wait --wait-only')" 1
+printf '## Codex Review\n\nYou\342\200\231ve hit your usage limit. Try again at Oct 11th, 2026 1:22 AM.\n' > "$PD/07-REVIEWS.md"
+is "REVIEWS whose Codex hit the limit → review again" "$(step)" review
+is "…and the note says why" "$("$NEXT" 7 --repo "$REPO" | grep -c 'not a usable review (Codex Review — usage limit hit)')" 1
+is "…also with --all (no replan after it)" "$("$NEXT" 7 --repo "$REPO" --all | grep -c '^step=replan')" 0
 : > "$PD/07-REVIEWS.md";    is "REVIEWS uncommitted → replan"  "$(step)" replan
 gcommit 2026-01-01T10:00:00 "plans"          # plans + REVIEWS in one commit → counts as replanned
 is "REVIEWS + plans same commit → execute"  "$(step)" execute
