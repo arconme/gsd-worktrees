@@ -4,8 +4,11 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
-## Unreleased
+## 0.4.3
 
+- `gsd-flow-next`: the plan step settles the research question up front
+  (`--research`, or `--skip-research` when `workflow.research` is false in
+  `.planning/config.json`), so `/gsd-flow` no longer stops at it.
 - New `gsd-codex-wait`: waits out a Codex usage limit instead of failing.
   `gsd-codex-wait -- <command>` runs the command; if it fails on "You've hit
   your usage limit … try again at <time>", it waits until that time (+2m)
