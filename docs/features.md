@@ -162,7 +162,9 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | ClickUp: status matched per list, subtask cascade, idempotent, markdown snapshot; token from `CLICKUP_API_TOKEN`, else `~/.config/gsd/clickup-<profile>.env` with `tracker_profile`, else `~/.config/gsd/clickup.env` | `lib/trackers/clickup.sh` |
 | Custom: `tracker_command` gets `start` / `finish` / `comment` / `status` / `snapshot` / `check` + `<id> [text]` | `lib/trackers/custom.sh` |
 | Snapshot `--out` writes only on success (the file marks the flow step done) | `gsd-tracker` |
-| Legacy read-only: `--cu`, `cu_<id>` tags, `STORY.md`, `gsd-clickup` alias | `lib/tracker.sh`, `gsd-clickup` |
+| ClickUp-only: `create` / `update` (name, markdown description, assignees by me/id/email/username, status, priority, tags, parent) / `tasks` (filters, `--match` name search) / `lists` / `members` / `api` (any v2 call); workspace from `CLICKUP_TEAM_ID` or the token's only one | `gsd-clickup`, `lib/trackers/clickup.sh` |
+| Agent skill: read and write ClickUp tickets through `gsd-clickup` | `skills/gsd-clickup` |
+| Legacy read-only: `--cu`, `cu_<id>` tags, `STORY.md` | `lib/tracker.sh` |
 
 ## 11. Shared library (`lib/`)
 

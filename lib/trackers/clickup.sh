@@ -16,6 +16,11 @@
 # They are idempotent (a task already there gets no second comment) and
 # cascade to open subtasks. GSD_CLICKUP_ENG_LIST=<list id> prints a reminder
 # when a started task lives in another list (the API can't move it).
+#
+# ClickUp-only commands (clickup_extra: create, update, tasks, lists, members,
+# api) let an agent work tickets through this one connector. Commands that need
+# the workspace use $CLICKUP_TEAM_ID (env or the token file), else the only
+# workspace the token sees.
 # Sourced by bin/gsd-tracker (die, tracker_status set there).
 
 PROFILE=$(gsd_tracker_profile "$REPO")
@@ -34,7 +39,7 @@ load_token() {
 
 api() {  # api <method> <path> [json-body]; prints response body, fails on HTTP >= 400
   local method="$1" path="$2" body="${3:-}"
-  local args=(-sS --max-time 15 -X "$method"
+  local args=(-sSg --max-time 15 -X "$method"
               -H "Authorization: $CLICKUP_API_TOKEN"
               -H "Content-Type: application/json")
   [ -n "$body" ] && args+=(-d "$body")
@@ -138,6 +143,172 @@ clickup_snapshot() {  # $1=id → markdown on stdout
   printf '%s' "$comments" | jq -r '
     [.comments[]? | .comment_text // "" | select(. != "")] as $c
     | if ($c | length) > 0 then "\n## Comments\n\n" + ($c | map("- " + (gsub("\n"; "\n  "))) | join("\n")) else empty end'
+}
+
+# ── ClickUp-only commands ────────────────────────────────────────────────────
+
+uri() { jq -rn --arg v "$1" '$v | @uri'; }
+
+prio_ok() { case "$1" in [1-4]) ;; *) die "priority is 1 (urgent), 2 (high), 3 (normal) or 4 (low), not '$1'" ;; esac; }
+
+desc_arg() {  # $1=markdown, or - for stdin
+  if [ "$1" = - ]; then cat; else printf '%s' "$1"; fi
+}
+
+clickup_team() {  # → the workspace id: $CLICKUP_TEAM_ID, else the only one the token sees
+  local teams n
+  if [ -n "${CLICKUP_TEAM_ID:-}" ]; then printf '%s\n' "$CLICKUP_TEAM_ID"; return 0; fi
+  teams=$(api GET /team) || exit 2
+  n=$(jq '.teams | length' <<< "$teams")
+  case "$n" in
+    1) jq -r '.teams[0].id' <<< "$teams" ;;
+    0) die "the token sees no workspace" ;;
+    *) die "the token sees $n workspaces — set CLICKUP_TEAM_ID in $CONFIG to one of: $(jq -r '[.teams[] | "\(.id) (\(.name))"] | join(", ")' <<< "$teams")" ;;
+  esac
+}
+
+clickup_members_json() {  # → [{id, username, email}] of the workspace
+  local team teams
+  team=$(clickup_team)
+  teams=$(api GET /team) || exit 2
+  jq --arg t "$team" '[.teams[] | select(.id == $t) | .members[].user | {id, username, email}]' <<< "$teams"
+}
+
+clickup_user() {  # $1=me | user id | email | username → the numeric user id
+  local out id
+  case "$1" in
+    me)
+      out=$(api GET /user) || exit 2
+      jq -r '.user.id' <<< "$out" ;;
+    ''|*[!0-9]*)
+      out=$(clickup_members_json)
+      id=$(jq -r --arg u "$1" 'first(.[] | select(((.email // "") | ascii_downcase) == ($u | ascii_downcase)
+                                               or ((.username // "") | ascii_downcase) == ($u | ascii_downcase)) | .id) // empty' <<< "$out")
+      [ -n "$id" ] || die "no workspace member '$1' (see gsd-clickup members)"
+      printf '%s\n' "$id" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+clickup_create() {  # <list-id> <name> [options] → prints the new id and url
+  [ $# -ge 2 ] || die "usage: gsd-clickup create <list-id> <name> [--desc <md>|-] [--assign <who>]… [--status <s>] [--priority 1-4] [--tag <t>]… [--parent <id>]"
+  local list="$1" body out v
+  printf '%s' "$list" | grep -qE '^[0-9]+$' || die "not a list id: $list (see gsd-clickup lists)"
+  body=$(jq -cn --arg n "$2" '{name: $n}')
+  shift 2
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || die "$1 needs a value"
+    case "$1" in
+      --desc)     v=$(desc_arg "$2"); body=$(jq -c --arg v "$v" '.markdown_content = $v' <<< "$body") ;;
+      --assign)   v=$(clickup_user "$2"); body=$(jq -c --argjson v "$v" '.assignees += [$v]' <<< "$body") ;;
+      --status)   body=$(jq -c --arg v "$2" '.status = $v' <<< "$body") ;;
+      --priority) prio_ok "$2"; body=$(jq -c --argjson v "$2" '.priority = $v' <<< "$body") ;;
+      --tag)      body=$(jq -c --arg v "$2" '.tags += [$v]' <<< "$body") ;;
+      --parent)   v=$(gsd_ticket_norm "$2" clickup) || die "not a ticket id: $2"
+                  body=$(jq -c --arg v "$v" '.parent = $v' <<< "$body") ;;
+      *) die "unknown option for create: $1" ;;
+    esac
+    shift 2
+  done
+  out=$(api POST "/list/$list/task" "$body") || exit 2
+  jq -r '"✔ ClickUp \(.id) created · \(.url // "")"' <<< "$out"
+}
+
+clickup_update() {  # <id> [options]
+  [ $# -ge 3 ] || die "usage: gsd-clickup update <id> [--name <n>] [--desc <md>|-] [--assign <who>]… [--unassign <who>]… [--status <s>] [--priority 1-4] [--parent <id>]"
+  local id body='{}' v
+  id=$(gsd_ticket_norm "$1" clickup) || die "not a ticket id: $1"
+  shift
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || die "$1 needs a value"
+    case "$1" in
+      --name)     body=$(jq -c --arg v "$2" '.name = $v' <<< "$body") ;;
+      --desc)     v=$(desc_arg "$2"); body=$(jq -c --arg v "$v" '.markdown_content = $v' <<< "$body") ;;
+      --assign)   v=$(clickup_user "$2"); body=$(jq -c --argjson v "$v" '.assignees.add += [$v]' <<< "$body") ;;
+      --unassign) v=$(clickup_user "$2"); body=$(jq -c --argjson v "$v" '.assignees.rem += [$v]' <<< "$body") ;;
+      --status)   body=$(jq -c --arg v "$2" '.status = $v' <<< "$body") ;;
+      --priority) prio_ok "$2"; body=$(jq -c --argjson v "$2" '.priority = $v' <<< "$body") ;;
+      --parent)   v=$(gsd_ticket_norm "$2" clickup) || die "not a ticket id: $2"
+                  body=$(jq -c --arg v "$v" '.parent = $v' <<< "$body") ;;
+      *) die "unknown option for update: $1" ;;
+    esac
+    shift 2
+  done
+  api PUT "/task/$id" "$body" >/dev/null || exit 2
+  echo "✔ ClickUp ${id} updated: $(jq -r 'keys | map(sub("markdown_content"; "description")) | join(", ")' <<< "$body")"
+}
+
+clickup_tasks() {  # [filters] → "<id>  [<status>]  <name> · <list>", one per line
+  local q="" page=0 match="" pages=1 i=0 n=0 team out v
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --closed) q="$q&include_closed=true"; shift; continue ;;
+    esac
+    [ $# -ge 2 ] || die "$1 needs a value"
+    case "$1" in
+      --list)   printf '%s' "$2" | grep -qE '^[0-9]+$' || die "not a list id: $2"
+                q="$q&list_ids%5B%5D=$2" ;;
+      --status) q="$q&statuses%5B%5D=$(uri "$2")" ;;
+      --assign) v=$(clickup_user "$2"); q="$q&assignees%5B%5D=$v" ;;
+      --tag)    q="$q&tags%5B%5D=$(uri "$2")" ;;
+      --match)  match="$2"; pages=10 ;;
+      --page)   printf '%s' "$2" | grep -qE '^[0-9]+$' || die "--page needs a number"
+                page="$2" ;;
+      *) die "unknown option for tasks: $1" ;;
+    esac
+    shift 2
+  done
+  team=$(clickup_team)
+  # --match filters names here (the API has no text search), over up to 10 pages.
+  while [ "$i" -lt "$pages" ]; do
+    out=$(api GET "/team/$team/task?page=$((page + i))&subtasks=true$q") || exit 2
+    n=$(jq '.tasks | length' <<< "$out")
+    jq -r --arg m "$match" '.tasks[]
+      | select($m == "" or (.name | ascii_downcase | contains($m | ascii_downcase)))
+      | "\(.id)  [\(.status.status)]  \(.name) · \(.list.name // "")"' <<< "$out"
+    i=$((i + 1))
+    [ "$n" -ge 100 ] || break
+  done
+  [ "$n" -lt 100 ] || echo "• more tasks: add --page $((page + i))" >&2
+}
+
+clickup_lists() {  # → the workspace tree with ids
+  local team spaces sid out
+  team=$(clickup_team)
+  spaces=$(api GET "/team/$team/space") || exit 2
+  for sid in $(jq -r '.spaces[].id' <<< "$spaces"); do
+    jq -r --arg s "$sid" '.spaces[] | select(.id == $s) | "space  \(.id)  \(.name)"' <<< "$spaces"
+    out=$(api GET "/space/$sid/folder") || exit 2
+    jq -r '.folders[] | "  folder  \(.id)  \(.name)", (.lists[]? | "    list  \(.id)  \(.name)")' <<< "$out"
+    out=$(api GET "/space/$sid/list") || exit 2
+    jq -r '.lists[] | "  list  \(.id)  \(.name)"' <<< "$out"
+  done
+}
+
+clickup_raw() {  # <METHOD> </path> [json] → the response body
+  [ $# -ge 2 ] || die "usage: gsd-clickup api <GET|POST|PUT|DELETE> </path> [json]"
+  case "$1" in GET|POST|PUT|DELETE) ;; *) die "method must be GET, POST, PUT or DELETE, not '$1'" ;; esac
+  case "$2" in
+    *[[:space:]]*) die "the path has spaces — encode them" ;;
+    /*) ;;
+    *) die "the path starts with / (it is under /api/v2, e.g. /task/abc123)" ;;
+  esac
+  [ -z "${3:-}" ] || jq -e . >/dev/null 2>&1 <<< "$3" || die "the body is not JSON"
+  api "$1" "$2" "${3:-}" || exit 2
+}
+
+clickup_extra() {  # $1=command, rest=args — the ClickUp-only commands
+  local cmd="$1"; shift
+  need_jq "$cmd"
+  load_token
+  case "$cmd" in
+    create)  clickup_create "$@" ;;
+    update)  clickup_update "$@" ;;
+    tasks)   clickup_tasks "$@" ;;
+    lists)   clickup_lists ;;
+    members) clickup_members_json | jq -r '.[] | "\(.id)  \(.username // "-")  \(.email // "-")"' ;;
+    api)     clickup_raw "$@" ;;
+  esac
 }
 
 tracker_run() {  # $1=command, rest=args

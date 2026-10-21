@@ -74,15 +74,35 @@ With a profile set, only `clickup-acme.env` is read. There is no fallback to
 `clickup.env`: a missing file is an error, not the wrong user. The file sits
 outside every checkout, so all phase worktrees see it. An exported
 `$CLICKUP_API_TOKEN` still wins (`gsd-doctor` notes it), and
-`GSD_TRACKER_PROFILE=<name>` overrides the profile for one command. Use the
-same name as the `clickup-per-project` label so the chat connector and
-`gsd-tracker` act as the same ClickUp user.
+`GSD_TRACKER_PROFILE=<name>` overrides the profile for one command.
 
 Status names match the task's own list, ignoring case, spaces, `-` and `_`
 ("in testing" finds "In-Testing"). Tried in order: the configured status, then
 "in progress" / "in development" (start) or "in testing" / "in review"
 (finish). Open subtasks move with the task. A task already in the target
 status gets no second comment.
+
+### ClickUp-only commands
+
+`gsd-clickup` is `gsd-tracker --tracker clickup`, plus commands for working
+tickets by hand or from an agent (the `gsd-clickup` skill teaches agents to
+use them, so no ClickUp chat connector or its daily quota is needed):
+
+```sh
+gsd-clickup lists                       # spaces, folders, lists — with ids
+gsd-clickup members                     # id, username, email
+gsd-clickup tasks --list 901 --assign me --status "in progress"
+gsd-clickup tasks --match "login"       # name search over up to 1,000 tasks
+gsd-clickup create 901 "Fix login" --desc "# Steps…" --assign sara@x.io --priority 2 --tag bug
+gsd-clickup update 869e33cv4 --name "Fix login on Safari" --assign me --unassign 42
+gsd-clickup api DELETE /task/869e33cv4/tag/bug   # any API v2 call; prints the body
+```
+
+`<who>` is `me`, a user id, an email or a username. `--desc -` reads the
+markdown from stdin. Priority: 1 urgent, 2 high, 3 normal, 4 low.
+`tasks`, `lists` and `members` need the workspace: `CLICKUP_TEAM_ID` (env or
+the token file), else the only workspace the token sees. They use the same
+token and profile as above. See `gsd-clickup --help`.
 
 ## Custom
 
@@ -120,7 +140,6 @@ Still read, never written:
 - `--cu <id>` → same as `--ticket` (also strips a `CU-` prefix).
 - `cu_<id>` / `CU-<id>` / `ClickUp <id>` tags in titles and branches.
 - `<P>-STORY.md` counts as the ticket snapshot. A `cu_` phase folder counts too.
-- `gsd-clickup <cmd>` = `gsd-tracker --tracker clickup <cmd>`.
 - `GSD_CLICKUP_STATUS_START` / `_FINISH` still work (`GSD_TRACKER_STATUS_*` win).
 
 `gsd-doctor` findings:

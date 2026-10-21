@@ -66,8 +66,17 @@ case "$m $path" in
   "GET /task/abc123?include_markdown_description=true")
     out='{"name":"Cart","url":"https://app.clickup.com/t/abc123","status":{"status":"to do"},"markdown_description":"As a buyer I keep a cart."}' ;;
   "GET /task/abc123/comment") out='{"comments":[{"comment_text":"looks good"}]}' ;;
-  "GET /user") out='{"user":{}}' ;;
-  PUT*|POST*) out='{}' ;;
+  "GET /user") out='{"user":{"id":7}}' ;;
+  "GET /team") out='{"teams":[{"id":"T1","name":"Acme","members":[{"user":{"id":42,"username":"Sara","email":"sara@x.io"}}]}]}' ;;
+  "GET /team/T1/task?page=0"*)
+    out='{"tasks":[{"id":"t1","name":"Fix login","status":{"status":"to do"},"list":{"name":"Sprint"}},
+      {"id":"t2","name":"Cart totals","status":{"status":"in progress"},"list":{"name":"Sprint"}}]}' ;;
+  "GET /team/T1/task?page="*) out='{"tasks":[]}' ;;
+  "GET /team/T1/space") out='{"spaces":[{"id":"S1","name":"Eng"}]}' ;;
+  "GET /space/S1/folder") out='{"folders":[{"id":"F1","name":"Web","lists":[{"id":"901","name":"Sprint"}]}]}' ;;
+  "GET /space/S1/list") out='{"lists":[{"id":"902","name":"Inbox"}]}' ;;
+  "POST /list/901/task") out='{"id":"new1","url":"https://app.clickup.com/t/new1"}' ;;
+  PUT*|POST*|DELETE*) out='{}' ;;
   *) out='{"err":"not found"}'; code=404 ;;
 esac
 printf '%s\n%s' "$out" "$code"
@@ -172,6 +181,47 @@ else
   : > "$CURL_LOG"; (cd "$WORK/none" && gsd-clickup start abc123 hi) >/dev/null 2>&1
   has "gsd-clickup alias forces clickup (repo says none)" 'PUT /task/abc123' "$CURL_LOG"
   is  "gsd-clickup extract still works"     "$(gsd-clickup extract 'cart cu_abc123')" abc123
+fi
+
+section "gsd-clickup — ClickUp-only commands (fake API)"
+if ! command -v jq >/dev/null 2>&1; then
+  echo "  SKIPPED: jq not installed"
+else
+  R="$WORK/cu"; printf 'tracker = clickup\n' > "$R/.gsd.conf"
+  cu() { (cd "$R" && env -u CLICKUP_TEAM_ID gsd-clickup "$@"); }
+  : > "$CURL_LOG"; cu create 901 'Fix "login"' --desc '# Steps' --assign me --assign sara@x.io \
+    --priority 2 --tag bug --parent tk-abc123 > "$WORK/out" 2>&1
+  has "create prints the new id + url"      '✔ ClickUp new1 created · https://app.clickup.com/t/new1' "$WORK/out"
+  has "create posts to the list, JSON-escaped" 'POST /list/901/task {"name":"Fix \\"login\\"","markdown_content":"# Steps"' "$CURL_LOG"
+  has "…me and an email become user ids"    '"assignees":\[7,42\]' "$CURL_LOG"
+  has "…priority, tag and parent"           '"priority":2,"tags":\["bug"\],"parent":"abc123"' "$CURL_LOG"
+  printf 'line one\nline two\n' | cu create 901 piped --desc - >/dev/null 2>&1
+  has "--desc - reads stdin"                '"markdown_content":"line one\\nline two"' "$CURL_LOG"
+  fails "create refuses a non-numeric list" cu create Sprint x
+  fails "create refuses priority 5"         cu create 901 x --priority 5
+  fails "an unknown member fails"           cu create 901 x --assign nobody
+  : > "$CURL_LOG"; cu update https://app.clickup.com/t/abc123 --name New --assign Sara --unassign 9 > "$WORK/out" 2>&1
+  has "update takes a URL and sends add/rem" 'PUT /task/abc123 {"name":"New","assignees":{"add":\[42\],"rem":\[9\]}}' "$CURL_LOG"
+  has "…and names what changed"             'updated: assignees, name' "$WORK/out"
+  fails "update with no change fails"       cu update abc123
+  : > "$CURL_LOG"; cu tasks --list 901 --status 'in progress' --assign me > "$WORK/out" 2>&1
+  has "tasks lists one line per task"       '^t1  \[to do\]  Fix login · Sprint' "$WORK/out"
+  has "…filters are encoded"                'list_ids%5B%5D=901&statuses%5B%5D=in%20progress&assignees%5B%5D=7' "$CURL_LOG"
+  cu tasks --match CART > "$WORK/out" 2>&1
+  has "--match finds by name, any case"     '^t2 ' "$WORK/out"
+  hasnt "…and drops the rest"               '^t1 ' "$WORK/out"
+  cu lists > "$WORK/out" 2>&1
+  has "lists: folder lists"                 '^    list  901  Sprint' "$WORK/out"
+  has "lists: lists with no folder"         '^  list  902  Inbox' "$WORK/out"
+  is  "members"                             "$(cu members 2>&1)" "42  Sara  sara@x.io"
+  : > "$CURL_LOG"; cu api DELETE /task/abc123/tag/bug >/dev/null 2>&1
+  has "api passes any call through"         'DELETE /task/abc123/tag/bug' "$CURL_LOG"
+  fails "api refuses a path without /"      cu api GET task/abc123
+  fails "api refuses a body that is not JSON" cu api POST /task/abc123/comment 'hi'
+  : > "$CURL_LOG"; (cd "$R" && CLICKUP_TEAM_ID=T1 gsd-clickup tasks) >/dev/null 2>&1
+  hasnt "CLICKUP_TEAM_ID skips the workspace lookup" 'GET /team ' "$CURL_LOG"
+  (cd "$WORK/none" && gsd-tracker create 901 x) > "$WORK/out" 2>&1
+  has "gsd-tracker refuses ClickUp commands for another tracker" 'run gsd-clickup create' "$WORK/out"
 fi
 
 section "gsd-tracker — tracker_profile picks the ClickUp token file"

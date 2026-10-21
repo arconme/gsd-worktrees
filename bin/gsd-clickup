@@ -1,10 +1,27 @@
 #!/usr/bin/env bash
 #
-# gsd-clickup — kept for old scripts: gsd-tracker with the ClickUp tracker.
+# gsd-clickup — gsd-tracker with the ClickUp tracker, plus ClickUp-only commands.
 #
 #   gsd-clickup <command> …   ==   gsd-tracker --tracker clickup <command> …
 #
-# See gsd-tracker --help. New repos set `tracker = clickup` in .gsd.conf.
+# Ticket commands (start, finish, comment, status, snapshot, check): see
+# gsd-tracker --help. ClickUp only:
+#   create  <list-id> <name> [--desc <md>|-] [--assign <who>]… [--status <s>]
+#           [--priority 1-4] [--tag <t>]… [--parent <id>]   prints the new id + url
+#   update  <id> [--name <n>] [--desc <md>|-] [--assign <who>]… [--unassign <who>]…
+#           [--status <s>] [--priority 1-4] [--parent <id>]
+#   tasks   [--list <id>]… [--status <s>]… [--assign <who>]… [--tag <t>]…
+#           [--closed] [--match <text>] [--page <n>]        "<id>  [<status>]  <name> · <list>"
+#   lists                    spaces, folders and lists, with ids
+#   members                  workspace members: id, username, email
+#   api     <GET|POST|PUT|DELETE> </path> [json]   any API v2 call; prints the body
+#
+# <who> is me, a user id, an email or a username. --desc - reads stdin.
+# Priority: 1 urgent · 2 high · 3 normal · 4 low. --match filters task names
+# (the API has no text search) over up to 10 pages of 100.
+# The workspace: $CLICKUP_TEAM_ID (env or the token file), else the only one
+# the token sees. Login and profiles: see gsd-tracker --help.
+# New repos set `tracker = clickup` in .gsd.conf.
 set -euo pipefail
 SELF="$0"
 while [ -L "$SELF" ]; do

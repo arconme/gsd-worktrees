@@ -21,6 +21,7 @@
 #     check                    verify the tracker is set up
 #     which                    print the tracker in use
 #   <id> may be the bare id, tk-<id>, #<id>, or the ticket's URL.
+#   ClickUp only: create, update, tasks, lists, members, api — see gsd-clickup --help.
 #
 # Tracker: --tracker > $GSD_TRACKER > `tracker =` in .gsd.conf > none.
 #   none     start/finish/comment/status do nothing and succeed
@@ -87,6 +88,11 @@ case "$cmd" in
     gsd_ticket_extract "$2"; exit 0 ;;
   which) printf '%s\n' "$TRACKER"; exit 0 ;;
   start|finish|comment|status|snapshot|check) ;;
+  create|update|tasks|lists|members|api)
+    [ "$TRACKER" = clickup ] || die "'$cmd' is a ClickUp command — run gsd-clickup $cmd (tracker here: $TRACKER)"
+    # shellcheck source=../lib/trackers/clickup.sh
+    . "$GSD_PKG/lib/trackers/clickup.sh"
+    shift; clickup_extra "$cmd" "$@"; exit 0 ;;
   *) die "unknown command: $cmd (see gsd-tracker --help)" ;;
 esac
 gsd_tracker_known "$TRACKER" || die "unknown tracker '$TRACKER' — use none, clickup, or custom"

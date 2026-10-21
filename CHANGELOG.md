@@ -12,6 +12,11 @@ becomes its release notes.
   wrong user). `GSD_TRACKER_PROFILE` overrides it for one command; custom
   tracker scripts get it too. `gsd-doctor` knows the key, flags a bad name
   (T018), and notes when an exported `CLICKUP_API_TOKEN` hides the profile.
+- `gsd-clickup` gains ClickUp-only commands: `create`, `update` (name,
+  markdown description, assignees, status, priority, parent), `tasks`
+  (filters and `--match` name search), `lists`, `members`, and `api` for any
+  other v2 call. A new `gsd-clickup` skill points agents at them, so one
+  connector serves both the scripts and the chat, on the user's own token.
 
 ## 0.4.3
 
