@@ -4,7 +4,7 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
-## Unreleased
+## 0.4.5
 
 - `gsd-tracker` is the one ticket layer: `create`, `update` and `tasks` are
   now shared verbs for every tracker (options go to the connector as written;
