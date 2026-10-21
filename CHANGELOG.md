@@ -4,6 +4,12 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.6
+
+- `gsd-start` no longer hangs at "Preparing worktree" until a background
+  dependency install (`yarn install`, …) finishes: the install now fully
+  detaches, and the session opens while it runs.
+
 ## 0.4.5
 
 - `gsd-tracker` is the one ticket layer: `create`, `update` and `tasks` are
