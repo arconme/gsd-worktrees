@@ -24,6 +24,30 @@ A second claim with the same ticket is refused, however it is worded.
 The tag is read back from the ROADMAP title (exact case), then the branch name
 (lowercased). A tag already in the description works the same as `--ticket`.
 
+## Commands
+
+`gsd-tracker` is the one layer sessions and scripts call; each tracker is a
+connector under it (`lib/trackers/<name>.sh`). Shared verbs, the same for
+every tracker:
+
+| Verb | Does |
+|---|---|
+| `snapshot <id> [--out <file>]` | print the ticket as markdown |
+| `comment <id> <text>` · `status <id> <status>` | write back |
+| `start` / `finish <id> <text>` | status + comment (called by `gsd-start` / `gsd-finish`) |
+| `create <where> <title> [option…]` | new ticket; prints its id + url |
+| `update <id> <option>…` | change fields |
+| `tasks [option…]` | find tickets |
+| `check` · `which` | login works · which tracker |
+
+Options for `create` / `update` / `tasks` go to the connector as written; what
+`<where>` is and which options work are the connector's. A connector may add
+its own commands (`TRACKER_EXTRA`; ClickUp: `lists`, `members`, `api`). With
+`tracker = none`, `comment` / `status` / `start` / `finish` do nothing and
+succeed (so a claim never fails for want of a tracker), while `snapshot` /
+`create` / `update` / `tasks` fail. Agents learn this from the `gsd-tracker`
+skill: it checks `gsd-tracker which` first.
+
 ## Pick a tracker
 
 In `.gsd.conf`:
@@ -82,27 +106,29 @@ Status names match the task's own list, ignoring case, spaces, `-` and `_`
 (finish). Open subtasks move with the task. A task already in the target
 status gets no second comment.
 
-### ClickUp-only commands
+### Create, update, find — and ClickUp's own commands
 
-`gsd-clickup` is `gsd-tracker --tracker clickup`, plus commands for working
-tickets by hand or from an agent (the `gsd-clickup` skill teaches agents to
-use them, so no ClickUp chat connector or its daily quota is needed):
+With `tracker = clickup`, `gsd-tracker create` / `update` / `tasks` work on
+ClickUp, and ClickUp's own commands `lists`, `members` and `api` go through
+`gsd-tracker` too:
 
 ```sh
-gsd-clickup lists                       # spaces, folders, lists — with ids
-gsd-clickup members                     # id, username, email
-gsd-clickup tasks --list 901 --assign me --status "in progress"
-gsd-clickup tasks --match "login"       # name search over up to 1,000 tasks
-gsd-clickup create 901 "Fix login" --desc "# Steps…" --assign sara@x.io --priority 2 --tag bug
-gsd-clickup update 869e33cv4 --name "Fix login on Safari" --assign me --unassign 42
-gsd-clickup api DELETE /task/869e33cv4/tag/bug   # any API v2 call; prints the body
+gsd-tracker lists                       # spaces, folders, lists — with ids
+gsd-tracker members                     # id, username, email
+gsd-tracker tasks --list 901 --assign me --status "in progress"
+gsd-tracker tasks --match "login"       # name search over up to 1,000 tasks
+gsd-tracker create 901 "Fix login" --desc "# Steps…" --assign sara@x.io --priority 2 --tag bug
+gsd-tracker update 869e33cv4 --name "Fix login on Safari" --assign me --unassign 42
+gsd-tracker api DELETE /task/869e33cv4/tag/bug   # any API v2 call; prints the body
 ```
 
-`<who>` is `me`, a user id, an email or a username. `--desc -` reads the
-markdown from stdin. Priority: 1 urgent, 2 high, 3 normal, 4 low.
-`tasks`, `lists` and `members` need the workspace: `CLICKUP_TEAM_ID` (env or
-the token file), else the only workspace the token sees. They use the same
-token and profile as above. See `gsd-clickup --help`.
+`create`'s `<where>` is a list id. `<who>` is `me`, a user id, an email or a
+username. `--desc -` reads the markdown from stdin. Priority: 1 urgent,
+2 high, 3 normal, 4 low. `tasks`, `lists` and `members` need the workspace:
+`CLICKUP_TEAM_ID` (env or the token file), else the only workspace the token
+sees. They use the same token and profile as above. `gsd-clickup <command>`
+is the same with the tracker fixed to ClickUp, for use outside a fitted repo.
+See `gsd-clickup --help`.
 
 ## Custom
 
@@ -115,7 +141,13 @@ Any tracker, through a script you keep in the repo:
 <tracker_command> status   <id> <status>
 <tracker_command> snapshot <id>            # print the ticket as markdown on stdout
 <tracker_command> check                    # exit 0 when set up
+<tracker_command> create <where> <title> [option…]   # optional: options as the user wrote them
+<tracker_command> update <id> <option>…
+<tracker_command> tasks  [option…]
 ```
+
+A script that can't do a verb exits nonzero (reported as "tracker call
+failed"). Connector-only commands (`lists`, …) are not passed to it.
 
 `GSD_TRACKER_PROFILE` holds `tracker_profile` (or is empty), so the script can
 pick its own login.

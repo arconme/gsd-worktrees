@@ -16,24 +16,32 @@
 #     snapshot <id> [--out <file>]
 #                              print the ticket as markdown (description +
 #                              comments); --out writes <file> only on success
+#     create   <where> <title> [option…]   new ticket; prints its id + url
+#     update   <id> <option>…              change fields of a ticket
+#     tasks    [option…]                   find tickets, one per line
 #     extract  <string>        print the id tagged in a title/branch (tk-<id>;
 #                              legacy cu_<id>, CU-<id>, "ClickUp <id>"), or nothing
 #     check                    verify the tracker is set up
 #     which                    print the tracker in use
 #   <id> may be the bare id, tk-<id>, #<id>, or the ticket's URL.
-#   ClickUp only: create, update, tasks, lists, members, api — see gsd-clickup --help.
+#   create/update/tasks options go to the tracker as written; what <where> is
+#   and which options work depend on it (ClickUp: gsd-clickup --help).
+#   A tracker may add its own commands (ClickUp: lists, members, api).
 #
 # Tracker: --tracker > $GSD_TRACKER > `tracker =` in .gsd.conf > none.
-#   none     start/finish/comment/status do nothing and succeed
+#   none     start/finish/comment/status do nothing and succeed;
+#            snapshot/create/update/tasks fail (no tracker connected)
 #   clickup  the ClickUp API (see lib/trackers/clickup.sh for the token)
+#   custom   runs `tracker_command =` from .gsd.conf (relative to the repo root):
+#              <cmd> start|finish|comment|status <id> <text>
+#              <cmd> snapshot <id>  ·  <cmd> check
+#              <cmd> create <where> <title> [option…] · update <id> <option>…
+#              <cmd> tasks [option…]
+#            GSD_TRACKER_STATUS carries the configured status for start/finish.
 #
 # Per-project login: tracker_profile = <name> in .gsd.conf ($GSD_TRACKER_PROFILE
 # wins). ClickUp then reads ~/.config/gsd/clickup-<name>.env instead of the
 # shared ~/.config/gsd/clickup.env (no fallback); custom gets GSD_TRACKER_PROFILE.
-#   custom   runs `tracker_command =` from .gsd.conf (relative to the repo root):
-#              <cmd> start|finish|comment|status <id> <text>
-#              <cmd> snapshot <id>  ·  <cmd> check
-#            GSD_TRACKER_STATUS carries the configured status for start/finish.
 # Status names for start/finish: $GSD_TRACKER_STATUS_START / _FINISH >
 #   tracker_status_start / tracker_status_finish in .gsd.conf > the adapter's
 #   defaults. (Legacy GSD_CLICKUP_STATUS_START / _FINISH still work.)
@@ -87,34 +95,39 @@ case "$cmd" in
     [ $# -ge 2 ] || die "usage: gsd-tracker extract <string>"
     gsd_ticket_extract "$2"; exit 0 ;;
   which) printf '%s\n' "$TRACKER"; exit 0 ;;
-  start|finish|comment|status|snapshot|check) ;;
-  create|update|tasks|lists|members|api)
-    [ "$TRACKER" = clickup ] || die "'$cmd' is a ClickUp command — run gsd-clickup $cmd (tracker here: $TRACKER)"
-    # shellcheck source=../lib/trackers/clickup.sh
-    . "$GSD_PKG/lib/trackers/clickup.sh"
-    shift; clickup_extra "$cmd" "$@"; exit 0 ;;
-  *) die "unknown command: $cmd (see gsd-tracker --help)" ;;
 esac
 gsd_tracker_known "$TRACKER" || die "unknown tracker '$TRACKER' — use none, clickup, or custom"
 
-if [ "$cmd" != check ]; then
-  case "$cmd" in
-    snapshot) [ $# -ge 2 ] || die "usage: gsd-tracker snapshot <id>" ;;
-    *) [ $# -ge 3 ] || die "usage: gsd-tracker $cmd <id> <text>" ;;
-  esac
-  ID=$(gsd_ticket_norm "$2" "$TRACKER") || die "not a ticket id: $2"
-  shift 2
-  OUT=""
-  if [ "$cmd" = snapshot ] && [ "${1:-}" = --out ]; then
-    [ $# -ge 2 ] || die "--out needs a file"; OUT="$2"; shift 2
-  fi
-  set -- "$cmd" "$ID" "$@"
-fi
+case "$cmd" in
+  start|finish|comment|status|snapshot|update)
+    case "$cmd" in
+      snapshot) [ $# -ge 2 ] || die "usage: gsd-tracker snapshot <id>" ;;
+      update)   [ $# -ge 3 ] || die "usage: gsd-tracker update <id> <option>…" ;;
+      *)        [ $# -ge 3 ] || die "usage: gsd-tracker $cmd <id> <text>" ;;
+    esac
+    ID=$(gsd_ticket_norm "$2" "$TRACKER") || die "not a ticket id: $2"
+    shift 2
+    OUT=""
+    if [ "$cmd" = snapshot ] && [ "${1:-}" = --out ]; then
+      [ $# -ge 2 ] || die "--out needs a file"; OUT="$2"; shift 2
+    fi
+    set -- "$cmd" "$ID" "$@" ;;
+  create) [ $# -ge 3 ] || die "usage: gsd-tracker create <where> <title> [option…]" ;;
+  tasks|check) ;;
+  *)
+    # Not a shared verb: maybe one of the tracker's own (TRACKER_EXTRA).
+    if [ "$TRACKER" != none ]; then
+      # shellcheck source=/dev/null
+      . "$GSD_PKG/lib/trackers/$TRACKER.sh"
+      case " ${TRACKER_EXTRA:-} " in *" $cmd "*) tracker_run "$@"; exit 0 ;; esac
+    fi
+    die "unknown command: $cmd${TRACKER_EXTRA:+ (tracker $TRACKER also has: $TRACKER_EXTRA)} — see gsd-tracker --help" ;;
+esac
 
 if [ "$TRACKER" = none ]; then
   case "$cmd" in
     check) echo "• tracker = none — no ticket updates (set tracker = clickup|custom in .gsd.conf)" ;;
-    snapshot) die "tracker = none — nothing to snapshot (set tracker = clickup|custom in .gsd.conf)" ;;
+    snapshot|create|update|tasks) die "tracker = none — no tracker connected, nothing to $cmd (set tracker = clickup|custom in .gsd.conf)" ;;
     *) echo "• tracker = none — ticket $ID not updated" ;;
   esac
   exit 0

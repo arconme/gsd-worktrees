@@ -6,6 +6,9 @@
 # Called as:  <cmd> start|finish|comment|status <id> <text-or-status>
 #             <cmd> snapshot <id>     → prints the ticket as markdown
 #             <cmd> check             → exit 0 when set up
+#             <cmd> create <where> <title> [option…] · update <id> <option>…
+#             <cmd> tasks [option…]   → options as the user wrote them; exit
+#                                       nonzero for what the script can't do
 # For start/finish, GSD_TRACKER_STATUS holds the configured status name (or is
 # empty: the script picks its own). GSD_TRACKER_PROFILE holds tracker_profile
 # (or is empty), so the script can pick its login. A nonzero exit is reported, never fatal to

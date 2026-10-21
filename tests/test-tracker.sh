@@ -126,6 +126,12 @@ fails "snapshot is refused"          bash -c 'cd "$1" && gsd-tracker snapshot PR
 fails "an unknown tracker is refused" gsd-tracker --tracker jira start PROJ-1 hi
 fails "a bad id is refused"          gsd-tracker --tracker custom start 'a b' hi
 is "extract works without a tracker" "$(gsd-tracker extract 'x tk-Z9')" Z9
+(cd "$R" && gsd-tracker update PROJ-1 --name x) > "$WORK/out" 2>&1
+is  "update with no tracker fails (exit 1)" "$?" 1
+has "…saying none is connected"      "no tracker connected" "$WORK/out"
+fails "create with no tracker fails" bash -c 'cd "$1" && gsd-tracker create 901 x' _ "$R"
+fails "tasks with no tracker fails"  bash -c 'cd "$1" && gsd-tracker tasks' _ "$R"
+fails "an unknown command fails"     bash -c 'cd "$1" && gsd-tracker lists' _ "$R"
 
 section "gsd-tracker — tracker = custom"
 R="$WORK/custom"; mkdir -p "$R/scripts"; git -C "$R" init -qb main
@@ -149,6 +155,14 @@ is  "…exit 2 (tracker call failed)"    "$(cd "$R" && gsd-tracker finish FAIL-1
 has "snapshot --out writes the file"   "product words" "$WORK/t.md"
 fails "a failed snapshot → nonzero"    bash -c 'cd "$1" && gsd-tracker snapshot FAIL-2 --out "$2"' _ "$R" "$WORK/f.md"
 if [ -e "$WORK/f.md" ]; then bad "…and leaves no file"; else ok "…and leaves no file"; fi
+: > "$TRACKER_LOG"
+(cd "$R" && gsd-tracker create PROJ "New thing" --label x) >/dev/null 2>&1
+has "create goes to the script as written" "^create|create PROJ New thing --label x|status=$" "$TRACKER_LOG"
+(cd "$R" && gsd-tracker update https://x/browse/PROJ-42 --title y) >/dev/null 2>&1
+has "update gets the normalized id"    "^update|update PROJ-42 --title y|status=$" "$TRACKER_LOG"
+(cd "$R" && gsd-tracker tasks --mine) >/dev/null 2>&1
+has "tasks passes its options"         "^tasks|tasks --mine|status=$" "$TRACKER_LOG"
+fails "ClickUp's own commands are not custom's" bash -c 'cd "$1" && gsd-tracker lists' _ "$R"
 chmod -x "$R/scripts/tracker.sh"
 fails "a non-executable command is refused" bash -c 'cd "$1" && gsd-tracker start PROJ-42 x' _ "$R"
 has   "…naming it"                     "not an executable" "$WORK/out"
@@ -220,8 +234,16 @@ else
   fails "api refuses a body that is not JSON" cu api POST /task/abc123/comment 'hi'
   : > "$CURL_LOG"; (cd "$R" && CLICKUP_TEAM_ID=T1 gsd-clickup tasks) >/dev/null 2>&1
   hasnt "CLICKUP_TEAM_ID skips the workspace lookup" 'GET /team ' "$CURL_LOG"
-  (cd "$WORK/none" && gsd-tracker create 901 x) > "$WORK/out" 2>&1
-  has "gsd-tracker refuses ClickUp commands for another tracker" 'run gsd-clickup create' "$WORK/out"
+  section "gsd-tracker — create / update / tasks and ClickUp's own commands (tracker = clickup)"
+  : > "$CURL_LOG"; (cd "$R" && gsd-tracker update tk-abc123 --priority 1) > "$WORK/out" 2>&1
+  has "update through gsd-tracker"          'PUT /task/abc123 {"priority":1}' "$CURL_LOG"
+  (cd "$R" && gsd-tracker create 901 hi) > "$WORK/out" 2>&1
+  has "create through gsd-tracker"          'created · https://app.clickup.com/t/new1' "$WORK/out"
+  (cd "$R" && gsd-tracker tasks --match login) > "$WORK/out" 2>&1
+  has "tasks through gsd-tracker"           '^t1 ' "$WORK/out"
+  is  "lists (ClickUp's own) through gsd-tracker" "$(cd "$R" && gsd-tracker lists 2>&1 | head -1)" "space  S1  Eng"
+  (cd "$R" && gsd-tracker nope) > "$WORK/out" 2>&1
+  has "an unknown command names the tracker's own" 'also has: lists members api' "$WORK/out"
 fi
 
 section "gsd-tracker — tracker_profile picks the ClickUp token file"

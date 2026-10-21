@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
-# gsd-clickup — gsd-tracker with the ClickUp tracker, plus ClickUp-only commands.
+# gsd-clickup — gsd-tracker with the tracker fixed to ClickUp.
 #
 #   gsd-clickup <command> …   ==   gsd-tracker --tracker clickup <command> …
 #
-# Ticket commands (start, finish, comment, status, snapshot, check): see
-# gsd-tracker --help. ClickUp only:
+# In a fitted repo with tracker = clickup, plain gsd-tracker does the same.
+# Shared verbs (start, finish, comment, status, snapshot, check): see
+# gsd-tracker --help. ClickUp's options for create/update/tasks, and its own
+# commands (lists, members, api):
 #   create  <list-id> <name> [--desc <md>|-] [--assign <who>]… [--status <s>]
 #           [--priority 1-4] [--tag <t>]… [--parent <id>]   prints the new id + url
 #   update  <id> [--name <n>] [--desc <md>|-] [--assign <who>]… [--unassign <who>]…

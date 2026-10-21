@@ -17,12 +17,14 @@
 # cascade to open subtasks. GSD_CLICKUP_ENG_LIST=<list id> prints a reminder
 # when a started task lives in another list (the API can't move it).
 #
-# ClickUp-only commands (clickup_extra: create, update, tasks, lists, members,
-# api) let an agent work tickets through this one connector. Commands that need
-# the workspace use $CLICKUP_TEAM_ID (env or the token file), else the only
-# workspace the token sees.
+# Shared verbs create/update/tasks, plus this tracker's own commands
+# (TRACKER_EXTRA: lists, members, api), let an agent work tickets through this
+# one connector. Commands that need the workspace use $CLICKUP_TEAM_ID (env or
+# the token file), else the only workspace the token sees.
 # Sourced by bin/gsd-tracker (die, tracker_status set there).
 
+# shellcheck disable=SC2034  # read by bin/gsd-tracker
+TRACKER_EXTRA="lists members api"  # this tracker's own commands, beyond the shared verbs
 PROFILE=$(gsd_tracker_profile "$REPO")
 CONFIG=$(gsd_clickup_env "$REPO")
 
@@ -145,7 +147,7 @@ clickup_snapshot() {  # $1=id → markdown on stdout
     | if ($c | length) > 0 then "\n## Comments\n\n" + ($c | map("- " + (gsub("\n"; "\n  "))) | join("\n")) else empty end'
 }
 
-# ── ClickUp-only commands ────────────────────────────────────────────────────
+# ── create / update / tasks, and the ClickUp-only commands ────────────────────────────────────────────────────
 
 uri() { jq -rn --arg v "$1" '$v | @uri'; }
 
@@ -297,20 +299,6 @@ clickup_raw() {  # <METHOD> </path> [json] → the response body
   api "$1" "$2" "${3:-}" || exit 2
 }
 
-clickup_extra() {  # $1=command, rest=args — the ClickUp-only commands
-  local cmd="$1"; shift
-  need_jq "$cmd"
-  load_token
-  case "$cmd" in
-    create)  clickup_create "$@" ;;
-    update)  clickup_update "$@" ;;
-    tasks)   clickup_tasks "$@" ;;
-    lists)   clickup_lists ;;
-    members) clickup_members_json | jq -r '.[] | "\(.id)  \(.username // "-")  \(.email // "-")"' ;;
-    api)     clickup_raw "$@" ;;
-  esac
-}
-
 tracker_run() {  # $1=command, rest=args
   case "$1" in
     start|finish) clickup_move "$1" "$2" "$3" ;;
@@ -323,6 +311,18 @@ tracker_run() {  # $1=command, rest=args
       api PUT "/task/$2" "{\"status\": $(json_escape "$3")}" >/dev/null \
         && echo "✔ ClickUp $2 → status '$3'" || exit 2 ;;
     snapshot) clickup_snapshot "$2" ;;
+    create|update|tasks|lists|members|api)
+      need_jq "$1"
+      load_token
+      local cmd="$1"; shift
+      case "$cmd" in
+        create)  clickup_create "$@" ;;
+        update)  clickup_update "$@" ;;
+        tasks)   clickup_tasks "$@" ;;
+        lists)   clickup_lists ;;
+        members) clickup_members_json | jq -r '.[] | "\(.id)  \(.username // "-")  \(.email // "-")"' ;;
+        api)     clickup_raw "$@" ;;
+      esac ;;
     check)
       load_token
       api GET /user >/dev/null && echo "✔ ClickUp token OK${PROFILE:+ (profile $PROFILE)}" || exit 2 ;;

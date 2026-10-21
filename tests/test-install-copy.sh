@@ -35,6 +35,20 @@ install_copy
 [ -f "$COPY/lib/vendor/axe-core/VERSION" ]
 [ -f "$SKILLS/gsd-flow/SKILL.md" ]
 
+# A skill an older release placed but this one no longer ships (renamed or
+# retired) is removed; a skill of the user's own, with no marker, stays.
+mkdir -p "$SKILLS/gsd-retired" "$SKILLS/my-own"
+printf 'old\n' > "$SKILLS/gsd-retired/SKILL.md"; printf '0.4.4\n' > "$SKILLS/gsd-retired/.gsd-worktrees-skill"
+printf 'mine\n' > "$SKILLS/my-own/SKILL.md"
+ln -s "$PKG/skills/gsd-gone" "$SKILLS/gsd-gone"
+ln -s "$WORK/elsewhere/skill" "$SKILLS/not-ours"
+install_copy
+[ ! -e "$SKILLS/gsd-retired" ]
+[ ! -L "$SKILLS/gsd-gone" ]
+[ -f "$SKILLS/my-own/SKILL.md" ]
+[ -L "$SKILLS/not-ours" ]
+rm -rf "$SKILLS/my-own" "$SKILLS/not-ours"
+
 before=$(find "$WORK" -name '*.bak*' | wc -l | tr -d ' ')
 install_copy
 after=$(find "$WORK" -name '*.bak*' | wc -l | tr -d ' ')

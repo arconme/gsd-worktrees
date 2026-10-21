@@ -223,9 +223,22 @@ install_skills() {
     fi
     echo "✔ $provider skill $name → $dest"
   done
+  # A skill this toolkit placed earlier but no longer ships (renamed or
+  # retired) would keep loading with old advice: remove it.
   for dest in "$SKILL_DIR"/*; do
-    [ -L "$dest" ] || continue
-    case "$(readlink "$dest")" in "$REPO"/skills/*) [ -e "$dest" ] || echo "⚠ stale toolkit skill link: $dest (re-run install after updating the toolkit)" ;; esac
+    name=$(basename "$dest")
+    [ ! -d "$REPO/skills/$name" ] || continue
+    if [ -L "$dest" ]; then
+      # only a dangling link of ours; a live link into another checkout stays
+      [ ! -e "$dest" ] || continue
+      case "$(readlink "$dest")" in "$REPO"/skills/*) ;; *) owned_link "$dest" skills || continue ;; esac
+      rm -f "$dest"
+    elif [ -d "$dest" ] && [ -f "$dest/.gsd-worktrees-skill" ]; then
+      rm -rf "$dest"
+    else
+      continue
+    fi
+    echo "✔ $provider skill $name retired → removed $dest"
   done
 }
 oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do install_skills "$provider"; done; IFS=$oldifs

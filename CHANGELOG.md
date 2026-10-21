@@ -4,6 +4,20 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## Unreleased
+
+- `gsd-tracker` is the one ticket layer: `create`, `update` and `tasks` are
+  now shared verbs for every tracker (options go to the connector as written;
+  `custom` scripts receive them; `tracker = none` fails them), and a
+  connector's own commands come from its `TRACKER_EXTRA` (ClickUp: `lists`,
+  `members`, `api`), so `gsd-tracker` names no ClickUp command. `gsd-clickup`
+  is unchanged.
+- The agent skill is now `gsd-tracker` (was `gsd-clickup`): it checks
+  `gsd-tracker which` first and stops on `none`, instead of a write that does
+  nothing and succeeds.
+- Install removes a toolkit skill it no longer ships (the old `gsd-clickup`
+  skill), so a retired skill can't keep loading with old advice.
+
 ## 0.4.4
 
 - Per-project tracker login: `tracker_profile = <name>` in `.gsd.conf` makes
