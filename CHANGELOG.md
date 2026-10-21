@@ -4,6 +4,15 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## Unreleased
+
+- Per-project tracker login: `tracker_profile = <name>` in `.gsd.conf` makes
+  the ClickUp tracker read `~/.config/gsd/clickup-<name>.env` instead of the
+  shared `clickup.env` (no fallback, so a missing file is an error, not the
+  wrong user). `GSD_TRACKER_PROFILE` overrides it for one command; custom
+  tracker scripts get it too. `gsd-doctor` knows the key, flags a bad name
+  (T018), and notes when an exported `CLICKUP_API_TOKEN` hides the profile.
+
 ## 0.4.3
 
 - `gsd-flow-next`: the plan step settles the research question up front

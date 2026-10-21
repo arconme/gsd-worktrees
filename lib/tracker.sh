@@ -22,6 +22,29 @@ gsd_tracker_command() {  # $1=repo root → custom tracker_command, absolute (''
   printf '%s\n' "$c"
 }
 
+# A profile names the tracker login for this repo (e.g. a separate ClickUp user
+# per project). Only the name lives in .gsd.conf (committed); the secret stays
+# in ~/.config/gsd, outside every checkout, so all worktrees see it.
+gsd_tracker_profile() {  # $1=repo root → profile name ('' = none); $GSD_TRACKER_PROFILE wins
+  local p="${GSD_TRACKER_PROFILE:-}"
+  [ -n "$p" ] || p=$(gsd_conf_get "$1" tracker_profile)
+  printf '%s\n' "$p"
+}
+
+# A profile becomes part of a file name: no slashes, no leading dot or dash.
+gsd_tracker_profile_ok() { printf '%s' "$1" | grep -qE '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'; }
+
+# gsd_clickup_env <repo root> → the ClickUp token file: $GSD_CLICKUP_CONFIG, else
+# ~/.config/gsd/clickup-<profile>.env with a profile, else ~/.config/gsd/clickup.env.
+# A profile never falls back to the shared file: that would act as the wrong user.
+gsd_clickup_env() {
+  local p
+  if [ -n "${GSD_CLICKUP_CONFIG:-}" ]; then printf '%s\n' "$GSD_CLICKUP_CONFIG"; return 0; fi
+  p=$(gsd_tracker_profile "$1")
+  if [ -n "$p" ]; then printf '%s\n' "$HOME/.config/gsd/clickup-$p.env"
+  else printf '%s\n' "$HOME/.config/gsd/clickup.env"; fi
+}
+
 # gsd_ticket_norm <id|tag|url> [clickup] → the bare id; nonzero when it isn't one.
 # Accepts a URL (last path segment), #42, tk-<id>, cu_<id>; with "clickup" also
 # CU-<id> (elsewhere CU-12 may be a real key, e.g. a Jira project named CU).

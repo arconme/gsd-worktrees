@@ -3,7 +3,9 @@
 #
 # Auth: a personal API token (pk_…), first match wins:
 #   1. $CLICKUP_API_TOKEN in the environment
-#   2. ~/.config/gsd/clickup.env (sourced; must set CLICKUP_API_TOKEN=…)
+#   2. the token file (sourced; must set CLICKUP_API_TOKEN=…), from gsd_clickup_env:
+#      $GSD_CLICKUP_CONFIG, else ~/.config/gsd/clickup-<profile>.env when
+#      .gsd.conf sets tracker_profile = <profile>, else ~/.config/gsd/clickup.env
 # Create one in ClickUp: avatar → Settings → Apps → API Token.
 #
 # start/finish resolve the status against the task's own list: names match
@@ -16,15 +18,18 @@
 # when a started task lives in another list (the API can't move it).
 # Sourced by bin/gsd-tracker (die, tracker_status set there).
 
-CONFIG="${GSD_CLICKUP_CONFIG:-$HOME/.config/gsd/clickup.env}"
+PROFILE=$(gsd_tracker_profile "$REPO")
+CONFIG=$(gsd_clickup_env "$REPO")
 
 load_token() {
+  [ -z "$PROFILE" ] || gsd_tracker_profile_ok "$PROFILE" \
+    || die "tracker_profile '$PROFILE' is not a name (letters, digits, . _ -)"
   if [ -z "${CLICKUP_API_TOKEN:-}" ] && [ -f "$CONFIG" ]; then
     # shellcheck disable=SC1090
     . "$CONFIG"
   fi
   [ -n "${CLICKUP_API_TOKEN:-}" ] \
-    || die "no CLICKUP_API_TOKEN — export it or put CLICKUP_API_TOKEN=pk_… in $CONFIG"
+    || die "no CLICKUP_API_TOKEN${PROFILE:+ for profile '$PROFILE'} — export it or put CLICKUP_API_TOKEN=pk_… in $CONFIG"
 }
 
 api() {  # api <method> <path> [json-body]; prints response body, fails on HTTP >= 400
@@ -149,6 +154,6 @@ tracker_run() {  # $1=command, rest=args
     snapshot) clickup_snapshot "$2" ;;
     check)
       load_token
-      api GET /user >/dev/null && echo "✔ ClickUp token OK" || exit 2 ;;
+      api GET /user >/dev/null && echo "✔ ClickUp token OK${PROFILE:+ (profile $PROFILE)}" || exit 2 ;;
   esac
 }

@@ -172,6 +172,22 @@ hasnt "a token in the config file → no T073" '"T073"' "$OUT"
 rm -f "$WORK/clickup.env"
 CLICKUP_API_TOKEN=pk_env json "$R"
 hasnt "a token in the env → no T073" '"T073"' "$OUT"
+# A profile reads ~/.config/gsd/clickup-<profile>.env (GSD_CLICKUP_CONFIG unset, fake HOME).
+printf 'tracker_profile = acme\n' >> "$R/.gsd.conf"
+mkdir -p "$WORK/home/.config/gsd"
+echo 'CLICKUP_API_TOKEN=pk_shared' > "$WORK/home/.config/gsd/clickup.env"
+( unset GSD_CLICKUP_CONFIG; HOME="$WORK/home" json "$R" )
+has "a profile ignores the shared token → T073" '"T073"' "$OUT"
+has "…naming the profile's file" 'clickup-acme.env' "$OUT"
+echo 'CLICKUP_API_TOKEN=pk_acme' > "$WORK/home/.config/gsd/clickup-acme.env"
+( unset GSD_CLICKUP_CONFIG; HOME="$WORK/home" json "$R" )
+hasnt "the profile's token file → no T073" '"T073"' "$OUT"
+( unset GSD_CLICKUP_CONFIG; HOME="$WORK/home" CLICKUP_API_TOKEN=pk_env doc "$R" )
+has "an env token notes that it hides the profile" 'profile .acme. .* is not used' "$OUT"
+cp "$WORK/conf.bak" "$R/.gsd.conf"; printf 'tracker = clickup\ntracker_profile = ../x\n' >> "$R/.gsd.conf"
+json "$R"
+has "a profile with a slash → T018" '"T018"' "$OUT"
+hasnt "…and no unknown-key T017" '"T017"' "$OUT"
 cp "$WORK/conf.bak" "$R/.gsd.conf"
 
 section "flow debt: flow_skip leaves out single phases (T040)"

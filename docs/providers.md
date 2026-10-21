@@ -112,6 +112,7 @@ on `gsd-start` do not rewrite the set. Refer to `gsd-init --help` for setup flag
 | `flow_skip` | Phases left out of that report, e.g. `flow_skip = 13.1, 14` (accepted as they are; doctor lists them as a note) |
 | `tracker` | Ticket tracker: `none` (default), `clickup`, or `custom` |
 | `tracker_command` | Executable for `tracker = custom` (see `docs/trackers.md`) |
+| `tracker_profile` | This project's tracker login: ClickUp reads `~/.config/gsd/clickup-<name>.env`; custom gets `GSD_TRACKER_PROFILE` |
 | `tracker_status_start`, `tracker_status_finish` | Ticket status set by `gsd-start` / `gsd-finish` |
 | `ui_gates` | UI quality gates: `warn` (default), `strict` (the guard and `gsd-finish` enforce), `off` |
 | `ui_min_font` | Smallest text size `gsd-ui check` accepts, in px: 8–32, default `12` |

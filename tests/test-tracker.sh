@@ -46,7 +46,10 @@ cat > "$WORK/stub/curl" <<'CURL'
 #!/usr/bin/env bash
 m=GET; body=""; url=""
 while [ $# -gt 0 ]; do
-  case "$1" in -X) m=$2; shift ;; -d) body=$2; shift ;; -H|-w|--max-time) shift ;; http*) url=$1 ;; esac
+  case "$1" in
+    -X) m=$2; shift ;; -d) body=$2; shift ;; -w|--max-time) shift ;; http*) url=$1 ;;
+    -H) case "$2" in Authorization:*) printf '%s\n' "$2" >> "${CURL_AUTH_LOG:-/dev/null}" ;; esac; shift ;;
+  esac
   shift
 done
 path=${url#https://api.clickup.com/api/v2}
@@ -127,6 +130,10 @@ has "…relative command, normalized id, text" "^start|start PROJ-42 phase 7 sta
 has "env status beats .gsd.conf"       "status=Build$" "$TRACKER_LOG"
 (cd "$R" && gsd-tracker comment PROJ-42 note) >/dev/null 2>&1
 has "comment gets no status"           "^comment|comment PROJ-42 note|status=$" "$TRACKER_LOG"
+printf '#!/usr/bin/env bash\necho "profile=${GSD_TRACKER_PROFILE:-}"\n' > "$R/scripts/prof.sh"; chmod +x "$R/scripts/prof.sh"
+printf 'tracker = custom\ntracker_command = scripts/prof.sh\ntracker_profile = acme\n' > "$R/.gsd.conf"
+is  "the script gets GSD_TRACKER_PROFILE" "$(cd "$R" && gsd-tracker check 2>&1)" "profile=acme"
+printf 'tracker = custom\ntracker_command = scripts/tracker.sh\ntracker_status_start = Doing\n' > "$R/.gsd.conf"
 fails "a failing script → nonzero"     bash -c 'cd "$1" && gsd-tracker finish FAIL-1 x' _ "$R"
 is  "…exit 2 (tracker call failed)"    "$(cd "$R" && gsd-tracker finish FAIL-1 x >/dev/null 2>&1; echo $?)" 2
 (cd "$R" && gsd-tracker snapshot PROJ-42 --out "$WORK/t.md") > "$WORK/out" 2>&1
@@ -166,6 +173,32 @@ else
   has "gsd-clickup alias forces clickup (repo says none)" 'PUT /task/abc123' "$CURL_LOG"
   is  "gsd-clickup extract still works"     "$(gsd-clickup extract 'cart cu_abc123')" abc123
 fi
+
+section "gsd-tracker — tracker_profile picks the ClickUp token file"
+# A clean token environment: no exported token, no GSD_CLICKUP_CONFIG, a fake HOME.
+H="$WORK/home"; mkdir -p "$H/.config/gsd"
+echo 'CLICKUP_API_TOKEN=pk_shared' > "$H/.config/gsd/clickup.env"
+echo 'CLICKUP_API_TOKEN=pk_acme'   > "$H/.config/gsd/clickup-acme.env"
+R="$WORK/prof"; mkdir -p "$R"; git -C "$R" init -qb main
+cuenv() { (cd "$R" && env -u CLICKUP_API_TOKEN -u GSD_CLICKUP_CONFIG -u GSD_TRACKER_PROFILE \
+            HOME="$H" CURL_AUTH_LOG="$WORK/auth.log" "$@"); }
+printf 'tracker = clickup\n' > "$R/.gsd.conf"
+: > "$WORK/auth.log"; cuenv gsd-tracker check > "$WORK/out" 2>&1
+has "no profile → the shared clickup.env"      'Authorization: pk_shared' "$WORK/auth.log"
+printf 'tracker = clickup\ntracker_profile = acme\n' > "$R/.gsd.conf"
+: > "$WORK/auth.log"; cuenv gsd-tracker check > "$WORK/out" 2>&1
+has "profile → clickup-acme.env"               'Authorization: pk_acme' "$WORK/auth.log"
+has "check names the profile"                  'token OK (profile acme)' "$WORK/out"
+: > "$WORK/auth.log"; cuenv env GSD_TRACKER_PROFILE=other gsd-tracker check > "$WORK/out" 2>&1
+is  "a profile with no file fails (exit 1)"    "$?" 1
+has "…naming the profile's file"               'clickup-other.env' "$WORK/out"
+hasnt "…and never falls back to the shared token" 'pk_shared' "$WORK/auth.log"
+: > "$WORK/auth.log"; cuenv env CLICKUP_API_TOKEN=pk_env gsd-tracker check > "$WORK/out" 2>&1
+has "\$CLICKUP_API_TOKEN still wins"           'Authorization: pk_env' "$WORK/auth.log"
+printf 'tracker = clickup\ntracker_profile = ../acme\n' > "$R/.gsd.conf"
+: > "$WORK/auth.log"; cuenv gsd-tracker check > "$WORK/out" 2>&1
+is  "a profile with a slash is refused"        "$?" 1
+is  "…before any API call"                     "$(wc -l < "$WORK/auth.log" | tr -d ' ')" 0
 
 # ── through gsd-start / gsd-finish ───────────────────────────────────────────
 project() {  # $1=dir $2=extra .gsd.conf lines — repo on main + bare origin

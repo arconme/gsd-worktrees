@@ -35,6 +35,7 @@ tracker = custom      # your own script
 tracker_command = scripts/tracker.sh     # custom only; relative to the repo root
 tracker_status_start = In Progress       # optional
 tracker_status_finish = In QA            # optional
+tracker_profile = acme                   # optional: this project's own login (below)
 ```
 
 `GSD_TRACKER=<name>` overrides `tracker =` for one command.
@@ -54,7 +55,28 @@ With `tracker = none` the `ticket` flow step is skipped.
 ## ClickUp
 
 Token, first match wins: `$CLICKUP_API_TOKEN`, or `CLICKUP_API_TOKEN=pk_…` in
-`~/.config/gsd/clickup.env`. Check it: `gsd-tracker check`. Needs `jq`.
+the token file. Check it: `gsd-tracker check`. Needs `jq`.
+
+The token file is `~/.config/gsd/clickup.env`, shared by every project. To use
+a different ClickUp user in one project (other workspace, split rate limits),
+give it a profile:
+
+```ini
+tracker_profile = acme     # in .gsd.conf — a name only, safe to commit
+```
+
+```sh
+# on each machine, outside the repo
+echo 'CLICKUP_API_TOKEN=pk_…' > ~/.config/gsd/clickup-acme.env
+```
+
+With a profile set, only `clickup-acme.env` is read. There is no fallback to
+`clickup.env`: a missing file is an error, not the wrong user. The file sits
+outside every checkout, so all phase worktrees see it. An exported
+`$CLICKUP_API_TOKEN` still wins (`gsd-doctor` notes it), and
+`GSD_TRACKER_PROFILE=<name>` overrides the profile for one command. Use the
+same name as the `clickup-per-project` label so the chat connector and
+`gsd-tracker` act as the same ClickUp user.
 
 Status names match the task's own list, ignoring case, spaces, `-` and `_`
 ("in testing" finds "In-Testing"). Tried in order: the configured status, then
@@ -74,6 +96,9 @@ Any tracker, through a script you keep in the repo:
 <tracker_command> snapshot <id>            # print the ticket as markdown on stdout
 <tracker_command> check                    # exit 0 when set up
 ```
+
+`GSD_TRACKER_PROFILE` holds `tracker_profile` (or is empty), so the script can
+pick its own login.
 
 Exit 0 on success. Any other exit is reported as "tracker call failed".
 Example for GitHub issues:

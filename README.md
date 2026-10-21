@@ -181,7 +181,7 @@ All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
 
 - **`.gsd.conf`** (committed) — `providers`, provider commands/models, `review_provider`,
   `start_mode`, `base`, `wtdir`, `install`, `premerge`, `test`, `flow`, `tracker`
-  (+ `tracker_command`, `tracker_status_start` / `_finish`); keys are optional,
+  (+ `tracker_command`, `tracker_profile`, `tracker_status_start` / `_finish`); keys are optional,
   falling back to auto-detection (develop/main, `<repo>-worktrees`, lockfile).
   `flow = strict` turns on the guard's phase-flow rule (below) and gsd-doctor's
   phase-flow debt report (T040); `flow_since = <N>` limits that report to phases >= N,

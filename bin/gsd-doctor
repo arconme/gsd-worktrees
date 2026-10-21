@@ -404,7 +404,7 @@ if [ -f "$MAIN/.gsd.conf" ]; then
     key=$(printf '%s' "${line%%=*}" | sed 's/[[:space:]]*$//')
     case "$key" in
       base|wtdir|install|test|premerge|flow|flow_since|flow_skip|providers|provider|agent_command|review_provider|start_mode) ;;
-      tracker|tracker_command|tracker_status_start|tracker_status_finish) ;;
+      tracker|tracker_command|tracker_profile|tracker_status_start|tracker_status_finish) ;;
       ui_gates|ui_url|ui_min_font) ;;
       claude_command|codex_command|gemini_command|custom_command|claude_model|codex_model|gemini_model|custom_model) ;;
       *) bad_keys="$bad_keys $key" ;;
@@ -466,11 +466,17 @@ elif [ "$TRACKER" = custom ]; then
   if [ -n "$tc" ] && [ -x "$tc" ]; then pass "tracker: custom ($tc)"
   else fail "tracker = custom but tracker_command '${tc:-<unset>}' is not an executable file" "set tracker_command = <script> in .gsd.conf and chmod +x it (see docs/trackers.md)" "T072"; fi
 elif [ "$TRACKER" = clickup ]; then
-  cu_cfg="${GSD_CLICKUP_CONFIG:-$HOME/.config/gsd/clickup.env}"
-  if [ -n "${CLICKUP_API_TOKEN:-}" ] || grep -qE '^[[:space:]]*(export[[:space:]]+)?CLICKUP_API_TOKEN=.' "$cu_cfg" 2>/dev/null; then
-    pass "tracker: clickup, token found (test it: gsd-tracker check)"
+  cu_prof=$(gsd_tracker_profile "$MAIN")
+  cu_cfg=$(gsd_clickup_env "$MAIN")
+  if [ -n "$cu_prof" ] && ! gsd_tracker_profile_ok "$cu_prof"; then
+    fail "tracker_profile = '$cu_prof' is not a name (letters, digits, . _ -)" "edit .gsd.conf (e.g. tracker_profile = acme)" "T018"
+  elif [ -n "${CLICKUP_API_TOKEN:-}" ]; then
+    pass "tracker: clickup, token from \$CLICKUP_API_TOKEN (test it: gsd-tracker check)"
+    [ -z "$cu_prof" ] || note "CLICKUP_API_TOKEN is set in your environment, so profile '$cu_prof' ($cu_cfg) is not used"
+  elif grep -qE '^[[:space:]]*(export[[:space:]]+)?CLICKUP_API_TOKEN=.' "$cu_cfg" 2>/dev/null; then
+    pass "tracker: clickup${cu_prof:+ (profile $cu_prof)}, token found (test it: gsd-tracker check)"
   else
-    fail "tracker = clickup but no ClickUp token on this machine — tickets will not move" "put CLICKUP_API_TOKEN=pk_… in $cu_cfg (ClickUp → Settings → Apps)" "T073"
+    fail "tracker = clickup but no ClickUp token${cu_prof:+ for profile '$cu_prof'} on this machine — tickets will not move" "put CLICKUP_API_TOKEN=pk_… in $cu_cfg (ClickUp → Settings → Apps)" "T073"
   fi
   command -v jq >/dev/null 2>&1 || note "tracker = clickup needs jq for start/finish/snapshot — brew install jq"
 else

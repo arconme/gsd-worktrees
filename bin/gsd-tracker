@@ -25,6 +25,10 @@
 # Tracker: --tracker > $GSD_TRACKER > `tracker =` in .gsd.conf > none.
 #   none     start/finish/comment/status do nothing and succeed
 #   clickup  the ClickUp API (see lib/trackers/clickup.sh for the token)
+#
+# Per-project login: tracker_profile = <name> in .gsd.conf ($GSD_TRACKER_PROFILE
+# wins). ClickUp then reads ~/.config/gsd/clickup-<name>.env instead of the
+# shared ~/.config/gsd/clickup.env (no fallback); custom gets GSD_TRACKER_PROFILE.
 #   custom   runs `tracker_command =` from .gsd.conf (relative to the repo root):
 #              <cmd> start|finish|comment|status <id> <text>
 #              <cmd> snapshot <id>  ·  <cmd> check

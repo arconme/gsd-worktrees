@@ -159,7 +159,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | `tracker = none` (default) / `clickup` / `custom`; `GSD_TRACKER` override | `gsd-tracker`, `lib/tracker.sh` |
 | Id parsing: bare, `tk-<id>`, `#<id>`, URL; tags read back from title, then branch | `lib/tracker.sh` |
 | Status names from `tracker_status_start` / `_finish` (env `GSD_TRACKER_STATUS_*` wins) | `gsd-tracker` |
-| ClickUp: status matched per list, subtask cascade, idempotent, markdown snapshot; token from `CLICKUP_API_TOKEN` or `~/.config/gsd/clickup.env` | `lib/trackers/clickup.sh` |
+| ClickUp: status matched per list, subtask cascade, idempotent, markdown snapshot; token from `CLICKUP_API_TOKEN`, else `~/.config/gsd/clickup-<profile>.env` with `tracker_profile`, else `~/.config/gsd/clickup.env` | `lib/trackers/clickup.sh` |
 | Custom: `tracker_command` gets `start` / `finish` / `comment` / `status` / `snapshot` / `check` + `<id> [text]` | `lib/trackers/custom.sh` |
 | Snapshot `--out` writes only on success (the file marks the flow step done) | `gsd-tracker` |
 | Legacy read-only: `--cu`, `cu_<id>` tags, `STORY.md`, `gsd-clickup` alias | `lib/tracker.sh`, `gsd-clickup` |
