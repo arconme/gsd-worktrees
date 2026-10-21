@@ -4,7 +4,7 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
-## Unreleased
+## 0.4.4
 
 - Per-project tracker login: `tracker_profile = <name>` in `.gsd.conf` makes
   the ClickUp tracker read `~/.config/gsd/clickup-<name>.env` instead of the
