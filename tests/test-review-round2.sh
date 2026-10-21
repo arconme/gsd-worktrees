@@ -38,6 +38,11 @@ WT2="$WORK/r01-worktrees/phase-2-second"
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ "$(cat "$WT2/.gsd-install.status")" = running ] || break; sleep 1; done
 check "background install: a failing second command records fail, not ok" \
   '[ "$(cat "$WT2/.gsd-install.status")" = fail ]'
+printf '### Phase 3: third\n' >> "$R/.planning/ROADMAP.md"
+printf 'install = sleep 8\n' > "$R/.gsd.conf"; commit "$R"
+t0=$(date +%s); out=$(cd "$R" && gsd-wt-new --phase 3 2>&1); t1=$(date +%s)
+check "background install does not hold a \$( … ) caller open (gsd-start hang)" \
+  '[ $((t1 - t0)) -lt 5 ] && [ "$(cat "$WORK/r01-worktrees/phase-3-third/.gsd-install.status")" = running ]'
 
 R="$WORK/r01t"; repo "$R"
 printf 'test = true && false\n' > "$R/.gsd.conf"; commit "$R"
