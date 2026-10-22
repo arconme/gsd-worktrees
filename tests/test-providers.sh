@@ -21,7 +21,8 @@ GSD_PROVIDER=codex GSD_AGENT_COMMAND=codex-x gsd_provider_resolve "$R" "" ""; as
 GSD_PROVIDER=codex GSD_AGENT_COMMAND=codex-x gsd_provider_resolve "$R" claude /tmp/claude-x; assert 'CLI overrides environment' '[ "$GSD_PROVIDER_RESOLVED:$GSD_AGENT_COMMAND_RESOLVED" = claude:/tmp/claude-x ]'
 gsd_provider_resolve "$R" nope "" >/dev/null 2>&1; assert 'unknown provider rejected' '[ $? -eq 64 ]'
 gsd_provider_resolve "$R" custom 'bad command' >/dev/null 2>&1; assert 'shell template rejected' '[ $? -eq 64 ]'
-gsd_start_mode_resolve "$R" ""; assert 'start mode compatibility default is discuss' '[ "$GSD_START_MODE_RESOLVED" = discuss ]'
+gsd_start_mode_resolve "$R" ""; assert 'start mode default is flow' '[ "$GSD_START_MODE_RESOLVED" = flow ]'
+printf 'start_mode = discuss\n' > "$WORK/sm.conf"; cp "$R/.gsd.conf" "$WORK/sm.saved"; cat "$WORK/sm.conf" >> "$R/.gsd.conf"; gsd_start_mode_resolve "$R" ""; assert 'repository start_mode = discuss selects discuss' '[ "$GSD_START_MODE_RESOLVED" = discuss ]'; cp "$WORK/sm.saved" "$R/.gsd.conf"
 printf 'start_mode = flow\n' >> "$R/.gsd.conf"; gsd_start_mode_resolve "$R" ""; assert 'repository start mode selects flow' '[ "$GSD_START_MODE_RESOLVED" = flow ]'
 gsd_start_mode_resolve "$R" discuss; assert 'CLI start mode overrides repository' '[ "$GSD_START_MODE_RESOLVED" = discuss ]'
 printf 'start_mode = invalid\n' > "$R/.gsd.conf"; gsd_start_mode_resolve "$R" "" >/dev/null 2>&1; assert 'invalid start mode rejected' '[ $? -eq 64 ]'
@@ -96,8 +97,9 @@ assert 'invalid init model fails before bootstrap writes' '[ $? -ne 0 ] && [ ! -
 R=$WORK/init-model; repo "$R"; out=$(cd "$R" && gsd-init --new --provider codex --model model-test --no-launch --no-commit 2>&1)
 assert 'init prints selected session model' '[[ "$out" == *"codex --model model-test"* ]]'
 R=$WORK/start-mode; repo "$R"; mkdir -p "$R/.planning"; printf '# Roadmap\n\n### Phase 7: Test phase\n' > "$R/.planning/ROADMAP.md"; printf 'base = develop\nwtdir = start-worktrees\ninstall = none\nproviders = claude\n' > "$R/.gsd.conf"; git -C "$R" add .; git -C "$R" -c user.name=t -c user.email=t@t commit -qm planning
-out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-launch 2>&1); assert 'gsd-start defaults to discuss-only' "printf '%s' \"\$out\" | grep -q 'fake-provider Discuss.*GSD.*phase.*7'"; assert 'gsd-start suppresses stale worker next steps' "! printf '%s' \"\$out\" | grep -q 'Open an agent session there'"
-printf 'start_mode = flow\n' >> "$R/.gsd.conf"; out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-launch 2>&1); assert 'gsd-start honors repository flow mode' "printf '%s' \"\$out\" | grep -q 'fake-provider Drive.*GSD.*phase.*7'"
+out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-launch 2>&1); assert 'gsd-start defaults to the flow' "printf '%s' \"\$out\" | grep -q 'fake-provider Drive.*GSD.*phase.*7'"; assert 'gsd-start suppresses stale worker next steps' "! printf '%s' \"\$out\" | grep -q 'Open an agent session there'"
+printf 'start_mode = discuss\n' >> "$R/.gsd.conf"; out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-launch 2>&1); assert 'gsd-start honors start_mode = discuss' "printf '%s' \"\$out\" | grep -q 'fake-provider Discuss.*GSD.*phase.*7'"
+out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --flow --no-launch 2>&1); assert '--flow overrides start_mode = discuss' "printf '%s' \"\$out\" | grep -q 'fake-provider Drive.*GSD.*phase.*7'"
 out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --flow --no-flow --no-launch 2>&1); assert '--no-flow overrides earlier --flow' "printf '%s' \"\$out\" | grep -q 'fake-provider Discuss.*GSD.*phase.*7'"
 out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-flow --flow --no-launch 2>&1); assert '--flow overrides earlier --no-flow' "printf '%s' \"\$out\" | grep -q 'fake-provider Drive.*GSD.*phase.*7'"
 

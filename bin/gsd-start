@@ -36,8 +36,8 @@
 #   --slug <slug>  worktree/branch slug (default: slugified description)
 #   --repo <path>  main checkout of the target repo (default: derived from cwd)
 #   --provider <p> provider identity; --agent-command overrides its executable
-#   --flow         launch/resume the full gsd-flow workflow
-#   --no-flow      launch discuss-phase only (compatibility default)
+#   --flow         launch/resume the full gsd-flow workflow (the default)
+#   --no-flow      launch discuss-phase only (start_mode = discuss in .gsd.conf)
 #   --launch       open the session in the worktree (the default; kept for scripts)
 #   --no-launch    print the session command instead of opening it
 #   --no-push      skip pull/push (single-machine / no-remote workflows)
@@ -116,10 +116,11 @@ OPTIONS
   --model <id>    session model override; 'default' uses the CLI's own default
   --agent-command <path> executable override (add --no-launch to print)
   --agent <value> compatibility alias: known provider or custom executable
-  --flow          start/resume the complete gsd-flow workflow. The flow reads
-                  existing phase artifacts and continues at the next step.
-  --no-flow       start with discuss-phase only. Overrides start_mode = flow.
-                  This is the compatibility default when start_mode is unset.
+  --flow          start/resume the complete gsd-flow workflow (the default).
+                  The flow reads existing phase artifacts and continues at
+                  the next step. Overrides start_mode = discuss.
+  --no-flow       start with discuss-phase only, for this run (for every run:
+                  start_mode = discuss in .gsd.conf).
   --launch        open the session with the configured provider. The default:
                   in a terminal the session opens in the worktree. With no
                   terminal (a script, an agent's shell) the command is printed.
@@ -150,11 +151,11 @@ EXAMPLES
 
   gsd-start -p 7
       Phase 7 is already in ROADMAP.md: don't claim anything — create or
-      reuse its phase-7-* worktree and open/print discuss-phase. Idempotent.
+      reuse its phase-7-* worktree and resume the flow at the first
+      unfinished step reported by gsd-flow-next. Idempotent.
 
-  gsd-start -p 7 --flow
-      Reuse phase 7's worktree and resume the complete workflow at the first
-      unfinished step reported by gsd-flow-next.
+  gsd-start -p 7 --no-flow
+      Reuse phase 7's worktree and open discuss-phase only.
 
   gsd-start -n "fix invoice rounding" --slug invoice-fix
       Same, but the branch/worktree is phase-<N>-invoice-fix.

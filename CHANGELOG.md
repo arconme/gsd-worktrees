@@ -4,6 +4,13 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.13
+
+- `gsd-start` now opens the full flow (`/gsd-flow`) by default: the session
+  resumes the phase at its first unfinished step. `--no-flow` opens
+  discuss-phase only for one run; `start_mode = discuss` in `.gsd.conf` makes
+  that the repo's default, and `--flow` overrides it.
+
 ## 0.4.12
 
 - `gsd-init` now opens the planning session by default: the agent starts

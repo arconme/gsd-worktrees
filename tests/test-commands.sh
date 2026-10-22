@@ -91,7 +91,7 @@ fails "re-claiming an existing title"   bash -c 'cd "$1" && gsd-start -n "Catalo
 section "gsd-start — claim, attach, insert, flow mode"
 (cd "$R" && gsd-start -n "shopping cart" --no-launch) > "$WORK/out" 2>&1
 is  "-n claims phase 2"          "$?" 0
-has "…prints the discuss launch" "gsd-discuss-phase" "$WORK/out"
+has "…prints the flow launch (the default)" "gsd-flow" "$WORK/out"
 check_wt() { git -C "$R" worktree list | grep -q "phase-$1-"; }
 if check_wt 2; then ok "…and creates the phase-2 worktree"; else bad "…and creates the phase-2 worktree"; fi
 is  "…and pushes the claim"      "$(git --git-dir="$R.git" show main:.planning/ROADMAP.md | grep -c '^### Phase 2: shopping cart')" 1

@@ -48,10 +48,10 @@ override. Empty entries, duplicate names, unknown names, and whitespace within
 the comma-separated list are rejected before worktree creation. Fix the list
 in `.gsd.conf`; `gsd-doctor` reports invalid provider configuration as `T050`.
 
-By default, `gsd-start` opens or prints only the provider's discuss-phase
-prompt, preserving the established workflow. Add `--flow` to resume the full
-`gsd-flow` state machine from existing artifacts. Repositories may opt in with
-`start_mode = flow`; `--no-flow` selects discuss-only for one invocation.
+By default, `gsd-start` opens or prints the full `gsd-flow` session, which
+resumes the phase at its first unfinished step from existing artifacts.
+`--no-flow` opens only the provider's discuss-phase prompt for one invocation;
+`start_mode = discuss` makes that the repo's default, and `--flow` overrides it.
 
 Run `gsd-doctor --json` to inspect the provider, executable, instruction block,
 skill adapter, native hook, mandatory guard, stale artifacts, and remediation.
@@ -90,7 +90,7 @@ paths without whitespace, not templates. Model IDs cannot contain whitespace.
 | Session provider | `--provider` (legacy `--agent` mapping), `GSD_PROVIDER`, first `providers` entry, legacy `provider`, deprecated `GSD_AGENT`, Claude compatibility default |
 | Executable | `--agent-command`, `GSD_AGENT_COMMAND`, `GSD_<PROVIDER>_COMMAND`, `<provider>_command`, legacy `agent_command` for repo default only, built-in name |
 | Model | `--model`, `GSD_MODEL`, `GSD_<PROVIDER>_MODEL`, `<provider>_model`, CLI default |
-| Start behavior | `--flow` / `--no-flow`, `start_mode`, `discuss` compatibility default |
+| Start behavior | `--flow` / `--no-flow`, `start_mode`, `flow` default |
 
 Initialization persists the integration set selected by `--providers`; without
 that flag, an explicit `--provider` selects a one-provider setup. Session overrides
@@ -102,7 +102,7 @@ on `gsd-start` do not rewrite the set. Refer to `gsd-init --help` for setup flag
 | `claude_command`, `codex_command`, `gemini_command`, `custom_command` | Provider executable; custom requires one |
 | `claude_model`, `codex_model`, `gemini_model` | Optional model ID; `default` omits the flag |
 | `review_provider` | Independent reviewer: `claude`, `codex` (default), `gemini`, or `custom` |
-| `start_mode` | `discuss` (default) or `flow` |
+| `start_mode` | `flow` (default) or `discuss` |
 | `base` | Base branch; detect develop, main, then current branch |
 | `wtdir` | Sibling worktree directory; default `<repo>-worktrees` |
 | `install` | Dependency install command; detect lockfile; `none` disables |

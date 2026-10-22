@@ -315,7 +315,7 @@ gsd_model_resolve() { # repo, provider, optional CLI override
 gsd_start_mode_resolve() { # repo, optional CLI override
   local repo=$1 cli_mode=${2:-} configured
   configured=$(gsd_conf_get "$repo" start_mode)
-  GSD_START_MODE_RESOLVED=${cli_mode:-${configured:-discuss}}
+  GSD_START_MODE_RESOLVED=${cli_mode:-${configured:-flow}}   # flow unless start_mode = discuss
   case "$GSD_START_MODE_RESOLVED" in
     discuss|flow) return 0 ;;
     *)

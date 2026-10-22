@@ -70,9 +70,10 @@ direct model API calls; each CLI uses its existing authentication.
 singular `provider` key is still read when `providers` is absent, but new and
 migrated configuration does not write it.
 
-`gsd-start` keeps the historical discuss-only launch when `start_mode` is
-unset. Pass `--flow` to start or resume the complete artifact-driven workflow,
-or `--no-flow` to override `start_mode = flow` for one invocation.
+`gsd-start` starts or resumes the complete artifact-driven workflow
+(`/gsd-flow`) by default. Pass `--no-flow` to open discuss-phase only for one
+invocation, or set `start_mode = discuss` to make that the repo's default
+(`--flow` overrides it).
 
 Provider identity and executable have separate precedence chains; see the
 [configuration reference](docs/providers.md#configuration-reference).
