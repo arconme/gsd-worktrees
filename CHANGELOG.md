@@ -6,6 +6,11 @@ becomes its release notes.
 
 ## 0.4.11
 
+- `gsd-start` now opens the session in the new worktree by default. Pass
+  `--no-launch` to only print the command. With no terminal (a script, or an
+  agent running it in its shell) it still prints. `--launch` is kept, and an
+  explicit `--launch` still exits 127 when the agent CLI is missing.
+
 - With a tracker set (`tracker = clickup|custom`), `gsd-start -n` and
   `--insert` need a ticket: `--ticket <id>` or a `tk-<id>` tag in the
   description. Without one the claim is refused and nothing is claimed.

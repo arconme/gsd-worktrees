@@ -104,6 +104,25 @@ if check_wt 01.1; then ok "…on a phase-01.1 worktree (guard accepts it)"; else
 (cd "$R" && gsd-start -p 2 --flow --no-launch) > "$WORK/out" 2>&1
 has "--flow prints the gsd-flow launch" "gsd-flow" "$WORK/out"
 
+section "gsd-start — opens the session by default (in a terminal)"
+# a fake agent CLI records that it was launched, and where
+printf '#!/bin/sh\npwd > "%s/launched"\n' "$WORK" > "$WORK/stub/claude"; chmod +x "$WORK/stub/claude"
+in_tty() {  # $1=a shell command, run with a terminal (BSD and util-linux `script` differ)
+  if script --version 2>/dev/null | grep -q util-linux; then script -qec "$1" /dev/null
+  else script -q /dev/null bash -c "$1"; fi
+}
+R="$WORK/launch"; project "$R"
+rm -f "$WORK/launched"; in_tty "cd '$R' && gsd-start -p 1" > "$WORK/out" 2>&1 < /dev/null
+case "$(cat "$WORK/launched" 2>/dev/null)" in */phase-1-*) ok "in a terminal the agent opens, in the worktree" ;; *) bad "in a terminal the agent opens, in the worktree" "$(tail -5 "$WORK/out")" ;; esac
+rm -f "$WORK/launched"; in_tty "cd '$R' && gsd-start -p 1 --no-launch" > "$WORK/out" 2>&1 < /dev/null
+if [ -e "$WORK/launched" ]; then bad "--no-launch only prints"; else ok "--no-launch only prints"; fi
+has "…the command to run"               "Next:" "$WORK/out"
+rm -f "$WORK/launched"; (cd "$R" && gsd-start -p 1) > "$WORK/out" 2>&1 < /dev/null
+if [ -e "$WORK/launched" ]; then bad "with no terminal it only prints"; else ok "with no terminal it only prints"; fi
+rm -f "$WORK/stub/claude"
+(cd "$R" && gsd-start -p 1) > "$WORK/out" 2>&1
+is  "no agent CLI installed → the default still succeeds (prints)" "$?" 0
+
 section "gsd-start — TDD mode is the default"
 tdd() { git -C "$R" show HEAD:.planning/config.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["workflow"].get("tdd_mode"))'; }
 R="$WORK/tdd"; project "$R"

@@ -76,10 +76,13 @@ or `--no-flow` to override `start_mode = flow` for one invocation.
 
 Provider identity and executable have separate precedence chains; see the
 [configuration reference](docs/providers.md#configuration-reference).
-Command values are one executable, never a shell template. Print-only does
-not require an installed agent CLI, but still validates configuration and
-guards. It means **no agent launch**, not a dry run: setup/claims/worktree
-creation may still occur. `--launch` exits 127 when the executable is missing.
+Command values are one executable, never a shell template. `gsd-start` opens
+the session in the worktree by default when it runs in a terminal. With
+`--no-launch`, or with no terminal (a script, an agent's shell), it prints the
+command instead. Print-only does not require an installed agent CLI, but still
+validates configuration and guards. It means **no agent launch**, not a dry
+run: setup/claims/worktree creation may still occur. A missing executable is
+printed by default; an explicit `--launch` exits 127.
 
 Multiple providers can use the same phase sequentially:
 

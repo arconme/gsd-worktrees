@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
 # gsd-start — start a GSD feature in ONE step: claim the phase, sync the claim,
-# create the worktree, and print (or, with --agent/--launch, open) the session.
+# create the worktree, and open the session there (--no-launch prints it instead).
 #
 # Replaces the manual sequence:
 #   /gsd-phase "<desc>"  →  git push  →  scripts/gsd-new-worktree-feature.sh
 #   →  cd worktree  →  <agent> /gsd-discuss-phase N
 #
-# Provider adapters choose the CLI argv. Default is print-only.
+# Provider adapters choose the CLI argv. Default is to launch it, in a terminal.
 #
 # The claim uses `gsd-sdk query phase.add` — the same deterministic CLI the
 # /gsd-phase skill delegates to — so no LLM call is needed and the ROADMAP
@@ -38,9 +38,8 @@
 #   --provider <p> provider identity; --agent-command overrides its executable
 #   --flow         launch/resume the full gsd-flow workflow
 #   --no-flow      launch discuss-phase only (compatibility default)
-#   --launch       open the session in the worktree with the default agent
-#                  (default is NO launch — the command is printed instead)
-#   --no-launch    force print-only, even if --agent/--launch was given
+#   --launch       open the session in the worktree (the default; kept for scripts)
+#   --no-launch    print the session command instead of opening it
 #   --no-push      skip pull/push (single-machine / no-remote workflows)
 set -euo pipefail
 
@@ -68,7 +67,7 @@ usage() {
 gsd-start — start a GSD feature in ONE step
 
 Claims the next phase, publishes the claim, creates the phase worktree, and
-prints (or with --launch opens) a provider-valid phase-flow session.
+opens a provider-valid phase-flow session there (--no-launch prints it).
 Replaces the manual sequence:
   /gsd-phase "<desc>" → git push → scripts/gsd-new-worktree-feature.sh
   → cd <worktree> → <agent> "/gsd-discuss-phase N"
@@ -115,16 +114,16 @@ OPTIONS
                   (default: derived from the current directory)
   --provider <p>  claude, codex, gemini, or custom (config default otherwise)
   --model <id>    session model override; 'default' uses the CLI's own default
-  --agent-command <path> executable override; implies --launch (add --no-launch to print)
-  --agent <value> compatibility alias: known provider or custom executable;
-                  implies --launch
+  --agent-command <path> executable override (add --no-launch to print)
+  --agent <value> compatibility alias: known provider or custom executable
   --flow          start/resume the complete gsd-flow workflow. The flow reads
                   existing phase artifacts and continues at the next step.
   --no-flow       start with discuss-phase only. Overrides start_mode = flow.
                   This is the compatibility default when start_mode is unset.
-  --launch        open the session with the configured provider (default NO
-                  launch — the 'cd … && <agent> …' command is printed instead)
-  --no-launch     force print-only, overriding --agent/--launch
+  --launch        open the session with the configured provider. The default:
+                  in a terminal the session opens in the worktree. With no
+                  terminal (a script, an agent's shell) the command is printed.
+  --no-launch     print the 'cd … && <agent> …' command instead of opening it
   --no-push       skip pull/push (no-remote or offline workflows)
   -h, --help      show this help
 
@@ -161,11 +160,10 @@ EXAMPLES
       Same, but the branch/worktree is phase-<N>-invoice-fix.
 
   gsd-start -n "reporting exports"
-      Prepare everything and print the configured command to run later
-      (no launch is the default).
+      Prepare everything and open the configured session in the worktree.
 
-  gsd-start -n "reporting exports" --launch
-      Same, but open the configured session in the worktree right away.
+  gsd-start -n "reporting exports" --no-launch
+      Same, but print the command to run later instead.
 
   gsd-start -n "reporting exports" --agent gemini
       Compatibility form: select Gemini and launch it.
@@ -219,7 +217,8 @@ NEW=0
 PROVIDER_CLI=""
 AGENT_COMMAND_CLI=""
 MODEL_CLI=""
-LAUNCH=0
+LAUNCH=1          # open the session (in a terminal); --no-launch prints it
+LAUNCH_ASKED=0    # --launch/--agent named: a missing executable is an error
 FORCE_NOLAUNCH=0
 START_MODE_CLI=""
 PUSH=1
@@ -236,11 +235,11 @@ while [ $# -gt 0 ]; do
     --no-ticket) NO_TICKET=1; shift ;;
     --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, gemini, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
     --model) [ $# -ge 2 ] && [ -n "$2" ] || die "--model needs a model ID or default"; MODEL_CLI="$2"; shift 2 ;;
-    --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND_CLI="$2"; LAUNCH=1; shift 2 ;;
-    --agent) [ $# -ge 2 ] || die "--agent needs a provider or executable"; if gsd_provider_known "$2"; then PROVIDER_CLI="$2"; else PROVIDER_CLI=custom; AGENT_COMMAND_CLI="$2"; fi; LAUNCH=1; shift 2 ;;
+    --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND_CLI="$2"; LAUNCH_ASKED=1; shift 2 ;;
+    --agent) [ $# -ge 2 ] || die "--agent needs a provider or executable"; if gsd_provider_known "$2"; then PROVIDER_CLI="$2"; else PROVIDER_CLI=custom; AGENT_COMMAND_CLI="$2"; fi; LAUNCH_ASKED=1; shift 2 ;;
     --flow)       START_MODE_CLI=flow; shift ;;
     --no-flow)    START_MODE_CLI=discuss; shift ;;
-    --launch)    LAUNCH=1; shift ;;
+    --launch)    LAUNCH_ASKED=1; shift ;;
     --no-launch) FORCE_NOLAUNCH=1; shift ;;
     --no-push)   PUSH=0;   shift ;;
     -*) die "unknown flag: $1 (see gsd-start --help)" ;;
@@ -613,7 +612,9 @@ if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$GSD_AGENT_COMMAND_R
   exec "${GSD_LAUNCH_ARGV[@]}"
 else
   echo ""
-  if [ "$LAUNCH" = 1 ] && ! command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
+  # Only an explicit --launch/--agent turns a missing executable into an error;
+  # by default the command is just printed.
+  if [ "$LAUNCH" = 1 ] && [ "$LAUNCH_ASKED" = 1 ] && ! command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
     echo "✖ provider executable '$GSD_AGENT_COMMAND_RESOLVED' not found — launch cancelled." >&2
     echo "Next (after installing it or changing agent_command):  $NEXT"
     exit 127
