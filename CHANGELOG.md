@@ -4,6 +4,30 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.8
+
+- TDD is on by default: the first `gsd-start` after `gsd-init` sets GSD's
+  `workflow.tdd_mode` to true (in the claim commit) when the project hasn't
+  set it. Plans then list each test case (input → expected result), so the
+  cross-AI plan review can check them, and execute writes each test before
+  its code. A project that chose `false` (`/gsd-settings`) keeps it.
+- `/gsd-validate-phase` is now a required `gsd-flow` step, after the UI
+  checks and before `secure`: it finds requirements with no test and writes
+  the missing tests. Done = `<P>-VALIDATION.md` says `nyquist_compliant: true`
+  or has a `## Validation Audit` (gaps left manual-only). Skipped when the
+  project turned off `workflow.nyquist_validation`.
+- With `flow = strict`: the guard blocks `/gsd-secure-phase`, and
+  `gsd-finish` (merge and `--pr`) refuses, until the test audit is done.
+  `gsd-doctor` lists a merged phase without it as debt (T040) — use
+  `flow_skip` / `flow_since` for phases shipped before this.
+- `/gsd-new-project` and `/gsd-ingest-docs` are refused in a repo `gsd-init`
+  hasn't set up (no `.gsd.conf`): run `gsd-init` instead, which installs the
+  toolkit's files first. Install adds one user-level hook for this to
+  `~/.claude/settings.json` (typed slash commands and skill calls) and
+  `~/.gemini/settings.json`; it checks nothing else, in any repo, and lets
+  everything through if the toolkit is removed. `install.sh --no-user-hook`
+  opts out. Codex has no hooks: the skill tells it the same rule.
+
 ## 0.4.7
 
 - `gsd-flow` no longer asks whether to run a step the flow already agreed

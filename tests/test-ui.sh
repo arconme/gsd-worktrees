@@ -26,7 +26,14 @@ is()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'
 has() { if grep -q -- "$2" "$3"; then ok "$1"; else bad "$1" "$(tail -6 "$3")"; fi; }
 hasnt() { if grep -q -- "$2" "$3"; then bad "$1" "$(grep -- "$2" "$3" | head -3)"; else ok "$1"; fi; }
 section() { printf '\n%s\n' "$1"; }
-export PATH="$PKG/bin:$PATH"
+# …nor a playwright command on PATH (an nvm/npm global bin): drop those dirs,
+# keeping node itself, which gsd-ui check asks for.
+mkdir -p "$WORK/keep-bin"
+for c in node npm npx; do p=$(command -v "$c" 2>/dev/null) && ln -s "$p" "$WORK/keep-bin/$c"; done
+clean=""; oldifs=$IFS; IFS=:
+for d in $PATH; do [ -x "$d/playwright" ] || clean="${clean:+$clean:}$d"; done
+IFS=$oldifs
+export PATH="$PKG/bin:$clean:$WORK/keep-bin"
 PY=$(command -v python3 || command -v python)
 OUT="$WORK/out"
 
