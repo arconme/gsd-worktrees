@@ -73,6 +73,16 @@ With a tracker set:
 | `gsd-finish --pr` opens the PR | `gsd-tracker finish <id>`: ticket → "in testing", plus a comment |
 | `gsd-finish` merges | the same, with the merge commit |
 
+A new claim (`gsd-start -n`, `--insert`) needs its ticket: `--ticket <id>` or
+a `tk-<id>` tag in the description. Without one it is refused, and nothing is
+claimed; `--no-ticket` claims anyway, for work no ticket covers. `gsd-start -p`
+on a phase with no ticket only notes it.
+
+`gsd-init` asks which tracker to use (in a terminal, while `.gsd.conf` names
+none). A script passes `gsd-init --tracker none|clickup|custom`
+(`--tracker-command <script>` for custom); `gsd-bootstrap-repo` takes the same
+flags.
+
 A tracker failure is only a note. It never blocks a claim or a merge.
 With `tracker = none` the `ticket` flow step is skipped.
 

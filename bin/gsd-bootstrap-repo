@@ -13,10 +13,13 @@ OPTIONS
   --base <branch>          base branch (auto-detected by default)
   --commit                 commit only the installed integration files
   --no-ui                  no screens in this project: ui_gates = off
+  --tracker <t>            ticket tracker: none, clickup or custom (tracker = in .gsd.conf)
+  --tracker-command <path> with --tracker custom: the repo's tracker script
   --src <path>             deprecated; ignored
   -h, --help               show help
 HELP
 }
+TRACKER=""; TRACKER_COMMAND=""
 BASE=""; BASE_EXPLICIT=0; COMMIT=0; NO_UI=0; AGENT_COMMAND=""; SELECTED=""
 COMMAND_PROVIDERS=""
 CLAUDE_COMMAND=""; CODEX_COMMAND=""; GEMINI_COMMAND=""; CUSTOM_COMMAND=""
@@ -33,6 +36,8 @@ while [ $# -gt 0 ]; do
     --provider-command) [ $# -ge 2 ] || die "--provider-command needs provider=executable"; case "$2" in *=*) pc_p=${2%%=*}; pc_c=${2#*=}; [ -n "$pc_p" ] && [ -n "$pc_c" ] || die "malformed --provider-command: $2"; set_provider_command "$pc_p" "$pc_c"; case ",$COMMAND_PROVIDERS," in *",$pc_p,"*) ;; *) COMMAND_PROVIDERS="${COMMAND_PROVIDERS:+$COMMAND_PROVIDERS,}$pc_p" ;; esac ;; *) die "--provider-command needs provider=executable" ;; esac; shift 2 ;;
     --commit) COMMIT=1; shift ;;
     --no-ui) NO_UI=1; shift ;;
+    --tracker) [ $# -ge 2 ] || die "--tracker needs none, clickup or custom"; TRACKER=$2; shift 2 ;;
+    --tracker-command) [ $# -ge 2 ] && [ -n "$2" ] || die "--tracker-command needs the script's path"; TRACKER_COMMAND=$2; shift 2 ;;
     --src) [ $# -ge 2 ] || die "--src needs a value"; echo "• --src is deprecated and ignored"; shift 2 ;;
     *) die "unknown arg: $1 (see gsd-bootstrap-repo --help)" ;;
   esac
@@ -42,6 +47,12 @@ PKG=$(cd "$(dirname "$SELF")/.." && pwd); . "$PKG/lib/common.sh"; . "$PKG/lib/pr
 # shellcheck source=../lib/ui.sh
 . "$PKG/lib/ui.sh"
 DEST=$(git rev-parse --show-toplevel 2>/dev/null) || die "run this from inside the target git repo"
+case "$TRACKER" in ''|none|clickup|custom) ;; *) die "unknown tracker '$TRACKER' (expected none, clickup or custom)" ;; esac
+[ -z "$TRACKER_COMMAND" ] || [ "$TRACKER" = custom ] || die "--tracker-command goes with --tracker custom"
+case "$TRACKER_COMMAND" in *[[:space:]]*) die "--tracker-command must be one path, not a command line" ;; esac
+if [ "$TRACKER" = custom ] && [ -z "$TRACKER_COMMAND" ] && [ -z "$(gsd_conf_get "$DEST" tracker_command)" ]; then
+  die "--tracker custom needs --tracker-command <script> (e.g. scripts/tracker.sh)"
+fi
 [ "$DEST" != "$PKG" ] || die "you're inside the toolkit repo itself — cd into the target repo first"
 DIRTY_BEFORE=$(git -C "$DEST" status --porcelain)
 CONF=$DEST/.gsd.conf
@@ -93,6 +104,11 @@ else
   remove_key() { local k=$1; K=$k perl -ni -e 'print unless /^\s*\Q$ENV{K}\E\s*=/' "$CONF"; }
   update_key providers "$SELECTED"; remove_key provider; remove_key agent_command; [ -z "$CLAUDE_COMMAND" ] || update_key claude_command "$CLAUDE_COMMAND"; [ -z "$CODEX_COMMAND" ] || update_key codex_command "$CODEX_COMMAND"; [ -z "$GEMINI_COMMAND" ] || update_key gemini_command "$GEMINI_COMMAND"; [ -z "$CUSTOM_COMMAND" ] || update_key custom_command "$CUSTOM_COMMAND"; [ "$BASE_EXPLICIT" = 0 ] || update_key base "$BASE"; [ "$NO_UI" = 0 ] || update_key ui_gates off
   echo '✔ .gsd.conf (provider configuration updated; other keys preserved)'
+fi
+if [ -n "$TRACKER" ]; then
+  set_key() { K=$1 V=$2 perl -pi -e 's/^\s*\Q$ENV{K}\E\s*=.*/$ENV{K} = $ENV{V}/' "$CONF"; grep -qE "^[[:space:]]*$1[[:space:]]*=" "$CONF" || printf '%s = %s\n' "$1" "$2" >> "$CONF"; }
+  set_key tracker "$TRACKER"; [ -z "$TRACKER_COMMAND" ] || set_key tracker_command "$TRACKER_COMMAND"
+  echo "✔ .gsd.conf: tracker = $TRACKER${TRACKER_COMMAND:+ ($TRACKER_COMMAND)}"
 fi
 mkdir -p "$DEST/scripts/hooks" "$DEST/.gsd"
 for rel in scripts/gsd-new-worktree-feature.sh scripts/gsd-finish-worktree-feature.sh scripts/gsd-derive-port.sh scripts/gsd-planning-repair.sh scripts/hooks/gsd-worktree-guard.sh; do cp "$PKG/shims/$rel" "$DEST/$rel"; chmod +x "$DEST/$rel"; echo "✔ $rel (shim)"; done

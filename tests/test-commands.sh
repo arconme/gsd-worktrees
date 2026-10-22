@@ -157,6 +157,24 @@ R="$WORK/nodocs"; mkdir -p "$R"; git -C "$R" init -qb main; printf 'x\n' > "$R/a
 (cd "$R" && gsd-init --provider claude --no-launch) > "$WORK/out" 2>&1
 has "no docs → /gsd-new-project" "gsd-new-project" "$WORK/out"
 
+section "gsd-init — asks where the tickets live"
+R="$WORK/ask"; mkdir -p "$R"; git -C "$R" init -qb main; printf 'x\n' > "$R/a.txt"; commit "$R" code
+printf '3\nscripts/t.sh\n' | (cd "$R" && GSD_TRACKER_ASK=always gsd-init --provider claude --no-launch) > "$WORK/out" 2>&1
+is  "the answer lands in .gsd.conf"     "$(. "$PKG/lib/common.sh"; gsd_conf_get "$R" tracker)/$(. "$PKG/lib/common.sh"; gsd_conf_get "$R" tracker_command)" "custom/scripts/t.sh"
+has "…and the next steps say what it needs" "write scripts/t.sh" "$WORK/out"
+is  "…committed with the bootstrap"     "$(git -C "$R" status --porcelain -- .gsd.conf)" ""
+: | (cd "$R" && GSD_TRACKER_ASK=always gsd-init --provider claude --no-launch) > "$WORK/out" 2>&1
+if grep -q "Where do this project" "$WORK/out"; then bad "a set tracker is not asked again"; else ok "a set tracker is not asked again"; fi
+R="$WORK/askflag"; mkdir -p "$R"; git -C "$R" init -qb main; printf 'x\n' > "$R/a.txt"; commit "$R" code
+(cd "$R" && gsd-init --provider claude --tracker clickup --no-launch) > "$WORK/out" 2>&1
+is  "--tracker clickup sets it, no question" "$(. "$PKG/lib/common.sh"; gsd_conf_get "$R" tracker)" clickup
+fails "--tracker jira is refused"       bash -c 'cd "$1" && gsd-init --provider claude --tracker jira --no-launch' _ "$R"
+fails "--tracker custom needs its script" bash -c 'cd "$1" && gsd-bootstrap-repo --agent claude --tracker custom' _ "$WORK/nodocs"
+R="$WORK/noask"; mkdir -p "$R"; git -C "$R" init -qb main; printf 'x\n' > "$R/a.txt"; commit "$R" code
+(cd "$R" && gsd-init --provider claude --no-launch) < /dev/null > "$WORK/out" 2>&1
+is  "no terminal, no flag → no question, no tracker key" "$(grep -c 'Where do this project' "$WORK/out"):$(. "$PKG/lib/common.sh"; gsd_conf_get "$R" tracker)" "0:"
+has "…and a hint how to set one"        "gsd-init --tracker clickup|custom" "$WORK/out"
+
 section "gsd-finish --pr — push + open a PR, keep the worktree"
 R="$WORK/pr"; project "$R"
 git -C "$R" worktree add -qb phase-1-catalog "$WORK/pr-wt"

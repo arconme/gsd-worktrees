@@ -106,6 +106,9 @@ OPTIONS
                   gsd-tracker); with the default `tracker = none` it is only
                   tagged. A tag already in the description (… tk-<id>) is
                   picked up the same way. --cu <id> is the old name.
+                  With a tracker set, a new claim (-n, --insert) needs one.
+  --no-ticket     claim without a ticket although a tracker is set
+                  (a chore no ticket covers)
   --slug <slug>   worktree/branch slug → phase-<N>-<slug>
                   (default: slugified phase description)
   --repo <path>   main checkout of the target repo
@@ -209,7 +212,7 @@ HELP
 DESC=""
 REPO=""
 SLUG=""
-TICKET=""; TICKET_CU=0
+TICKET=""; TICKET_CU=0; NO_TICKET=0
 ATTACH=""
 INSERT=""
 NEW=0
@@ -230,6 +233,7 @@ while [ $# -gt 0 ]; do
     --slug)  [ $# -ge 2 ] || die "--slug needs a value";  SLUG="$2"; shift 2 ;;
     --ticket) [ $# -ge 2 ] || die "--ticket needs a ticket id"; TICKET="$2"; shift 2 ;;
     --cu)    [ $# -ge 2 ] || die "--cu needs a value (ClickUp task id)"; TICKET="$2"; TICKET_CU=1; shift 2 ;;
+    --no-ticket) NO_TICKET=1; shift ;;
     --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, gemini, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
     --model) [ $# -ge 2 ] && [ -n "$2" ] || die "--model needs a model ID or default"; MODEL_CLI="$2"; shift 2 ;;
     --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND_CLI="$2"; LAUNCH=1; shift 2 ;;
@@ -310,6 +314,15 @@ if [ -n "$TICKET" ]; then
     || die "--ticket doesn't look like a ticket id (letters/digits, '-' between): $TICKET"
   if [ -n "$DESC" ] && ! gsd_ticket_tagged "$DESC" "$TICKET"; then DESC="$DESC tk-$TICKET"; fi
   if [ -n "$SLUG" ] && ! gsd_ticket_tagged "$SLUG" "$TICKET"; then SLUG="$SLUG-tk-$TICKET"; fi
+fi
+# With a tracker set, every new phase is a ticket's work: a claim without one
+# would never move or comment on anything, and nobody would notice. Attaching
+# (-p) only notes it below — phases claimed before this rule have no tag.
+if [ -z "$ATTACH" ] && [ "$TRACKER" != none ] && [ "$NO_TICKET" = 0 ] && [ -z "$TICKET" ] \
+   && [ -z "$(gsd_ticket_extract "$DESC")" ]; then
+  die "tracker = $TRACKER is set, but this phase has no ticket." \
+      "  Claim it with its ticket:  add --ticket <id>   (an id, tk-<id> or the ticket's URL)" \
+      "  Work no ticket covers:     add --no-ticket"
 fi
 
 # ── local lock: serialize gsd commands touching this checkout ────────────────
@@ -573,6 +586,9 @@ if [ -z "$TICKET_ID" ]; then
     TICKET_ID=$(gsd_ticket_extract "$src")
     [ -n "$TICKET_ID" ] && break
   done
+fi
+if [ -z "$TICKET_ID" ] && [ -n "$ATTACH" ] && [ "$TRACKER" != none ]; then
+  echo "• phase $N has no ticket (no tk-<id> in its ROADMAP title) — $TRACKER is not updated"
 fi
 if [ -n "$TICKET_ID" ]; then
   if [ "$TRACKER" = none ]; then

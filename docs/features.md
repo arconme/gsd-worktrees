@@ -29,7 +29,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Duplicate-description guard (case-insensitive) | `gsd-start` |
 | Claim bookkeeping: checklist + Progress rows and STATE.md counters land in the claim commit | `gsd-start`, `lib/roadmap-rows.pl` |
 | TDD by default: the claim commit sets `workflow.tdd_mode: true` in `.planning/config.json` when the key is unset (a project's own `false` is kept), so plans list their test cases for the plan review | `gsd-start` |
-| Ticket link (`--ticket <id|url>`, old `--cu`): `tk-<id>` at the end of title/slug, duplicate-ticket guard, ticket → "in progress" when a tracker is set | `gsd-start`, `gsd-tracker` |
+| Ticket link (`--ticket <id|url>`, old `--cu`): `tk-<id>` at the end of title/slug, duplicate-ticket guard, ticket → "in progress" when a tracker is set. With a tracker set a new claim needs a ticket (`--no-ticket` to skip); `gsd-init` asks for the tracker (`--tracker`) | `gsd-start`, `gsd-tracker` |
 | Print-only by default; `--launch` / `--agent-command` / `--provider` open the session | `gsd-start` |
 | `--flow` / `--no-flow` / `start_mode`: open discuss-phase only, or resume the full flow | `gsd-start`, `lib/provider.sh` |
 | Guard check before a session is printed or launched | `gsd-start` |

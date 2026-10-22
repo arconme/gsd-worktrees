@@ -322,6 +322,24 @@ has "finish --pr → finish, PR opened"   "^finish|finish PROJ-42 🔀 GSD phase
 is  "finish succeeds"                   "$?" 0
 has "finish → finish, merged"           "^finish|finish PROJ-42 ✅ GSD phase 2 merged to main" "$TRACKER_LOG"
 
+section "gsd-start — with a tracker set, a new phase needs its ticket"
+R="$WORK/needs"; project "$R" 'tracker = custom
+tracker_command = scripts/tracker.sh
+'
+before=$(git --git-dir="$R.git" rev-parse main)
+fails "a claim with no ticket is refused" bash -c 'cd "$1" && gsd-start -n "search" --no-launch' _ "$R"
+has   "…saying how to give one"         "add --ticket <id>" "$WORK/out"
+has   "…or to go without"               "add --no-ticket" "$WORK/out"
+is    "…and nothing was claimed"        "$(grep -c '^### Phase' "$R/.planning/ROADMAP.md"):$(git --git-dir="$R.git" rev-parse main)" "1:$before"
+fails "--insert is refused too"         bash -c 'cd "$1" && gsd-start --insert 1 "hotfix" --no-launch' _ "$R"
+(cd "$R" && gsd-start -n "search tk-PROJ-7" --no-launch) > "$WORK/out" 2>&1
+is  "a tk-<id> tag in the description counts" "$?" 0
+(cd "$R" && gsd-start -n "bump deps" --no-ticket --no-launch) > "$WORK/out" 2>&1
+is  "--no-ticket claims anyway"         "$?:$(grep -c '^### Phase 3: bump deps$' "$R/.planning/ROADMAP.md")" "0:1"
+(cd "$R" && gsd-start -p 1 --no-launch) > "$WORK/out" 2>&1
+is  "-p on an old phase with no ticket still attaches" "$?" 0
+has "…with a note"                      "phase 1 has no ticket" "$WORK/out"
+
 section "gsd-start --ticket — tracker = none tags only"
 R="$WORK/plain"; project "$R"
 : > "$TRACKER_LOG"

@@ -4,6 +4,18 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.11
+
+- With a tracker set (`tracker = clickup|custom`), `gsd-start -n` and
+  `--insert` need a ticket: `--ticket <id>` or a `tk-<id>` tag in the
+  description. Without one the claim is refused and nothing is claimed.
+  `--no-ticket` claims anyway, for a chore. `gsd-start -p` on an older phase
+  with no ticket only notes it.
+- `gsd-init` asks where the tickets live (none, ClickUp, or your own script)
+  when `.gsd.conf` sets no tracker. It asks only in a terminal; scripts pass
+  `--tracker none|clickup|custom` (and `--tracker-command <script>`).
+  `gsd-bootstrap-repo` takes the same flags.
+
 ## 0.4.10
 
 Fixes from a bug scan. Run `gsd-update` (it re-runs the installer, which

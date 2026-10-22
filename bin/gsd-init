@@ -35,6 +35,9 @@ OPTIONS
   --base <branch>  base branch override (passed to gsd-bootstrap-repo)
   --no-commit      don't commit the bootstrap files (default: commit)
   --no-ui          the project has no screens (backend, CLI): ui_gates = off
+  --tracker <t>    where the tickets live: none, clickup or custom. Without it,
+                   gsd-init asks (in a terminal) when .gsd.conf sets no tracker
+  --tracker-command <path>  with --tracker custom: the repo's tracker script
   --providers <list> comma-separated integrations to install, in default order
   --provider <p>   provider for the initialization session; when --providers
                    is omitted, also selects the single integration to install
@@ -80,6 +83,8 @@ HELP
 }
 
 MODE=""          # "" = auto-detect | new | ingest
+TRACKER_CLI=""
+TRACKER_COMMAND_CLI=""
 BOOT_ARGS=()
 COMMIT=1
 PROVIDER_CLI=""
@@ -99,6 +104,8 @@ while [ $# -gt 0 ]; do
     --base) [ $# -ge 2 ] || die "--base needs a value"; BOOT_ARGS+=(--base "$2"); shift 2 ;;
     --no-commit) COMMIT=0; shift ;;
     --no-ui) BOOT_ARGS+=(--no-ui); shift ;;
+    --tracker) [ $# -ge 2 ] || die "--tracker needs none, clickup or custom"; TRACKER_CLI="$2"; shift 2 ;;
+    --tracker-command) [ $# -ge 2 ] && [ -n "$2" ] || die "--tracker-command needs the script's path"; TRACKER_COMMAND_CLI="$2"; shift 2 ;;
     --providers) [ $# -ge 2 ] || die "--providers needs a comma-separated list"; PROVIDERS_CLI="$2"; shift 2 ;;
     --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, gemini, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
     --model) [ $# -ge 2 ] && [ -n "$2" ] || die "--model needs a model ID or default"; MODEL_CLI="$2"; shift 2 ;;
@@ -177,12 +184,51 @@ gsd_model_resolve "$DEST" "$MODEL_PROVIDER" "$MODEL_CLI" || exit $?
 ALREADY=0
 [ -f "$DEST/.planning/ROADMAP.md" ] && ALREADY=1
 
+# ── the ticket tracker ───────────────────────────────────────────────────────
+# With a tracker set, gsd-start claims a phase only with its ticket, so pick it
+# now. Asked only in a terminal and only while .gsd.conf names none; a script
+# passes --tracker, and without either the default (none) stays.
+ask_tracker() {
+  local a c
+  echo "Where do this project's tickets live?"
+  echo "  1) none     no tracker — phases are not linked to tickets"
+  echo "  2) clickup  ClickUp (token in ~/.config/gsd/clickup.env)"
+  echo "  3) custom   your own script in this repo"
+  while :; do
+    printf 'Tracker [1]: '; IFS= read -r a || a=1
+    case "$a" in ''|1|none) TRACKER_CLI=none ;; 2|clickup) TRACKER_CLI=clickup ;; 3|custom) TRACKER_CLI=custom ;; *) echo "  type 1, 2 or 3"; continue ;; esac
+    break
+  done
+  if [ "$TRACKER_CLI" = custom ] && [ -z "$TRACKER_COMMAND_CLI" ]; then
+    printf 'Script, relative to the repo [scripts/tracker.sh]: '; IFS= read -r c || c=""
+    TRACKER_COMMAND_CLI=${c:-scripts/tracker.sh}
+  fi
+  echo ""
+}
+if [ -z "$TRACKER_CLI" ] && [ -z "$(gsd_conf_get "$DEST" tracker)" ] && { [ "${GSD_TRACKER_ASK:-}" = always ] || { [ -t 0 ] && [ -t 1 ]; }; }; then ask_tracker; fi   # tests: GSD_TRACKER_ASK=always
+if [ -n "$TRACKER_CLI" ]; then
+  case "$TRACKER_CLI" in none|clickup|custom) ;; *) die "unknown tracker '$TRACKER_CLI' (expected none, clickup or custom)" ;; esac
+  BOOT_ARGS+=(--tracker "$TRACKER_CLI")
+  [ -z "$TRACKER_COMMAND_CLI" ] || BOOT_ARGS+=(--tracker-command "$TRACKER_COMMAND_CLI")
+fi
+
 # ── step 1: install the workflow files (idempotent — also repairs/syncs) ─────
 [ "$COMMIT" = 1 ] && BOOT_ARGS+=(--commit)
 echo "▶ installing the GSD worktree workflow (gsd-bootstrap-repo)…"
 echo ""
 gsd-bootstrap-repo ${BOOT_ARGS[@]+"${BOOT_ARGS[@]}"}
 echo ""
+
+tracker_notice() {
+  local t c; t=$(gsd_conf_get "$DEST" tracker)
+  case "${t:-none}" in
+    none)    [ -n "$t" ] || echo "• no ticket tracker set — to link phases to tickets: gsd-init --tracker clickup|custom" ;;
+    clickup) echo "• tracker = clickup — check the login: gsd-tracker check   (gsd-start then needs --ticket <id>)" ;;
+    custom)  c=$(gsd_conf_get "$DEST" tracker_command)
+             [ -x "$DEST/$c" ] || [ -x "$c" ] || echo "• tracker = custom — write $c (see docs/trackers.md) before the first gsd-start"
+             echo "• gsd-start now needs --ticket <id> (or --no-ticket for a chore)" ;;
+  esac
+}
 
 # Everything installed above is a TRACKED file except two, so `git diff` is the
 # review — no --check flag needed, and no dry-run that could drift from what
@@ -218,6 +264,7 @@ if [ "$ALREADY" = 1 ]; then
   echo ""
   review_notice
   ui_notice
+  tracker_notice
   echo ""
   echo "  Health check:  gsd-doctor"
   echo "  Start features with:  gsd-start -n \"<description>\""
@@ -263,6 +310,7 @@ else
     exit 127
   fi
   ui_notice
+  tracker_notice
   echo "Next:  $NEXT"
   echo "Then per feature:  gsd-start -n \"<description>\"  →  work  →  gsd-finish"
   echo "TDD mode (tests first) turns on at the first gsd-start; turn it off with /gsd-settings."
