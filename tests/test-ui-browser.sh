@@ -92,6 +92,7 @@ is "C3 text over a picture is a question, not a pass" "$(finds Questions 'Q[0-9]
 is "C4 small text"                         "$(finds Failures 'C4 | /small.html | 375 | span.tiny | text at 10px (minimum 12px)')" 1
 is "C4 text hidden from screen readers only is still seen" "$(finds Failures 'C4 | /small.html | 375 | span.decor | ')" 1
 is "C4 text shrunk by a transform"         "$(finds Failures 'C4 | /small.html | 375 | div.shrunk | text at 8px')" 1
+is "C4 a fractional box width (49.6px, offsetWidth 50) is rounding, not a shrink" "$(finds Failures 'C4 | /small.html | 375 | span.frac')" 0
 is "C4 text for screen readers (a 1px box) is not counted" "$(finds Failures 'C4 | /small.html | 375 | span.reader-only')" 0
 is "C5 a lazy image far down the page"     "$(finds Failures 'C5 | /image.html | 375 | img.late | image did not load')" 1
 is "C6 an uncaught error fails"            "$(finds Failures 'C6 | /error.html | 375 | page error | boom in the page')" 1
