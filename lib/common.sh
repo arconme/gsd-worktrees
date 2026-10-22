@@ -89,6 +89,65 @@ gsd_reviews_problem() {  # $1=<P>-REVIEWS.md  $2=review_provider → why it is n
   ' "$1" | grep .
 }
 
+gsd_workflow_flag() {  # $1=checkout $2=key → true | false | "" (unset or unreadable)
+  # GSD's own switches live in .planning/config.json under "workflow".
+  local py; py=$(gsd_python) || return 0
+  "$py" - "$1/.planning/config.json" "$2" 2>/dev/null <<'PY' || true
+import json, sys
+try:
+    v = json.load(open(sys.argv[1])).get("workflow", {}).get(sys.argv[2])
+except Exception:
+    v = None
+print("true" if v is True else "false" if v is False else "")
+PY
+}
+
+gsd_validation_problem() {  # $1=phase dir $2=<P> $3=checkout → why the test audit is still open
+  # The one test of "/gsd-validate-phase ran", shared by gsd-flow-next
+  # (validate step), the guard (flow = strict, secure-phase) and doctor (T040).
+  # plan-phase writes a draft <P>-VALIDATION.md (nyquist_compliant: false).
+  # validate-phase sets nyquist_compliant: true when every requirement has an
+  # automated test, or appends a "## Validation Audit" table when some stay
+  # manual-only. Not required with workflow.nyquist_validation = false: then
+  # validate-phase exits at once. Prints the reason and returns 0 when open;
+  # returns 1 when done.
+  [ "$(gsd_workflow_flag "$3" nyquist_validation)" = false ] && return 1
+  local f="$1/$2-VALIDATION.md" c
+  [ -f "$f" ] || { echo "no $2-VALIDATION.md"; return 0; }
+  c=$(sed -n '/^---$/,/^---$/p' "$f" | sed -n -E 's/^nyquist_compliant:[[:space:]]*//p' | head -1 | tr -d '[:space:]')
+  [ "$c" = true ] && return 1
+  grep -q '^## Validation Audit' "$f" && return 1
+  echo "$2-VALIDATION.md is the plan's draft (nyquist_compliant: false, no audit)"
+}
+
+gsd_phase_dir() {  # $1=checkout $2=phase-<N>-* branch → GSD_PD (phase dir), GSD_P (its prefix), GSD_N; 1 = none
+  # Dirs come padded (07-, 02.1- from gsd-sdk) or not (7.1-); the artifact
+  # prefix is taken from the dir that exists.
+  local ni nd c d
+  GSD_PD=""; GSD_P=""
+  GSD_N=$(printf '%s' "$2" | sed -n -E 's/^phase-([0-9]+([.][0-9]+)?)-.*/\1/p')
+  [ -n "$GSD_N" ] && [ -d "$1" ] || return 1
+  ni=$((10#${GSD_N%%.*})); case "$GSD_N" in *.*) nd=".${GSD_N#*.}" ;; *) nd="" ;; esac
+  for c in "$(printf '%02d' "$ni")$nd" "$ni$nd"; do
+    for d in "$1/.planning/phases/$c"-*; do [ -d "$d" ] && { GSD_PD=$d; GSD_P=$c; return 0; }; done
+  done
+  return 1
+}
+
+gsd_flow_finish_gate() {  # $1=MAIN $2=phase branch $3=its worktree → 1 = refuse the finish (flow = strict)
+  # Called by gsd-wt-finish and gsd-finish --pr, before anything is merged or
+  # pushed. It checks the test audit (/gsd-validate-phase): the guard holds
+  # the earlier steps, but nothing runs after validate except secure.
+  [ "$(gsd_conf_get "$1" flow)" = strict ] || return 0
+  [ "${GSD_SKIP_GUARD:-}" != 1 ] || return 0
+  gsd_phase_dir "$3" "$2" || return 0
+  local why
+  why=$(gsd_validation_problem "$GSD_PD" "$GSD_P" "$3") || return 0
+  echo "✗ phase $GSD_N has no test audit (flow = strict): $why." >&2
+  echo "  In the phase worktree: /gsd-validate-phase $GSD_N   (or GSD_SKIP_GUARD=1 if the user asked to skip it)" >&2
+  return 1
+}
+
 gsd_python() {  # → the interpreter for lib/gsd_planning.py; nonzero when none
   # Most systems have `python3`, but minimal images (and Windows) name it
   # `python`. Checking the NAME is not enough: `python` is still Python 2 on

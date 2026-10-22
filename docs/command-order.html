@@ -314,6 +314,12 @@
         </div>
 
         <div class="node">
+          <span class="n-cmd">/gsd-validate-phase N</span>
+          <span class="n-sub">a test for every requirement — every phase</span>
+        </div>
+        <div class="link"></div>
+
+        <div class="node">
           <span class="n-cmd">/gsd-secure-phase N</span>
           <span class="n-sub">security — every phase</span>
         </div>
@@ -359,7 +365,7 @@
       <li class="step">
         <span class="num">5</span>
         <span class="cmd">/gsd-plan-phase N</span>
-        <span class="why">Turns decisions into numbered plans. Then obtain an independent review via the configured reviewer, show verified findings to the user, and replan with <code>--reviews</code> before execution. Missing reviewer capability requires a separate session handoff, not a skipped gate.</span>
+        <span class="why">Turns decisions into numbered plans. TDD mode is on by default (<code>gsd-start</code> sets it): each plan for logic lists its test cases, input → expected result, so the review can check them, and execute writes each test before its code. Then obtain an independent review via the configured reviewer, show verified findings to the user, and replan with <code>--reviews</code> before execution. Missing reviewer capability requires a separate session handoff, not a skipped gate.</span>
       </li>
 
       <li class="step">
@@ -388,14 +394,14 @@
 
       <li class="step">
         <span class="num">10</span>
-        <span class="cmd">/gsd-secure-phase N<span class="tag tag-must">every phase</span></span>
-        <span class="why">Checks the security protections in the plan actually exist in the code. Run it for <strong>every</strong> phase, not only the ones that look security-related.</span>
+        <span class="cmd">/gsd-validate-phase N<span class="tag tag-must">every phase</span></span>
+        <span class="why">Finds each requirement that has no test and writes the missing tests. It never changes the code itself. Runs after the code fixes, so the tests see the final code. A gap it cannot cover is marked manual-only, with your OK. Skipped only when the project turned off <code>workflow.nyquist_validation</code>.</span>
       </li>
 
       <li class="step">
         <span class="num">11</span>
-        <span class="cmd">/gsd-validate-phase N<span class="tag tag-opt">optional</span></span>
-        <span class="why">Optional supplementary coverage work, not an engine gate. If it changes code after security review, rerun the affected reviews and security before finishing.</span>
+        <span class="cmd">/gsd-secure-phase N<span class="tag tag-must">every phase</span></span>
+        <span class="why">Checks the security protections in the plan actually exist in the code. Run it for <strong>every</strong> phase, not only the ones that look security-related.</span>
       </li>
 
       <li class="step">

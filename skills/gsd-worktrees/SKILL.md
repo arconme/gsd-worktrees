@@ -82,8 +82,9 @@ handling the manual path lacks.
 - **With `flow = strict` in `.gsd.conf` the guard also enforces the phase
   order.** `/gsd-plan-phase` needs the discuss artifact (`<P>-CONTEXT.md`),
   `/gsd-execute-phase` needs the cross-AI review (`<P>-REVIEWS.md`; `--gaps-only`
-  exempt), `/gsd-secure-phase` needs the code review (`<P>-REVIEW.md`) and, for a
-  phase with a UI-SPEC, `<P>-UI-REVIEW.md`. A block names the step to run first.
+  exempt), `/gsd-secure-phase` needs the code review (`<P>-REVIEW.md`), for a
+  phase with a UI-SPEC `<P>-UI-REVIEW.md`, and the test audit
+  (`/gsd-validate-phase`: `<P>-VALIDATION.md` compliant or audited). A block names the step to run first.
   Do the step; never work around it.
 - Repo settings live in `.gsd.conf`. `scripts/gsd-*.sh` are frozen shims that
   delegate to the toolkit — never edit them.

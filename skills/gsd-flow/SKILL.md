@@ -59,6 +59,7 @@ suggestion; `gsd-flow-next` decides what comes next.
 | `ui-look` | Run `gsd-ui look <N>`. Open **every** picture named in `<P>-UI-LOOK.md` (read the image file) and answer every line: `ok — <what you saw>`, `fixed — …`, `bad — <what is wrong>`, `n/a — <why>`. Write what is in the picture, not what the code should produce. A `bad` line means: fix the page, run `gsd-ui check <N>` again, then `gsd-ui look <N>`. Commit the file. |
 | `ui-approve` | Run `gsd-ui sheet <N>` and give the user the path of the sheet. **Stop** and ask for a yes. Only after it: `gsd-ui approve <N>`, then commit. If the user does not want to look: `gsd-ui approve <N> --waive "<their reason>"`. |
 | `ui-review` | Invoke/follow `gsd-ui-review <N>`; hold the pictures in `<P>-SHOTS/` and the look file against the chosen sketch and the layout rules, as `note=` says. |
+| `validate` | Invoke/follow `gsd-validate-phase <N>`: it finds requirements with no test and writes the missing tests (it never changes the implementation). Run it without asking first. A gap it cannot cover becomes manual-only only when the user agrees. |
 | `secure` | Invoke/follow `gsd-secure-phase <N>` as the last code gate. |
 | `done` | Print the finish line. Do **not** run `gsd-finish` unless the user says so: it deletes the directory this session stands in and must be the session's last action. |
 

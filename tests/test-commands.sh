@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-commands.sh — command paths no other suite exercised: gsd-derive-port,
-# gsd-start's refusals / --insert / -p / --flow, a conflicting finish, stale
+# gsd-start's refusals / --insert / -p / --flow / TDD default, a conflicting finish, stale
 # lock reclaim, gsd-init's docs detection, and gsd-finish --pr.
 # CI-safe: gsd-sdk and gh are stubbed; remotes are local bare repos.
 # (gsd-tracker has its own suite: tests/test-tracker.sh.)
@@ -36,6 +36,16 @@ case "$1 $2" in
     printf '\n### Phase %s: %s (INSERTED)\n' "$num" "$4" >> "$rm"
     slug=$(printf '%s' "$4" | tr ' ' '-')
     printf '{\n  "phase_number": "%s",\n  "slug": "%s"\n}\n' "$num" "$slug" ;;
+  "query config-set")   # $3=dotted key $4=value $6=project dir
+    python3 - "$6/.planning/config.json" "$3" "$4" <<'PY'
+import json, sys
+f, key, val = sys.argv[1:]
+c = json.load(open(f)); d = c; parts = key.split(".")
+for k in parts[:-1]: d = d.setdefault(k, {})
+d[parts[-1]] = {"true": True, "false": False}.get(val, val)
+json.dump(c, open(f, "w"), indent=2)
+PY
+    ;;
   *) echo "stub gsd-sdk: unsupported $*" >&2; exit 1 ;;
 esac
 SDK
@@ -94,6 +104,24 @@ if check_wt 01.1; then ok "…on a phase-01.1 worktree (guard accepts it)"; else
 (cd "$R" && gsd-start -p 2 --flow --no-launch) > "$WORK/out" 2>&1
 has "--flow prints the gsd-flow launch" "gsd-flow" "$WORK/out"
 
+section "gsd-start — TDD mode is the default"
+tdd() { git -C "$R" show HEAD:.planning/config.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["workflow"].get("tdd_mode"))'; }
+R="$WORK/tdd"; project "$R"
+(cd "$R" && gsd-start -n "no config yet" --no-launch) > "$WORK/out" 2>&1
+is  "no config.json (before /gsd-new-project) → claim still works" "$?" 0
+if [ -f "$R/.planning/config.json" ]; then bad "…and makes no config.json"; else ok "…and makes no config.json"; fi
+printf '{\n  "workflow": {\n    "research": true\n  }\n}\n' > "$R/.planning/config.json"; commit "$R" config; git -C "$R" push -q
+(cd "$R" && gsd-start -n "first claim" --no-launch) > "$WORK/out" 2>&1
+is  "tdd_mode unset → the claim commit turns it on" "$(tdd)" True
+has "…and says so" "TDD mode on" "$WORK/out"
+is  "…in the pushed claim" "$(git --git-dir="$R.git" show main:.planning/config.json | grep -c '"tdd_mode": true')" 1
+printf '{\n  "workflow": {\n    "tdd_mode": false\n  }\n}\n' > "$R/.planning/config.json"; commit "$R" tdd-off; git -C "$R" push -q
+(cd "$R" && gsd-start -n "after opting out" --no-launch) > "$WORK/out" 2>&1
+is  "tdd_mode false (the project chose) → kept" "$(tdd)" False
+printf '{\n  "workflow": {}\n}\n' > "$R/.planning/config.json"; commit "$R" tdd-unset; git -C "$R" push -q
+(cd "$R" && gsd-start --insert 1 "hotfix" --no-launch) > "$WORK/out" 2>&1
+is  "--insert turns it on too" "$(tdd)" True
+
 section "gsd-wt-finish — a conflicting merge aborts cleanly"
 R="$WORK/conflict"; project "$R"
 printf 'base\n' > "$R/shared.txt"; commit "$R" base-file; git -C "$R" push -q
@@ -138,6 +166,30 @@ has "…gh pr create, base main"        "pr create.*--base main" "$GH_LOG"
 has "…head is the phase branch"       "--head phase-1-catalog" "$GH_LOG"
 if [ -d "$WORK/pr-wt" ]; then ok "…worktree kept"; else bad "…worktree kept"; fi
 is  "…nothing merged into main"       "$(git -C "$R" log --oneline main | grep -c feature)" 0
+
+section "gsd-finish — flow = strict refuses a phase without the test audit"
+R="$WORK/audit"; project "$R"
+printf 'install = none\ntest = none\nflow = strict\n' > "$R/.gsd.conf"; commit "$R" strict; git -C "$R" push -q
+git -C "$R" worktree add -qb phase-1-catalog "$WORK/audit-wt"
+mkdir -p "$WORK/audit-wt/.planning/phases/01-catalog"
+printf 'feature\n' > "$WORK/audit-wt/f.txt"; commit "$WORK/audit-wt" feature
+before=$(git -C "$R" rev-parse HEAD)
+fails "finish refuses without 01-VALIDATION.md" bash -c 'cd "$1" && gsd-wt-finish 1' _ "$R"
+has   "…names the step"                "/gsd-validate-phase 1" "$WORK/out"
+is    "…nothing merged"                "$(git -C "$R" rev-parse HEAD)" "$before"
+fails "--pr refuses too"               bash -c 'cd "$1" && gsd-finish 1 --pr' _ "$R"
+has   "…and opens no PR"               "no PR was opened" "$WORK/out"
+printf -- '---\nnyquist_compliant: false\n---\n' > "$WORK/audit-wt/.planning/phases/01-catalog/01-VALIDATION.md"
+commit "$WORK/audit-wt" draft
+fails "the plan's draft does not count" bash -c 'cd "$1" && gsd-wt-finish 1' _ "$R"
+(cd "$R" && GSD_SKIP_GUARD=1 gsd-finish 1 --pr) > "$WORK/out" 2>&1
+is  "GSD_SKIP_GUARD=1 skips the gate (--pr opens the PR)" "$?" 0
+git -C "$R" branch -q --unset-upstream phase-1-catalog   # the PR push tracked it; the merge path below expects none
+printf -- '---\nnyquist_compliant: true\n---\n' > "$WORK/audit-wt/.planning/phases/01-catalog/01-VALIDATION.md"
+commit "$WORK/audit-wt" audited
+(cd "$R" && gsd-wt-finish 1) > "$WORK/out" 2>&1
+is  "audited → finish lands"           "$?" 0
+is  "…the feature is on main"          "$(git -C "$R" log --oneline main | grep -c feature)" 1
 
 section "lint — bash 3.2 traps"
 # macOS bash 3.2 in a UTF-8 locale reads "$VAR…" as a variable named VAR plus

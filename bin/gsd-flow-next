@@ -35,6 +35,9 @@
 #                answered, for that capture
 #   ui-approve   <P>-UI-APPROVAL.md names that capture      gsd-ui sheet, gsd-ui approve
 #   ui-review    <P>-UI-REVIEW.md (screens only)            /gsd-ui-review
+#   validate     <P>-VALIDATION.md nyquist_compliant: true,  /gsd-validate-phase
+#                or a "## Validation Audit" (manual-only left)
+#                — not with workflow.nyquist_validation false
 #   secure       <P>-SECURITY.md, threats_open: 0           /gsd-secure-phase
 #   done         → gsd-finish
 #
@@ -185,19 +188,8 @@ fi
 # answer; unreadable or unset = research (the plan checker wants its test list).
 if [ -z "$PLANS" ]; then
   if has RESEARCH.md; then plan_run="/gsd-plan-phase $N"
-  else
-    research=$({ python3 - "$REPO/.planning/config.json" 2>/dev/null || true; } <<'PY'
-import json, sys
-try:
-    v = json.load(open(sys.argv[1])).get("workflow", {}).get("research", True)
-except Exception:
-    v = True
-print("no" if v is False else "yes")
-PY
-)
-    if [ "$research" = no ]; then plan_run="/gsd-plan-phase $N --skip-research"
-    else plan_run="/gsd-plan-phase $N --research"; fi
-  fi
+  elif [ "$(gsd_workflow_flag "$REPO" research)" = false ]; then plan_run="/gsd-plan-phase $N --skip-research"
+  else plan_run="/gsd-plan-phase $N --research"; fi
   emit plan "$plan_run" "" "" ""
 fi
 # 6 cross-AI review — a REVIEWS.md whose reviewer failed (e.g. hit the Codex
@@ -273,8 +265,14 @@ if [ "$UI" = yes ] && ! has UI-REVIEW.md; then
   [ "$GATES" = off ] || [ "$(gsd_ui_check_state "$REPO" "$pd" "$P" nostale)" != passed ] || rv_note="phase has screens: hold the pictures in $P-SHOTS/ and $P-UI-LOOK.md against the chosen sketch and the layout rules in $P-LAYOUT.md / DESIGN.md, not only the code"
   emit ui-review "/gsd-ui-review $N" "" "" "$rv_note"
 fi
+# 11b validate — every requirement gets a test (/gsd-validate-phase), after
+# all code fixes so the tests see the final code; before secure, the last
+# gate. Same test as the guard and doctor (gsd_validation_problem).
+if val_bad=$(gsd_validation_problem "$pd" "$P" "$REPO"); then
+  emit validate "/gsd-validate-phase $N" "" "" "$val_bad: find requirements without a test and write the missing tests (implementation files stay read-only). A gap the user leaves to a person is recorded as manual-only"
+fi
 # 12 secure — the last code gate
 if ! has SECURITY.md; then emit secure "/gsd-secure-phase $N" "" "" "last code gate — after every --fix has landed"
 else open=$(fm SECURITY.md threats_open); [ "${open:-0}" = 0 ] || emit secure "/gsd-secure-phase $N" "" "" "$open open threat(s)"; fi
 
-emit "done" "gsd-finish" "" "gsd-finish deletes the worktree the session is standing in — it must be the LAST action" "optional before finishing: /gsd-validate-phase $N"
+emit "done" "gsd-finish" "" "gsd-finish deletes the worktree the session is standing in — it must be the LAST action" ""

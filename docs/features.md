@@ -28,6 +28,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Parallel-safe claim: pull, push with rebase-and-retry, auto-renumber the loser | `gsd-start` |
 | Duplicate-description guard (case-insensitive) | `gsd-start` |
 | Claim bookkeeping: checklist + Progress rows and STATE.md counters land in the claim commit | `gsd-start`, `lib/roadmap-rows.pl` |
+| TDD by default: the claim commit sets `workflow.tdd_mode: true` in `.planning/config.json` when the key is unset (a project's own `false` is kept), so plans list their test cases for the plan review | `gsd-start` |
 | Ticket link (`--ticket <id|url>`, old `--cu`): `tk-<id>` at the end of title/slug, duplicate-ticket guard, ticket → "in progress" when a tracker is set | `gsd-start`, `gsd-tracker` |
 | Print-only by default; `--launch` / `--agent-command` / `--provider` open the session | `gsd-start` |
 | `--flow` / `--no-flow` / `start_mode`: open discuss-phase only, or resume the full flow | `gsd-start`, `lib/provider.sh` |
@@ -51,6 +52,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Removes worktree + branch; ticket → "in testing" when a tracker is set (also on `--pr`) | `gsd-wt-finish`, `gsd-finish`, `gsd-tracker` |
 | `--pr [--draft]`: push (prefers the `*-pr` branch) and open a GitHub PR instead of merging | `gsd-finish` |
 | UI gate for a phase with screens: the check of the rendered pages, the look file and the user's approval must be current. `ui_gates = strict` refuses (nothing merged, no PR), `warn` prints a warning; `GSD_SKIP_GUARD=1` escapes | `gsd-wt-finish`, `gsd-finish`, `lib/ui.sh` (`gsd_ui_finish_gate`) |
+| Test-audit gate: with `flow = strict`, a phase whose `<P>-VALIDATION.md` is missing or still the plan's draft is refused (nothing merged, no PR); `GSD_SKIP_GUARD=1` escapes | `gsd-wt-finish`, `gsd-finish`, `lib/common.sh` (`gsd_flow_finish_gate`) |
 | Post-finish warning if the roadmap ticks look wrong | `gsd-finish` |
 
 ## 4. Planning-file integrity
@@ -73,7 +75,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Rule 1: `/gsd-phase` only on the base branch | `gsd-worktree-guard` |
 | Rule 2: per-phase commands only inside the matching `phase-<N>-*` worktree (nested agent worktrees inherit identity) | `gsd-worktree-guard` |
 | Rule 3: `/gsd-execute-phase` blocked while the install is `running` / `fail` | `gsd-worktree-guard` |
-| Rule 4 (`flow = strict`): plan needs CONTEXT, execute needs REVIEWS, secure needs REVIEW (+ UI-REVIEW when a UI-SPEC exists); `--prd` / `--gaps-only` exemptions | `gsd-worktree-guard` |
+| Rule 4 (`flow = strict`): plan needs CONTEXT, execute needs REVIEWS, secure needs REVIEW (+ UI-REVIEW when a UI-SPEC exists) and the test audit (`<P>-VALIDATION.md` compliant or audited); `--prd` / `--gaps-only` exemptions | `gsd-worktree-guard` |
 | Rule 5 (`ui_gates = strict`): ui-phase needs a filled DESIGN.md + a LAYOUT with a chosen sketch and pages; ui-review needs a passed, current UI check, a complete look file and the user's approval (a phase whose UI review is already on the base branch is exempt) | `gsd-worktree-guard`, `lib/ui.sh` (`gsd_ui_gate`) |
 | Native hooks: Claude `UserPromptExpansion` + `PreToolUse(Skill)`, Gemini `BeforeTool` (skill activation + direct `gsd-*` shell calls) | `gsd-worktree-guard`, `lib/gsd_hook_payload.py` |
 | Hook JSON parsed without `jq` (Python fallback); compound shell text naming `gsd-` is blocked, not guessed | `lib/gsd_hook_payload.py` |
@@ -83,7 +85,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 
 | Feature | Where |
 |---|---|
-| Resumable step engine: ticket (only with a tracker) → discuss → ui-decision → design-system → layout → ui-phase → plan → review → replan → execute → verifier → gaps → verify-work → code-review → ui-check → ui-look → ui-approve → ui-review → secure → done | `gsd-flow-next` |
+| Resumable step engine: ticket (only with a tracker) → discuss → ui-decision → design-system → layout → ui-phase → plan → review → replan → execute → verifier → gaps → verify-work → code-review → ui-check → ui-look → ui-approve → ui-review → validate → secure → done | `gsd-flow-next` |
 | Reads artifacts only, so it survives crashes and `/clear` | `gsd-flow-next` |
 | Detects an unfolded review (`replan`) from commit times of REVIEWS vs PLAN | `gsd-flow-next` |
 | `--all` preview, `--json`, `--ui` / `--no-ui` | `gsd-flow-next` |

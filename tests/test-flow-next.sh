@@ -72,7 +72,18 @@ ui_fix_check "$PD" 07 failed;  is "check failed → ui-check"     "$(step)" ui-c
 ui_fix_check "$PD" 07 passed;  is "check passed → ui-look"      "$(step)" ui-look
 ui_fix_look "$PD" 07;          is "look complete → ui-approve"  "$(step)" ui-approve
 ui_fix_approval "$PD" 07;      is "approved → ui-review"        "$(step)" ui-review
-: > "$PD/07-UI-REVIEW.md";     is "UI-REVIEW → secure"          "$(step)" secure
+: > "$PD/07-UI-REVIEW.md";     is "UI-REVIEW → validate (no VALIDATION.md)" "$(step)" validate
+is "…run= is validate-phase" "$("$NEXT" 7 --repo "$REPO" | sed -n 's/^run=//p')" "/gsd-validate-phase 7"
+printf -- '---\nphase: 7\nstatus: draft\nnyquist_compliant: false\n---\n\n# Validation\n\n---\n' > "$PD/07-VALIDATION.md"
+is "the plan's draft VALIDATION.md → validate" "$(step)" validate
+is "…and the note says it is the draft" "$("$NEXT" 7 --repo "$REPO" | grep -c "07-VALIDATION.md is the plan's draft")" 1
+printf '{"workflow":{"nyquist_validation":false}}' > "$REPO/.planning/config.json"
+is "workflow.nyquist_validation false → no validate step" "$(step)" secure
+rm -f "$REPO/.planning/config.json"
+printf '\n## Validation Audit 2026-10-22\n| Gaps found | 2 |\n' >> "$PD/07-VALIDATION.md"
+is "audited, gaps left manual-only → secure" "$(step)" secure
+printf -- '---\nphase: 7\nstatus: validated\nnyquist_compliant: true\n---\n' > "$PD/07-VALIDATION.md"
+is "nyquist_compliant: true → secure"        "$(step)" secure
 fm SECURITY.md verified "threats_open: 2"; is "2 open threats → secure" "$(step)" secure
 fm SECURITY.md verified "threats_open: 0"; is "0 open → done"  "$(step)" "done"
 
@@ -154,7 +165,7 @@ rm "$U/.gsd.conf"
 unote() { "$NEXT" 5 --repo "$U" | sed -n 's/^note=//p'; }
 is "warn (default) → ui-check before ui-review" "$(ustep)" ui-check
 is "…run= gsd-ui check 5"                       "$(urun)" "gsd-ui check 5"
-is "…--all lists check, look, approve, review"  "$("$NEXT" 5 --repo "$U" --all | sed -n 's/^step=//p' | tr '\n' ' ')" "ui-check ui-look ui-approve ui-review secure done "
+is "…--all lists check, look, approve, review"  "$("$NEXT" 5 --repo "$U" --all | sed -n 's/^step=//p' | tr '\n' ' ')" "ui-check ui-look ui-approve ui-review validate secure done "
 printf -- '---\nstatus: error\nerror: nothing answers at http://localhost:3005\n---\n' > "$UPD/05-UI-CHECK.md"
 is "a run that could not finish → ui-check"     "$(ustep)" ui-check
 is "…the note says why"                         "$(unote | grep -c 'nothing answers')" 1
@@ -200,6 +211,6 @@ git -C "$U" add -A >/dev/null; git -C "$U" -c user.name=t -c user.email=t@t comm
 is "UI-REVIEW.md only in this branch → ui-check" "$(ustep)" ui-check
 # …one that is already on the base branch does (the phase predates the checks).
 git -C "$U" branch -f develop phase-5-shop
-is "UI-REVIEW.md on the base branch → no UI steps" "$(ustep)" secure
+is "UI-REVIEW.md on the base branch → no UI steps" "$(ustep)" validate
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; [ "$FAIL" -eq 0 ]

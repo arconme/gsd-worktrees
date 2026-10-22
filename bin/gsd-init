@@ -68,7 +68,9 @@ EXAMPLES
       Bootstrap against 'main', print the init command to run later.
 
 AFTER INITIALIZATION
-  gsd-start -n "<description>"   begin each feature (claim + worktree + session)
+  gsd-start -n "<description>"   begin each feature (claim + worktree + session).
+                              The first claim also turns on GSD's TDD mode
+                              (workflow.tdd_mode) unless the project set it.
   gsd-finish                  land it (merge back, push, clean up)
 
 RELATED
@@ -263,4 +265,5 @@ else
   ui_notice
   echo "Next:  $NEXT"
   echo "Then per feature:  gsd-start -n \"<description>\"  →  work  →  gsd-finish"
+  echo "TDD mode (tests first) turns on at the first gsd-start; turn it off with /gsd-settings."
 fi

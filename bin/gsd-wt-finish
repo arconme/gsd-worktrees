@@ -159,6 +159,10 @@ fi
 gsd_ui_finish_gate "$MAIN" "$BRANCH" "$DEST" || {
   echo "  Nothing was merged. Phase worktree retained." >&2; exit 1;
 }
+# ── the test audit (flow = strict) ───────────────────────────────────────────
+gsd_flow_finish_gate "$MAIN" "$BRANCH" "$DEST" || {
+  echo "  Nothing was merged. Phase worktree retained." >&2; exit 1;
+}
 
 # ── pre-merge check hook (repo-specific validations) ─────────────────────────
 # Runs after the sync so it sees the freshest $BASE; nonzero exit aborts with

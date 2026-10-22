@@ -310,17 +310,11 @@ gsd_ui_step_cmd() {  # $1=step $2=phase number → the command that closes it
 }
 
 gsd_ui_finish_gate() {  # $1=MAIN $2=phase branch $3=its worktree → 1 = refuse the finish (ui_gates = strict)
-  local gates n ni nd c d pd="" p="" gate
+  local gates n pd p gate
   gates=$(gsd_ui_gates "$1")
   [ "$gates" != off ] || return 0
-  [ -d "$3" ] || return 0
-  n=$(printf '%s' "$2" | sed -n -E 's/^phase-([0-9]+([.][0-9]+)?)-.*/\1/p')
-  [ -n "$n" ] || return 0
-  ni=$((10#${n%%.*})); case "$n" in *.*) nd=".${n#*.}" ;; *) nd="" ;; esac
-  for c in "$(printf '%02d' "$ni")$nd" "$ni$nd"; do
-    for d in "$3/.planning/phases/$c"-*; do [ -d "$d" ] && { pd=$d; p=$c; break 2; }; done
-  done
-  [ -n "$pd" ] || return 0
+  gsd_phase_dir "$3" "$2" || return 0
+  n=$GSD_N; pd=$GSD_PD; p=$GSD_P
   gsd_ui_phase_screens "$pd" "$p" || return 0
   ! gsd_ui_exempt "$3" "$pd" "$p" || return 0
   gate=$(gsd_ui_gate "$3" "$pd" "$p")

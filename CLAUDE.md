@@ -32,7 +32,7 @@ tests/test-install-copy.sh            # install.sh --copy runtime
 bash tests/test-review-fixes.sh       # regressions (finish push race, no-jq hooks, …)
 tests/test-list.sh                    # gsd-list PLANS/STAGE/WORKTREE derivation + layout
 tests/test-review-round2.sh           # regressions from the 2026-09-25 review (docs/fix-plan.md)
-tests/test-commands.sh                # derive-port, start refusals/insert/-p/--flow, conflict abort, stale lock, init docs detection, finish --pr, bash-3.2 lint
+tests/test-commands.sh                # derive-port, start refusals/insert/-p/--flow/TDD default, conflict abort, stale lock, init docs detection, finish --pr, finish test-audit gate, bash-3.2 lint
 tests/test-tracker.sh                 # tickets: ids, gsd-tracker none/custom/fake ClickUp (curl stub), --ticket through start/finish, doctor T070–T072
 tests/test-update.sh                  # releases: get.sh, gsd-update, checksums, pruning, update notice (fake GitHub via a curl stub)
 tests/test-ui.sh                      # UI gates: gsd-ui design/layout/shots/check/look/approve (stub Playwright, stub runner, local http server), finish gate, doctor T080/T081/T018/UI debt, bootstrap --no-ui
@@ -77,7 +77,7 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 
 **Generated instructions (in target repos).** `.gsd/INSTRUCTIONS.md` is canonical, between `canonical:start`/`end` markers. The block text lives in `lib/provider.sh` (`gsd_canonical_block`, `gsd_provider_entry_block`): bootstrap writes it and doctor compares against it (T016 = out of date), so edit it only there. `CLAUDE.md` / `AGENTS.md` (Codex + custom share it) / `GEMINI.md` get only a marked `gsd-worktrees:provider:start`/`end` entrypoint. Bootstrap validates markers before writing and never touches text outside them.
 
-**Finish path.** `gsd-finish` → `gsd-wt-finish`: sync origin (abort on failure) → validate the phase (`scripts/gsd-premerge-check.sh`, else the project's tests) → merge → `gsd-planning-repair` → validate the combined tree → push with retry (repair and validate again after each retry's pull) → remove worktree + branch → `gsd-tracker finish` (only with a tracker set). A failed validation keeps local commits and the worktree, and never pushes.
+**Finish path.** `gsd-finish` → `gsd-wt-finish`: sync origin (abort on failure) → the gates (`gsd_ui_finish_gate`; with `flow = strict` `gsd_flow_finish_gate`, the test audit) → validate the phase (`scripts/gsd-premerge-check.sh`, else the project's tests) → merge → `gsd-planning-repair` → validate the combined tree → push with retry (repair and validate again after each retry's pull) → remove worktree + branch → `gsd-tracker finish` (only with a tracker set). A failed validation keeps local commits and the worktree, and never pushes.
 
 ## Invariants to keep
 
@@ -85,7 +85,7 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 - Claims serialize through the base branch (pull, push, rebase-and-retry; the loser renumbers).
 - A failed merge or validation must leave the remote base branch untouched.
 - A `<P>-REVIEWS.md` counts only when `gsd_reviews_problem` (`lib/common.sh`) finds nothing: `gsd-flow-next` and the guard share it. A review cut short by a usage limit is never a pass.
-- The phase-flow artifact list (`<P>-CONTEXT.md`, `<P>-REVIEWS.md`, `<P>-REVIEW.md`, `<P>-UI-REVIEW.md`, `<P>-LAYOUT.md`, `<P>-UI-CHECK.md`, `<P>-UI-LOOK.md`, `<P>-UI-APPROVAL.md`, …) is shared by `gsd-flow-next`, the guard's `flow = strict` and `ui_gates = strict` rules, the finish gate, and gsd-doctor's T040 report. Change them together.
+- The phase-flow artifact list (`<P>-CONTEXT.md`, `<P>-REVIEWS.md`, `<P>-REVIEW.md`, `<P>-VALIDATION.md` (`gsd_validation_problem`), `<P>-UI-REVIEW.md`, `<P>-LAYOUT.md`, `<P>-UI-CHECK.md`, `<P>-UI-LOOK.md`, `<P>-UI-APPROVAL.md`, …) is shared by `gsd-flow-next`, the guard's `flow = strict` and `ui_gates = strict` rules, the finish gates (`gsd_flow_finish_gate`, `gsd_ui_finish_gate`), and gsd-doctor's T040 report. Change them together.
 - A UI check that could not run must never leave an older pass in place, and "not checked" is never reported as passed.
 - Planning reconcile: keyed lines keep the **first** occurrence's position and the **best** occurrence's content (`[x]` beats `[ ]`, longer wins among equals). Single-value lines keep the last copy (the incoming branch). STATE.md's `## Session Continuity` must stay byte-identical — a test asserts it.
 - `gsd-doctor` is read-only by default. `--fix` (opt-in, asks y/N or `--yes`) runs only named safe actions — `gsd-init --no-launch --no-commit`, `gsd-planning-repair`, `git branch --track <base>`, `chmod +x` the pre-merge script, remove a dead lock — dispatched by name, never by eval of fix text; it never commits, pushes, checks out, deletes branches or edits ROADMAP.md. Add a code to the safe list only if its fix is mechanical and undoable. Finding codes: `W0xx` are shared with `/gsd-health`, `T0xx` are toolkit-only (e.g. `T050` bad providers list, `T059` bad model).

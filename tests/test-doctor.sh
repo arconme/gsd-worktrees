@@ -202,6 +202,11 @@ printf 'base = develop\nflow = strict\nflow_skip = 03, 4.1   # shipped before th
 json "$S"
 is "flow_skip = 03, 4.1 → only phase 4 left" "$(grep -o '"T040"' "$OUT" | wc -l | tr -d ' ')" 1
 has "…and it is phase 4" 'Phase 4 merged without' "$OUT"
+has "…the missing test audit is part of the debt" 'validate' "$OUT"
+printf -- '---\nnyquist_compliant: true\n---\n' > "$S/.planning/phases/04-b/04-VALIDATION.md"
+json "$S"
+hasnt "…not once 04-VALIDATION.md is compliant" 'merged without:[^"]*validate' "$OUT"
+rm "$S/.planning/phases/04-b/04-VALIDATION.md"
 hasnt "flow_skip is a known key" '"T017"' "$OUT"
 doc "$S"
 has "skipped phases are listed as a note" 'not checked (flow_skip in .gsd.conf): 3 4.1' "$OUT"

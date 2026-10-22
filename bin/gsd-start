@@ -346,6 +346,23 @@ add_roadmap_rows() {  # gsd-sdk writes no checklist/Progress row for phase $N �
   "$GSD_PKG/bin/gsd-planning-repair" --repo "$MAIN" >/dev/null 2>&1 || true
 }
 
+tdd_default() {  # TDD is the toolkit's default — turn GSD's tdd_mode on in the claim commit
+  # With it on, each plan lists its test cases (input → expected) in a
+  # <behavior> block, so the cross-AI plan review sees them, and execute
+  # writes each test before its code. Only an UNSET key is filled: a project
+  # that chose false (/gsd-settings) keeps it. Needs the config.json that
+  # /gsd-new-project (or ingest) writes, so the first claim after gsd-init
+  # does it. Best effort, like the ROADMAP rows.
+  [ -f "$MAIN/.planning/config.json" ] || return 0
+  gsd_python >/dev/null || return 0   # cannot tell unset from false without it
+  [ -z "$(gsd_workflow_flag "$MAIN" tdd_mode)" ] || return 0
+  if gsd-sdk query config-set workflow.tdd_mode true --project-dir "$MAIN" >/dev/null 2>&1; then
+    echo "▶ TDD mode on for this project (workflow.tdd_mode; turn it off with /gsd-settings)"
+  else
+    echo "⚠ could not turn on TDD mode — set it with /gsd-settings" >&2
+  fi
+}
+
 claim() {  # claims the next phase number and commits; sets $N
   gsd-sdk query phase.add "$DESC" --project-dir "$MAIN" >/dev/null \
     || die "gsd-sdk query phase.add failed"
@@ -368,6 +385,7 @@ claim() {  # claims the next phase number and commits; sets $N
       printf '\n### Roadmap Evolution\n\n- Phase %s added: %s\n' "$N" "$DESC" >> "$state"
     fi
   fi
+  tdd_default
   git -C "$MAIN" add .planning
   git -C "$MAIN" commit -q -m "docs(gsd): claim phase $N — $DESC"
 }
@@ -395,6 +413,7 @@ insert_phase() {  # inserts a decimal phase after $INSERT and commits; sets $N (
       printf '\n### Roadmap Evolution\n\n- Phase %s inserted after Phase %s: %s\n' "$N" "$INSERT" "$DESC" >> "$state"
     fi
   fi
+  tdd_default
   git -C "$MAIN" add .planning
   git -C "$MAIN" commit -q -m "docs(gsd): insert phase $N (after $INSERT) — $DESC"
 }

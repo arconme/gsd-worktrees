@@ -704,6 +704,7 @@ if { [ "$FLOW_ON" = 1 ] || [ "$UI_ON" = 1 ]; } && [ -f "$MAIN/.planning/ROADMAP.
       open=$(sed -n '/^---$/,/^---$/p' "$pd/$p-SECURITY.md" | sed -n 's/^threats_open:[[:space:]]*//p' | head -1 | tr -d '[:space:]')
       [ "${open:-0}" = 0 ] || { miss="$miss security($open-open)"; fix="$fix /gsd-secure-phase $n;"; }
     else miss="$miss secure-phase"; fix="$fix /gsd-secure-phase $n;"; fi
+    gsd_validation_problem "$pd" "$p" "$MAIN" >/dev/null && { miss="$miss validate"; fix="$fix /gsd-validate-phase $n;"; }
     flow_has VERIFICATION.md || { miss="$miss verifier";        fix="$fix /gsd-execute-phase $n (runs the verifier);"; }
     ls "$pd/$p"-*UAT.md >/dev/null 2>&1 || { miss="$miss verify-work"; fix="$fix /gsd-verify-work $n;"; }
     # screens: the same test gsd-flow-next uses (a UI-SPEC or a LAYOUT)

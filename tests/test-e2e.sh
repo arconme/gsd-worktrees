@@ -166,6 +166,15 @@ step "7. finish both phases (login has a change too)"
 # login was claimed on laptop2, so laptop2 does its work and finishes it
 WT_LOGIN=$(git -C laptop2 worktree list --porcelain | awk '/^worktree /{w=substr($0,10)} /^branch refs\/heads\/phase-/{print w}' | head -1)
 printf 'login\n' > "$WT_LOGIN/login.txt"; art "$WT_LOGIN" "login work"
+(cd shop && gsd-finish "$CART_N") > finish-0.log 2>&1; r0=$?
+check "strict: finish without the test audit is refused" '[ "$r0" != 0 ] && grep -q "gsd-validate-phase $CART_N" finish-0.log' "$(tail -4 finish-0.log)"
+check "…and the cart worktree is kept" '[ -d "$WT_CART" ]'
+audit() {  # $1=worktree $2=phase → a compliant <P>-VALIDATION.md (what /gsd-validate-phase leaves)
+  local p d; p=$(printf '%02d' "$2"); d=$(ls -d "$1"/.planning/phases/"$p"-* 2>/dev/null | head -1)
+  [ -n "$d" ] || { d="$1/.planning/phases/$p-work"; mkdir -p "$d"; }
+  printf -- '---\nnyquist_compliant: true\n---\n' > "$d/$p-VALIDATION.md"; art "$1" "validate"
+}
+audit "$WT_CART" "$CART_N"; audit "$WT_LOGIN" "$LOGIN_N"
 (cd shop && gsd-finish "$CART_N") > finish-a.log 2>&1 & pa=$!
 (cd laptop2 && gsd-finish "$LOGIN_N") > finish-b.log 2>&1 & pb=$!
 wait $pa; ra=$?; wait $pb; rb=$?

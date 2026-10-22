@@ -191,6 +191,7 @@ if [ "$PR" = 1 ]; then
   PR_WT=$(git -C "$MAIN" worktree list --porcelain \
             | awk -v b="branch refs/heads/$BR" '/^worktree /{w=substr($0,10)} $0==b{print w; exit}')
   gsd_ui_finish_gate "$MAIN" "$BR" "${PR_WT:-}" || die "no PR was opened"
+  gsd_flow_finish_gate "$MAIN" "$BR" "${PR_WT:-}" || die "no PR was opened"
   echo "▶ pushing '$HEAD_BR'…"
   # No retry loop here: a rejected push means origin has commits this branch
   # lacks, and only the user can say how to integrate them.
