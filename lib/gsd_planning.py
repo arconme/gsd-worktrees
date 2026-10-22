@@ -478,6 +478,10 @@ def reconcile_state_body(lines, truth=None):
     return lines, problems
 
 
+PROGRESS_RX = re.compile(r"^Progress: \[[^\]]*\]\s*\d+%(.*)$")
+COUNT_RX = re.compile(r"\s*\(\d+ of \d+ phases complete\)\s*")
+
+
 def recompute_state_body(lines, truth):
     """Rewrite the two derived body values: the Current Position progress bar
     and the velocity total. Both restate frontmatter counters in prose."""
@@ -487,13 +491,21 @@ def recompute_state_body(lines, truth):
     percent = truth["progress.percent"]
     filled = round(percent / 10)
     bar = "█" * filled + "░" * (10 - filled)
-    want = f"Progress: [{bar}] {percent}% ({done} of {total} phases complete)\n"
+    count = f" ({done} of {total} phases complete)"
 
     position = section_bounds(lines, re.compile(r"^## Current Position\b"))
     if position:
         start, end = position
         for i in range(start, end):
             if lines[i].startswith("Progress:"):
+                # Keep the line's own form: GSD's template writes the bar
+                # without the "(N of M phases complete)" count, and that is
+                # not drift. Only the bar, the percent and a count go stale.
+                m = PROGRESS_RX.match(lines[i].rstrip("\n"))
+                rest = m.group(1) if m else count
+                if COUNT_RX.fullmatch(rest):
+                    rest = count
+                want = f"Progress: [{bar}] {percent}%{rest}\n"
                 if lines[i] != want:
                     problems.append(
                         (
@@ -560,8 +572,8 @@ def reconcile_state(lines, truth=None):
         resolved, fm_problems = resolve_frontmatter(order, values, truth)
         problems.extend(fm_problems)
         lines = lines[:start] + emit_frontmatter(lines[start:end], resolved) + lines[end:]
-    else:
-        problems.append((ADVISORY, "STATE.md: no frontmatter block found — left untouched"))
+    # No frontmatter is how GSD writes a new project's STATE.md: nothing to
+    # reconcile there, and nothing to report.
 
     lines, body_problems = reconcile_state_body(lines, truth)
     problems.extend(body_problems)
@@ -693,6 +705,9 @@ def cmd_repair(args):
         print("• advisories (not merge damage — reported, never fail a check):")
         for message in advisory:
             print(f"  - {message}")
+    if args.check and changed and not corrupt:
+        # gsd-doctor offers --fix only on this line: some advisories need a hand edit
+        print(f"• a repair would update: {', '.join(changed)}")
     return 1 if (args.check and corrupt) else 0
 
 

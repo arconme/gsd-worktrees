@@ -551,8 +551,9 @@ else
   case "$rc" in
     0) pass ".planning is coherent"
        printf '%s\n' "$out" | grep -E '^  - ' | while IFS= read -r l; do note "${l#  - }"; done
-       # stale derived counters: the repair rewrites them from the plans
-       printf '%s\n' "$out" | grep -E '^  - ' >/dev/null && safe repair ;;
+       # --fix only when the repair would change a file: some notes need a
+       # hand edit, and a repair that changes nothing tidies nothing
+       printf '%s\n' "$out" | grep -q '^• a repair would update:' && safe repair ;;
     1) fail ".planning contradicts itself (union-merge damage)" "gsd-planning-repair" "T020"
        printf '%s\n' "$out" | grep -E '^  • ' | sed 's/^  •/      ·/' ;;
     *) note ".planning has no ROADMAP.md — nothing to check" ;;
@@ -873,7 +874,10 @@ if [ "$FIX" = 1 ]; then
 fi
 if [ "$FINDINGS" -eq 0 ]; then
   printf '\033[32m✔ no findings\033[0m\n'
-  [ "$FIX" = 1 ] || [ -z "$SAFE" ] || echo "(gsd-doctor --fix can tidy the notes above)"
+  if [ "$FIX" = 0 ] && [ -n "$SAFE" ]; then
+    if [ "$QUIET" = 1 ]; then echo "(there are notes — gsd-doctor shows them; gsd-doctor --fix can tidy them)"
+    else echo "(gsd-doctor --fix can tidy the notes above)"; fi
+  fi
   exit 0
 fi
 printf '\033[31m%d finding(s).\033[0m Run:\n\n' "$FINDINGS"

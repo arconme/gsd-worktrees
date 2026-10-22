@@ -666,5 +666,26 @@ out="$(PATH="$FAKEBIN" /bin/bash -c "\"\$(. '$PKG/lib/common.sh'; gsd_python)\" 
 is "the engine runs under 'python'" "$(grep -c usage <<<"$out")" 1
 unset GSD_PYTHON
 
+section "GSD's own STATE.md form is not drift"
+G="$WORK/gsdform/.planning"; mkdir -p "$G/phases"
+printf '# Roadmap\n\n- [ ] **Phase 1: A**\n- [ ] **Phase 2: B**\n\n### Phase 1: A\n\n### Phase 2: B\n' > "$G/ROADMAP.md"
+gstate() { printf '# Project State\n\n## Current Position\n\nPhase: 1 of 2 (A)\n%s\n' "$1" > "$G/STATE.md"; }
+gstate 'Progress: [░░░░░░░░░░] 0%'
+out=$(python3 "$ENGINE" repair --check "$G")
+is "a new project's STATE.md (no frontmatter, bar without a count) → consistent" "$out" "✔ .planning/ is consistent"
+gstate 'Progress: [█████░░░░░] 50%'
+out=$(python3 "$ENGINE" repair --check "$G")
+is "…a stale percent is still caught" "$(grep -c 'progress bar recomputed to 0%' <<<"$out")" 1
+is "…and offered as an update" "$(grep -c '^• a repair would update: STATE.md' <<<"$out")" 1
+python3 "$ENGINE" repair "$G" >/dev/null
+is "…the repair keeps GSD's form (no count added)" "$(grep '^Progress:' "$G/STATE.md")" "Progress: [░░░░░░░░░░] 0%"
+gstate 'Progress: [█████░░░░░] 50% (1 of 2 phases complete)'
+python3 "$ENGINE" repair "$G" >/dev/null
+is "a line with a count keeps it, recomputed" "$(grep '^Progress:' "$G/STATE.md")" "Progress: [░░░░░░░░░░] 0% (0 of 2 phases complete)"
+printf '# Project State\n\ntext\n| stray | row |\ntext\n' > "$G/STATE.md"
+out=$(python3 "$ENGINE" repair --check "$G")
+is "a hand-edit advisory is still reported" "$(grep -c 'table row outside any table' <<<"$out")" 1
+is "…but offers no repair" "$(grep -c 'a repair would update' <<<"$out")" 0
+
 printf '\n%s\n' "── $PASS passed, $FAIL failed ──"
 [ "$FAIL" -eq 0 ]
