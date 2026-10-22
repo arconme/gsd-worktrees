@@ -187,6 +187,13 @@ before=$(cat "$RM"); perl "$PKG/lib/roadmap-rows.pl" "$RM" 3
 check "idempotent" '[ "$before" = "$(cat "$RM")" ]'
 printf '# Roadmap\n### Phase 1: only\n' > "$RM"; perl "$PKG/lib/roadmap-rows.pl" "$RM" 1
 check "a roadmap without checklist or table is left alone" '[ "$(cat "$RM")" = "$(printf "# Roadmap\n### Phase 1: only")" ]'
+printf '# Roadmap\n- [ ] **Phase 2.1: Fix**\n### Phase 2: Two\n### Phase 2.1: Fix\n\n| Phase | Status |\n|---|---|\n| 2.1. Fix | Not started |\n' > "$RM"
+perl "$PKG/lib/roadmap-rows.pl" "$RM" 2
+check "a 2.1 row does not stand in for phase 2 (Progress)" 'grep -qxF "| 2. Two | Not started |" "$RM"'
+check "…nor in the checklist" 'grep -qxF -- "- [ ] **Phase 2: Two**" "$RM"'
+printf '# Roadmap\n- [ ] **Phase 2: Two**\n### Phase 02: Two\n\n| Phase | Status |\n|---|---|\n| 2. Two | Not started |\n' > "$RM"
+before=$(cat "$RM"); perl "$PKG/lib/roadmap-rows.pl" "$RM" 02
+check "a padded 02 matches the rows of phase 2" '[ "$before" = "$(cat "$RM")" ]'
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

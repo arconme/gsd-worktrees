@@ -204,7 +204,7 @@ is "job: default minimum font" "$(job minfont)" 12
 is "job: the global npm folder" "$(job globalroot)" "$WORK/global/node_modules"
 is "job: warn → not strict" "$(job strict)" 0
 is "job: the pinned axe-core" "$(basename "$(job axe)")/$(job axever)" "axe.min.js/$(cat "$PKG/lib/vendor/axe-core/VERSION")"
-is "job: the code state is recorded" "$(job code)" "$(. "$PKG/lib/common.sh"; . "$PKG/lib/ui.sh"; gsd_ui_code_state "$R")"
+is "job: the code + LAYOUT state is recorded" "$(job code)" "$(. "$PKG/lib/common.sh"; . "$PKG/lib/ui.sh"; gsd_ui_code_state "$R")+$(git hash-object "$PD/05-LAYOUT.md")"
 printf 'base = develop\ninstall = none\nui_min_font = 14\nui_gates = strict\n' > "$R/.gsd.conf"
 (cd "$R" && GSD_PLAYWRIGHT_ROOT=/somewhere gsd-ui check 5) > "$OUT" 2>&1
 is "ui_min_font, ui_gates = strict and GSD_PLAYWRIGHT_ROOT reach the job" "$(job minfont)/$(job strict)/$(job approot)" "14/1//somewhere"
@@ -297,6 +297,15 @@ has "after the commit nothing is open" "open        nothing" "$OUT"
 (cd "$R" && STUB_CAP=capB gsd-ui check 5) > "$OUT" 2>&1
 (cd "$R" && gsd-ui status 5) > "$OUT" 2>&1
 has "a new check with the same pictures keeps look and approval" "open        nothing" "$OUT"
+cp "$PD/05-LAYOUT.md" "$WORK/layout.saved"; printf 'expect: /cart = basket\n' >> "$PD/05-LAYOUT.md"
+(cd "$R" && gsd-ui status 5) > "$OUT" 2>&1
+has "a LAYOUT edit after the check → stale" "check       stale" "$OUT"
+cp "$WORK/layout.saved" "$PD/05-LAYOUT.md"
+(cd "$R" && gsd-ui status 5) > "$OUT" 2>&1
+has "…and putting it back undoes that" "open        nothing" "$OUT"
+c=$(sed -n 's/^code: //p' "$PD/05-UI-CHECK.md"); sed -i.bak "s/^code: .*/code: ${c%%+*}/" "$PD/05-UI-CHECK.md"; rm -f "$PD/05-UI-CHECK.md.bak"
+(cd "$R" && gsd-ui status 5) > "$OUT" 2>&1
+has "a check from before (code hash only) still counts" "check       passed" "$OUT"
 echo "change" > "$R/page.js"
 (cd "$R" && gsd-ui status 5) > "$OUT" 2>&1
 has "a code change after the check → stale" "check       stale" "$OUT"
@@ -340,7 +349,7 @@ sed -i.bak 's/^code: $/code: 0000000000000000000000000000000000000000/' "$FPD/06
 git -C "$FW" commit -qam "stale check"
 finish env; rc=$?
 is "strict, code changed after the check → finish refuses" "$rc" 1
-has "…says the check is stale" "the code changed after the last check" "$OUT"
+has "…says the check is stale" "changed after the last check" "$OUT"
 finish env GSD_SKIP_GUARD=1; rc=$?
 is "GSD_SKIP_GUARD=1 → finishes" "$rc" 0
 has "…and says it skipped the gate" "finishing anyway" "$OUT"

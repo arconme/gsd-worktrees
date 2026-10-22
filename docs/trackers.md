@@ -153,6 +153,9 @@ failed"). Connector-only commands (`lists`, …) are not passed to it.
 pick its own login.
 
 Exit 0 on success. Any other exit is reported as "tracker call failed".
+A call that runs longer than 60 seconds (`GSD_TRACKER_TIMEOUT` to change it)
+is stopped, so a script stuck on the network never hangs `gsd-start` or
+`gsd-finish`.
 Example for GitHub issues:
 
 ```sh

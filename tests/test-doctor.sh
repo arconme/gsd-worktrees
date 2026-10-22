@@ -267,6 +267,12 @@ has "…checks again after fixing" "Checking again" "$OUT"
 has "…and lists the changed files to review" "not committed" "$OUT"
 json "$F"
 hasnt "the safe findings are gone" '"T0\(10\|11\|12\|13\|14\|15\|19\|30\)"' "$OUT"
+mkdir -p "$F/.git/gsd-cmd.lock"; : > "$F/.git/gsd-cmd.lock/pid"
+json "$F"
+has "a lock with no pid yet is its own finding (T033)" '"T033"' "$OUT"
+PATH="$BASEPATH" gsd-doctor --fix --yes --repo "$F" > /dev/null 2>&1
+[ -d "$F/.git/gsd-cmd.lock" ] && ok "…which --fix never removes (it may be a command starting)" || bad "…which --fix never removes (it may be a command starting)"
+rm -rf "$F/.git/gsd-cmd.lock"
 section "--fix is offered only when a fix would change something"
 # F's findings left here have no safe fix, so the offer comes from STATE.md alone
 printf '# Project State\n\n## Current Position\n\nPhase: 1 of 2\nProgress: [░░░░░░░░░░] 0%%\n' > "$F/.planning/STATE.md"

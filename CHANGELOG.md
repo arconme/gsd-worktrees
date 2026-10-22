@@ -4,6 +4,48 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.10
+
+Fixes from a bug scan. Run `gsd-update` (it re-runs the installer, which
+fixes the hook below).
+
+- The user-level hook now really sees typed slash commands. 0.4.8/0.4.9 used
+  the matcher `gsd`, which Claude Code reads as an exact name, so a typed
+  `/gsd-new-project` was never checked. It is `gsd.*` now.
+- Install writes `~/.claude/settings.json` through a symlink and keeps its
+  mode (a 0600 file stayed 0600). Bootstrap writes a linked `AGENTS.md` /
+  `CLAUDE.md` through the link.
+- Guard: the phase number is the first word that is only a number, so
+  `--files src/v2/a.ts` is no longer read as phase 2. `/gsd-phase --remove`
+  and `--insert` stay blocked with `--edit` added.
+- Ctrl-C or a kill now stops a gsd command (exit 130/143). Before, it
+  released the lock and carried on.
+- `gsd-finish`: files the tests leave in the worktree (coverage, caches) no
+  longer stop the cleanup after the push. A worktree changed while the
+  finish ran is kept, and the finish still succeeds.
+- A phase whose title ends in "PR" (slug `-pr`) can be started and finished.
+  A `/gsd-pr-branch` helper `X-pr` is still skipped when `X` exists.
+- `gsd-wt-new` re-creates a worktree whose folder was deleted by hand, instead
+  of saying "ready" for a folder that is not there.
+- The finish gates (UI steps, test audit) check the branch's own files when
+  its worktree is gone, for `gsd-finish --pr` too. Before, they passed.
+- An origin without the base branch gets "push it first", not a raw git
+  error. `gsd-start -p` catches up with origin first.
+- A test audit with `nyquist_compliant: "true"`, `True`, a comment, or CRLF
+  line ends counts.
+- A phase 2.1 row no longer stands in for phase 2 when `gsd-start` adds the
+  ROADMAP rows.
+- A UI check goes stale when `<P>-LAYOUT.md` changes (pages, expect, waive,
+  …), not only when the code does.
+- `gsd-planning-repair --commit` commits only ROADMAP.md / STATE.md; other
+  staged files stay staged.
+- `gsd-doctor --fix` never removes a lock with no pid (a command that is just
+  starting); that is its own finding, T033.
+- A `tracker = custom` script is stopped after 60 s (`GSD_TRACKER_TIMEOUT`).
+- Bootstrap no longer glues its line onto a `.gitignore` with no final
+  newline. `gsd-doctor` offers `--fix` only when a repair would change
+  something.
+
 ## 0.4.9
 
 - In a repo set up with `gsd-init`, the guard blocks GSD skills that clash

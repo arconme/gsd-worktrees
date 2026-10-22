@@ -41,12 +41,15 @@ sub before {
     return 0;
 }
 
+# The same phase however it is padded: 2 = 02, 2.1 = 02.1 (and 2 != 2.1).
+sub same { my ($a, $b) = @_; !before($a, $b) && !before($b, $a) }
+
 my $changed = 0;
 
 # ── checklist row ────────────────────────────────────────────────────────────
 my $row_re = qr/^(\s*)-\s*\[[ x]\]\s*\*\*Phase\s+(\d+(?:\.\d+)?)\s*:/;
 my @rows = grep { $L[$_] =~ $row_re } 0 .. $#L;
-if (@rows && !grep { ($L[$_] =~ $row_re)[1] eq $n } @rows) {
+if (@rows && !grep { same(($L[$_] =~ $row_re)[1], $n) } @rows) {
     my ($at, $indent) = ($rows[-1] + 1, ($L[$rows[-1]] =~ $row_re)[0]);
     for my $i (@rows) {
         my ($ind, $num) = $L[$i] =~ $row_re;
@@ -62,7 +65,8 @@ if (defined $head) {
     my $end = $head + 1;
     $end++ while $end <= $#L && $L[$end] =~ /^\|/;
     my @body = grep { $L[$_] =~ /^\|\s*\d/ } $head + 2 .. $end - 1;
-    unless (grep { $L[$_] =~ /^\|\s*$qn[.\s]/ } @body) {
+    # compare the row's whole number: "| 2.1. …" is not phase 2
+    unless (grep { my ($r) = $L[$_] =~ /^\|\s*(\d+(?:\.\d+)?)/; same($r, $n) } @body) {
         my @cols = grep { length } map { s/^\s+|\s+$//gr } split /\|/, $L[$head];
         (my $cell = $title) =~ s/\|/\//g;
         my @cells = ("$n. $cell");

@@ -162,6 +162,15 @@ has "create goes to the script as written" "^create|create PROJ New thing --labe
 has "update gets the normalized id"    "^update|update PROJ-42 --title y|status=$" "$TRACKER_LOG"
 (cd "$R" && gsd-tracker tasks --mine) >/dev/null 2>&1
 has "tasks passes its options"         "^tasks|tasks --mine|status=$" "$TRACKER_LOG"
+printf '#!/usr/bin/env bash\nsleep 30\n' > "$R/scripts/hang.sh"; chmod +x "$R/scripts/hang.sh"
+printf 'tracker = custom\ntracker_command = scripts/hang.sh\n' > "$R/.gsd.conf"
+t0=$(date +%s); rc=$(cd "$R" && GSD_TRACKER_TIMEOUT=2 gsd-tracker start PROJ-42 x >/dev/null 2>"$WORK/err"; echo $?); t1=$(date +%s)
+is  "a script that hangs is stopped (exit 2)" "$rc:$([ $((t1 - t0)) -lt 10 ] && echo fast)" "2:fast"
+has "…saying so"                       "gave no answer in 2s" "$WORK/err"
+printf 'tracker = custom\ntracker_command = scripts/tracker.sh\ntracker_status_start = Doing\n' > "$R/.gsd.conf"
+printf '#!/usr/bin/env bash\ncat\n' > "$R/scripts/echo.sh"; chmod +x "$R/scripts/echo.sh"
+is  "…and stdin still reaches the script" "$(printf 'desc' | bash -c 'cd "$1" && printf "tracker = custom\ntracker_command = scripts/echo.sh\n" > .gsd.conf && gsd-tracker check' _ "$R" 2>/dev/null)" desc
+printf 'tracker = custom\ntracker_command = scripts/tracker.sh\ntracker_status_start = Doing\n' > "$R/.gsd.conf"
 fails "ClickUp's own commands are not custom's" bash -c 'cd "$1" && gsd-tracker lists' _ "$R"
 chmod -x "$R/scripts/tracker.sh"
 fails "a non-executable command is refused" bash -c 'cd "$1" && gsd-tracker start PROJ-42 x' _ "$R"

@@ -186,6 +186,16 @@ gsd_ui_code_state() {  # $1=checkout → a hash of the working tree outside .pla
   printf '%s' "$h"
 }
 
+gsd_ui_inputs_state() {  # $1=checkout $2=phase dir $3=P → what a UI check is valid for: <code hash>+<LAYOUT hash> ('' = unknown)
+  # The LAYOUT says what is checked (pages, url, main_button, expect, waive),
+  # and it lives in .planning/, outside the code hash: an edit to it must make
+  # an older check stale too.
+  local code lay
+  code=$(gsd_ui_code_state "$1"); [ -n "$code" ] || return 0
+  lay=$(git hash-object "$2/$3-LAYOUT.md" 2>/dev/null || true)
+  printf '%s+%s' "$code" "${lay:-none}"
+}
+
 gsd_ui_exempt() {  # $1=checkout $2=phase dir $3=P → true when the phase's UI review is already on the base branch
   # Only a review that was MERGED exempts a phase from the newer steps; one
   # written in the phase's own worktree exempts nothing.
@@ -209,7 +219,8 @@ gsd_ui_check_state() {  # $1=checkout $2=phase dir $3=P $4=nostale ('' = compare
   esac
   code=$(gsd_ui_fm "$f" code)
   if [ -z "${4:-}" ] && [ -n "$code" ]; then
-    now=$(gsd_ui_code_state "$1")
+    # a check written before the LAYOUT was part of it holds the code hash only
+    case "$code" in *+*) now=$(gsd_ui_inputs_state "$1" "$2" "$3") ;; *) now=$(gsd_ui_code_state "$1") ;; esac
     [ -z "$now" ] || [ "$now" = "$code" ] || { printf stale; return; }
   fi
   printf '%s' "$st"
@@ -281,7 +292,7 @@ gsd_ui_gate() {  # $1=checkout $2=phase dir $3=P $4=nostale → `step|state|what
     missing) printf 'ui-check|missing|the rendered pages were never checked (no %s-UI-CHECK.md)' "$3"; return ;;
     error)   printf 'ui-check|error|the last check could not run: %s' "$(gsd_ui_fm "$2/$3-UI-CHECK.md" error)"; return ;;
     failed)  printf 'ui-check|failed|the check found %s problem(s) — see %s-UI-CHECK.md' "$(gsd_ui_fm "$2/$3-UI-CHECK.md" failures)" "$3"; return ;;
-    stale)   printf 'ui-check|stale|the code changed after the last check'; return ;;
+    stale)   printf 'ui-check|stale|the code or %s-LAYOUT.md changed after the last check' "$3"; return ;;
   esac
   if [ "$cs" = passed ]; then
     ls=$(gsd_ui_look_state "$1" "$2" "$3")

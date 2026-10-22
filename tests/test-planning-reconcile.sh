@@ -424,6 +424,11 @@ PATH="$PKG/bin:$PATH" gsd-planning-repair --repo "$NOSTATE" --commit >/dev/null 
 is "--commit succeeds with no STATE.md" "$?" 0
 is "the repair was committed"           "$(git -C "$NOSTATE" status --porcelain -- .planning | wc -l | tr -d ' ')" 0
 is "the duplicate was collapsed"        "$(grep -c '^- \[.\] \*\*Phase 1:' "$NOSTATE/.planning/ROADMAP.md")" 1
+printf -- '- [ ] **Phase 2: B** - b\n- [ ] **Phase 2: B** - b\n' >> "$NOSTATE/.planning/ROADMAP.md"
+printf 'mine\n' > "$NOSTATE/src.txt"; git -C "$NOSTATE" add src.txt
+PATH="$PKG/bin:$PATH" gsd-planning-repair --repo "$NOSTATE" --commit >/dev/null 2>&1
+is "--commit leaves out a file the user staged" "$(git -C "$NOSTATE" show --name-only --format= HEAD | tr '\n' ' ')" ".planning/ROADMAP.md "
+is "…which stays staged"                "$(git -C "$NOSTATE" diff --cached --name-only)" "src.txt"
 
 # ── 9. gsd-doctor ────────────────────────────────────────────────────────────
 # It diagnoses and never fixes. The read-only guarantee is the whole reason it

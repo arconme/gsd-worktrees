@@ -114,7 +114,9 @@ gsd_validation_problem() {  # $1=phase dir $2=<P> $3=checkout → why the test a
   [ "$(gsd_workflow_flag "$3" nyquist_validation)" = false ] && return 1
   local f="$1/$2-VALIDATION.md" c
   [ -f "$f" ] || { echo "no $2-VALIDATION.md"; return 0; }
-  c=$(sed -n '/^---$/,/^---$/p' "$f" | sed -n -E 's/^nyquist_compliant:[[:space:]]*//p' | head -1 | tr -d '[:space:]')
+  # YAML spellings of true: "true", 'true', True, true # comment, CRLF lines
+  c=$(tr -d '\r' < "$f" | sed -n '/^---$/,/^---$/p' | sed -n -E 's/^nyquist_compliant:[[:space:]]*//p' | head -1 \
+        | sed -E 's/[[:space:]]+#.*$//' | tr -d "\"'[:space:]" | tr '[:upper:]' '[:lower:]')
   [ "$c" = true ] && return 1
   grep -q '^## Validation Audit' "$f" && return 1
   echo "$2-VALIDATION.md is the plan's draft (nyquist_compliant: false, no audit)"

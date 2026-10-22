@@ -84,6 +84,15 @@ printf '\n## Validation Audit 2026-10-22\n| Gaps found | 2 |\n' >> "$PD/07-VALID
 is "audited, gaps left manual-only → secure" "$(step)" secure
 printf -- '---\nphase: 7\nstatus: validated\nnyquist_compliant: true\n---\n' > "$PD/07-VALIDATION.md"
 is "nyquist_compliant: true → secure"        "$(step)" secure
+for v in '"true"' "'true'" 'True' 'true   # all automated'; do
+  printf -- '---\nnyquist_compliant: %s\n---\n' "$v" > "$PD/07-VALIDATION.md"
+  is "nyquist_compliant: $v → secure"      "$(step)" secure
+done
+printf -- '---\r\nnyquist_compliant: true\r\n---\r\n' > "$PD/07-VALIDATION.md"
+is "…and with CRLF line ends"                "$(step)" secure
+printf -- '---\nnyquist_compliant: "false"\n---\n' > "$PD/07-VALIDATION.md"
+is 'nyquist_compliant: "false" → validate'   "$(step)" validate
+printf -- '---\nphase: 7\nstatus: validated\nnyquist_compliant: true\n---\n' > "$PD/07-VALIDATION.md"
 fm SECURITY.md verified "threats_open: 2"; is "2 open threats → secure" "$(step)" secure
 fm SECURITY.md verified "threats_open: 0"; is "0 open → done"  "$(step)" "done"
 
@@ -173,7 +182,7 @@ ui_fix_check "$UPD" 05 failed
 is "failed check → ui-check, note names waive:" "$(ustep)/$(unote | grep -c 'waive:')" "ui-check/1"
 ui_fix_check "$UPD" 05 passed cap1 0000000000000000000000000000000000000000
 is "code changed since the check → ui-check"    "$(ustep)" ui-check
-is "…the note says the code changed"            "$(unote | grep -c 'the code changed after the last check')" 1
+is "…the note says the code changed"            "$(unote | grep -c 'the code or 05-LAYOUT.md changed after the last check')" 1
 . "$PKG/lib/common.sh"; . "$PKG/lib/ui.sh"
 ui_fix_check "$UPD" 05 passed cap1 "$(gsd_ui_code_state "$U")"
 is "check made on this code → ui-look"          "$(ustep)" ui-look

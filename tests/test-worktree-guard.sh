@@ -193,7 +193,7 @@ rm "$PDIR/05-SHOTS.md"
 ui_fix_check "$PDIR" 05 failed
 blocked_why "a failed check → blocked"                     "the check found 2 problem"
 ui_fix_check "$PDIR" 05 passed cap1 0000000000000000000000000000000000000000
-blocked_why "code changed after the check → blocked"       "the code changed after the last check"
+blocked_why "code changed after the check → blocked"       "the code or 05-LAYOUT.md changed after the last check"
 ui_fix_check "$PDIR" 05 passed
 blocked_why "check passed, no look → blocked"              "Run: gsd-ui look 5"
 ui_fix_look "$PDIR" 05 cap1 ok "R1 R2"

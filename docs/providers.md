@@ -6,7 +6,7 @@
 | Skills | native directory | native directory | native directory with activation consent |
 | Interactive launch | positional prompt | positional prompt | `--prompt-interactive` |
 | Native guard hook | `PreToolUse(Skill)` | not installed by this toolkit | `BeforeTool` |
-| User-level hook (`install.sh`: `/gsd-new-project` only after `gsd-init`) | `PreToolUse(Skill)` + `UserPromptExpansion` in `~/.claude/settings.json` | none (the skill's written rule) | `BeforeTool` (`activate_skill`) in `~/.gemini/settings.json` |
+| User-level hook (`install.sh`: `/gsd-new-project` only after `gsd-init`) | `PreToolUse(Skill)` + `UserPromptExpansion` (matcher `gsd.*`: a plain word is an exact match) in `~/.claude/settings.json` | none (the skill's written rule) | `BeforeTool` (`activate_skill`) in `~/.gemini/settings.json` |
 | Required safety | `gsd-flow-next` command guard | same | same |
 
 ## Session models

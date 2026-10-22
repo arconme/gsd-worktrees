@@ -748,8 +748,13 @@ if [ -d "$LOCK" ]; then
   pid="$(cat "$LOCK/pid" 2>/dev/null)"
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
     note "a gsd command is running right now (pid $pid)"
+  elif [ -z "$pid" ]; then
+    # No pid yet: a command that is starting right now (mkdir, then the pid)
+    # looks the same as one that died in between — not safe to remove for you.
+    fail "command lock with no owner pid (a command starting now, or one that died at once)" \
+         "rm -rf .git/gsd-cmd.lock   (only if no gsd command is running)" "T033"
   else
-    fail "stale command lock from a crashed run (pid ${pid:-?})" "rm -rf .git/gsd-cmd.lock" "T030"
+    fail "stale command lock from a crashed run (pid $pid)" "rm -rf .git/gsd-cmd.lock" "T030"
   fi
 fi
 
@@ -835,7 +840,9 @@ safe_label() {
 }
 run_safe() {
   case "$1" in
-    unlock) rm -rf "$MAIN/.git/gsd-cmd.lock" ;;
+    unlock)  # check again: the lock may have changed hands since the report
+      pid="$(cat "$MAIN/.git/gsd-cmd.lock/pid" 2>/dev/null || true)"
+      if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then rm -rf "$MAIN/.git/gsd-cmd.lock"; fi ;;
     track)  git -C "$MAIN" branch -q --track "$BASE" "origin/$BASE" ;;
     chmod)  chmod +x "$PM_ABS" ;;
     init)   (cd "$MAIN" && "$GSD_PKG/bin/gsd-init" --no-launch --no-commit) ;;

@@ -224,7 +224,7 @@ check)
   strict=0; [ "$(gsd_ui_gates "$REPO")" != strict ] || strict=1
   { printf 'repo\t%s\nout\t%s\npublish\t%s\nphase\t%s\nprefix\t%s\nurl\t%s\n' "$REPO" "$RUN" "$SHOTS_DIR" "$N" "$P" "$URL"
     printf 'layout\t%s\nshots\t%s\nminfont\t%s\nstrict\t%s\n' "$(basename "$LAYOUT")" "$(basename "$SHOTS_DIR")" "$(gsd_ui_min_font "$REPO")" "$strict"
-    printf 'code\t%s\nsketch\t%s\n' "$(gsd_ui_code_state "$REPO")" "$(gsd_ui_field "$LAYOUT" sketch)"
+    printf 'code\t%s\nsketch\t%s\n' "$(gsd_ui_inputs_state "$REPO" "$PD" "$P")" "$(gsd_ui_field "$LAYOUT" sketch)"
     [ -z "${GSD_UI_BUDGET_MS:-}" ] || printf 'budget\t%s\n' "$GSD_UI_BUDGET_MS"
     printf 'globalroot\t%s\n' "$(gsd_ui_global_root)"
     [ -z "$approot" ] || printf 'approot\t%s\napproot_from\t%s\n' "$approot" "$approot_from"
@@ -272,7 +272,7 @@ look)
   cs=$(gsd_ui_check_state "$REPO" "$PD" "$P")
   case "$cs" in
     passed) ;;
-    stale) die "the code changed after the last check — run: gsd-ui check $N" ;;
+    stale) die "the code or $(basename "$LAYOUT") changed after the last check — run: gsd-ui check $N" ;;
     skipped) die "the check was skipped, so there are no pictures to look at — next: gsd-ui approve $N --waive \"<reason>\"" ;;
     failed) die "the check failed — fix the page first (see $(rel "$CHECK_MD")), then: gsd-ui check $N" ;;
     *) die "no passed check yet — run: gsd-ui check $N" ;;

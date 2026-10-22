@@ -85,9 +85,11 @@ waive: C3 | /blog | 375 | .brand-tag | brand color, agreed with <user> [#31]
   pictures it took (names + content). Same pictures → same id.
 - `<P>-UI-CHECK.md` records `capture:` and `code:` — a hash of the working
   tree outside `.planning/` at capture time (committing the same content does
-  not change it).
+  not change it), plus `+` a hash of `<P>-LAYOUT.md` (what was checked: pages,
+  url, main_button, expect, waive). A check written before 0.4.10 holds the
+  code hash only and is compared on that.
 - `<P>-UI-LOOK.md` and `<P>-UI-APPROVAL.md` name the capture they belong to.
-- **Stale** means: the code changed since the check (`code:` differs), or the
+- **Stale** means: the code or the LAYOUT changed since the check (`code:` differs), or the
   look / approval names another capture.
 - After a code change the agent re-runs `gsd-ui check`. When the pages look
   the same, the capture id is the same, and the look and the approval stay
