@@ -42,6 +42,8 @@ fixes the hook below).
 - `gsd-doctor --fix` never removes a lock with no pid (a command that is just
   starting); that is its own finding, T033.
 - A `tracker = custom` script is stopped after 60 s (`GSD_TRACKER_TIMEOUT`).
+- UI check C4: a text box whose width is off by 1px or less (rounding) is no
+  longer reported as shrunk text.
 - Bootstrap no longer glues its line onto a `.gitignore` with no final
   newline. `gsd-doctor` offers `--fix` only when a repair would change
   something.
