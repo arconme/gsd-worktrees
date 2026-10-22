@@ -8,15 +8,21 @@
 # machine that won't keep this checkout around).
 #
 # Usage:
-#   ./install.sh [--copy] [--agent claude|codex|gemini]... [--all-agents]
+#   ./install.sh [--copy] [--agent claude|codex|gemini]... [--all-agents] [--no-user-hook]
+#
+# Claude and Gemini also get a user-level hook (next to their skills dir:
+# ~/.claude/settings.json, ~/.gemini/settings.json). It refuses /gsd-new-project
+# and /gsd-ingest-docs in a repo gsd-init has not set up, and nothing else
+# (gsd-worktree-guard --global). --no-user-hook leaves it out (and removes it).
 #
 # Env:
 #   GSD_BIN_DIR   install target (default: ~/.local/bin)
 #   GSD_COPY_DIR  standalone runtime (default: GSD_BIN_DIR/../share/gsd-worktrees)
+#   GSD_CLAUDE_SETTINGS, GSD_GEMINI_SETTINGS   where the user-level hook goes
 set -euo pipefail
 
 BIN_DIR="${GSD_BIN_DIR:-$HOME/.local/bin}"
-MODE="link"; PROVIDERS=""; REUSE=0
+MODE="link"; PROVIDERS=""; REUSE=0; USER_HOOK=""
 add_provider() { case ",$PROVIDERS," in *",$1,"*) ;; *) PROVIDERS="${PROVIDERS:+$PROVIDERS,}$1" ;; esac; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -24,7 +30,8 @@ while [ $# -gt 0 ]; do
     --reuse-install-config) REUSE=1; shift ;;
     --agent) [ $# -ge 2 ] || { echo '--agent needs a provider' >&2; exit 1; }; case "$2" in claude|codex|gemini) add_provider "$2" ;; *) echo "unknown provider: $2" >&2; exit 1 ;; esac; shift 2 ;;
     --all-agents) PROVIDERS=claude,codex,gemini; shift ;;
-    -h|--help) echo 'usage: ./install.sh [--copy] [--agent claude|codex|gemini]... [--all-agents] [--reuse-install-config]'; exit 0 ;;
+    --no-user-hook) USER_HOOK=off; shift ;;
+    -h|--help) echo 'usage: ./install.sh [--copy] [--agent claude|codex|gemini]... [--all-agents] [--no-user-hook] [--reuse-install-config]'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -59,11 +66,13 @@ if [ "$REUSE" = 1 ] && [ -f "$MANIFEST" ]; then
       claude_skills) GSD_CLAUDE_SKILL_DIR=${GSD_CLAUDE_SKILL_DIR:-$value} ;;
       codex_skills) GSD_CODEX_SKILL_DIR=${GSD_CODEX_SKILL_DIR:-$value} ;;
       gemini_skills) GSD_GEMINI_SKILL_DIR=${GSD_GEMINI_SKILL_DIR:-$value} ;;
+      user_hook) USER_HOOK=${USER_HOOK:-$value} ;;
       *) echo "invalid install manifest key: $key" >&2; exit 1 ;;
     esac
   done < "$MANIFEST"
 fi
 [ -n "$PROVIDERS" ] || PROVIDERS=claude
+USER_HOOK=${USER_HOOK:-on}
 gsd_provider_list_validate "$PROVIDERS"
 case ",$PROVIDERS," in *,custom,*) echo 'custom provider has no installable skill format' >&2; exit 1 ;; esac
 oldifs=$IFS; IFS=,
@@ -242,8 +251,88 @@ install_skills() {
   done
 }
 oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do install_skills "$provider"; done; IFS=$oldifs
+
+# ── the user-level hook: /gsd-new-project only after gsd-init ────────────────
+# Before gsd-init a repo has no toolkit files, so no repo hook can stop a bare
+# /gsd-new-project — only one in the user's own settings can. The settings
+# file sits next to the provider's skills dir (~/.claude/skills →
+# ~/.claude/settings.json). Ours is the entry whose command runs
+# gsd-worktree-guard --global: replaced on every install, never duplicated.
+# Settings that turn hooks off, or are not a JSON object, are left alone.
+user_hook() {  # $1=provider $2=on|off
+  local provider=$1 settings guard cmd
+  case "$provider" in
+    claude) settings=${GSD_CLAUDE_SETTINGS:-$(dirname "$(gsd_provider_skill_root claude)")/settings.json} ;;
+    gemini) settings=${GSD_GEMINI_SETTINGS:-$(dirname "$(gsd_provider_skill_root gemini)")/settings.json} ;;
+    *) return 0 ;;
+  esac
+  [ "$2" = on ] || [ -f "$settings" ] || return 0
+  guard="$BIN_DIR/gsd-worktree-guard"
+  case "$guard" in *"'"*) echo "• $provider user hook skipped: the bin path holds a quote"; return 0 ;; esac
+  # A missing toolkit (uninstalled) must not break every slash command: no guard → allow.
+  cmd="[ ! -x '$guard' ] || exec '$guard' --global"
+  mkdir -p "$(dirname "$settings")"
+  "$INSTALL_PYTHON" - "$settings" "$provider" "$2" "$cmd" <<'PY'
+import json, os, sys
+path, provider, mode, cmd = sys.argv[1:]
+try:
+    with open(path) as f:
+        text = f.read()
+    data = json.loads(text) if text.strip() else {}
+except FileNotFoundError:
+    text, data = None, {}
+except ValueError:
+    print("⚠ %s is not valid JSON; left unchanged (no %s user hook)" % (path, provider)); sys.exit(0)
+if not isinstance(data, dict) or not isinstance(data.get("hooks", {}), dict):
+    print("⚠ %s has an unexpected shape; left unchanged (no %s user hook)" % (path, provider)); sys.exit(0)
+if mode == "on" and (data.get("disableAllHooks") is True or (data.get("hooksConfig") or {}).get("enabled") is False):
+    print("• hooks are turned off in %s; %s user hook not added" % (path, provider)); sys.exit(0)
+hooks = data.setdefault("hooks", {})
+wanted = {"claude": [("PreToolUse", "Skill"), ("UserPromptExpansion", "gsd")],
+          "gemini": [("BeforeTool", "activate_skill")]}[provider]
+def ours(h):
+    c = h.get("command", "") if isinstance(h, dict) else ""
+    return "gsd-worktree-guard" in c and "--global" in c
+for event in [e for e, _ in wanted if e in hooks]:
+    groups = hooks[event]
+    if not isinstance(groups, list):
+        continue
+    kept = []
+    for g in groups:
+        if isinstance(g, dict) and isinstance(g.get("hooks"), list):
+            rest = [h for h in g["hooks"] if not ours(h)]
+            if not rest and g["hooks"]:
+                continue
+            g["hooks"] = rest
+        kept.append(g)
+    if kept: hooks[event] = kept
+    else: del hooks[event]
+if mode == "on":
+    entry = lambda m: {"matcher": m, "hooks": [{"type": "command", "command": cmd}]}
+    for event, matcher in wanted:
+        if not isinstance(hooks.get(event, []), list):
+            print("⚠ %s: hooks.%s is not a list; left unchanged (no %s user hook)" % (path, event, provider)); sys.exit(0)
+        hooks.setdefault(event, []).append(entry(matcher))
+if not hooks:
+    del data["hooks"]
+new = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+if new != text:
+    tmp = path + ".gsd-tmp"
+    with open(tmp, "w") as f:
+        f.write(new)
+    os.replace(tmp, path)
+if mode == "on":
+    print("✔ %s user hook: /gsd-new-project only after gsd-init → %s" % (provider, path))
+elif new != text:
+    print("✂ %s user hook removed from %s" % (provider, path))
+PY
+}
+oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do user_hook "$provider" "$USER_HOOK"; done; IFS=$oldifs
+
 manifest_tmp=$(mktemp)
 printf 'providers\t%s\n' "$PROVIDERS" > "$manifest_tmp"
+# only the opt-out is recorded: a default manifest stays readable by older releases
+[ "$USER_HOOK" = on ] || printf 'user_hook\t%s\n' "$USER_HOOK" >> "$manifest_tmp"
 oldifs=$IFS; IFS=,
 for provider in $PROVIDERS; do
   printf '%s_skills\t%s\n' "$provider" "$(absolute_path "$(gsd_provider_skill_root "$provider")")" >> "$manifest_tmp"

@@ -46,7 +46,11 @@ def main():
             if "\0" in command or "\0" in args:
                 raise ValueError("NUL in hook command or arguments")
             command = command.lstrip("/")
-            emit("guard" if command.startswith("gsd-") else "allow", command, args)
+            if command.startswith("gsd:"):  # namespaced form of a GSD skill
+                command = "gsd-" + command[4:]
+            cwd = payload.get("cwd")
+            emit("guard" if command.startswith("gsd-") else "allow", command, args,
+                 cwd if isinstance(cwd, str) and "\0" not in cwd else "")
             return
         if tool not in ("activate_skill", "run_shell_command") or not isinstance(tool_input, dict):
             raise ValueError("missing Gemini tool fields")

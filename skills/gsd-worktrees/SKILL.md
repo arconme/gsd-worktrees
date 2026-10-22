@@ -1,6 +1,6 @@
 ---
 name: gsd-worktrees
-description: "The gsd-* shell commands that run GSD phases in parallel git worktrees — gsd-start, gsd-finish, gsd-list, gsd-doctor, gsd-init, gsd-bootstrap-repo, gsd-sync, gsd-planning-repair. Use when asked to start/begin/pick up a feature or phase, to finish/land/ship a phase, to see what phases exist or what is in flight, to set GSD up in a repo, or to diagnose a broken .planning/ or worktree. These are shell commands run via Bash, distinct from the /gsd-* planning skills."
+description: "The gsd-* shell commands that run GSD phases in parallel git worktrees — gsd-start, gsd-finish, gsd-list, gsd-doctor, gsd-init, gsd-bootstrap-repo, gsd-sync, gsd-planning-repair. Use when asked to start/begin/pick up a feature or phase, to finish/land/ship a phase, to see what phases exist or what is in flight, to set GSD up in a repo or start a new project (gsd-init, never a bare /gsd-new-project or /gsd-ingest-docs), or to diagnose a broken .planning/ or worktree. These are shell commands run via Bash, distinct from the /gsd-* planning skills."
 ---
 
 # gsd-worktrees — the shell commands around GSD
@@ -13,6 +13,13 @@ is `arconme/gsd-worktrees`.
 Only relevant in a **GSD-fitted repo** — one with `.gsd.conf` and `.planning/`.
 Check with `ls .gsd.conf .planning` before assuming. If it isn't fitted, the
 answer is `gsd-init`, not a manual setup.
+
+**Never run `/gsd-new-project` or `/gsd-ingest-docs` in a repo without
+`.gsd.conf`.** Run `gsd-init` in the terminal instead: it installs the
+toolkit's files first, then opens a session that runs the right one of the
+two. Run alone, they write the plan without that setup. Claude and Gemini have
+a user-level hook (from `install.sh`) that blocks it; Codex has no hooks, so
+there this rule is the only guard.
 
 ## The rule that matters most
 

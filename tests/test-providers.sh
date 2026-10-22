@@ -225,6 +225,38 @@ mkdir -p "$WORK/skills-link/codex"; ln -s /tmp/unrelated-skill "$WORK/skills-lin
 GSD_BIN_DIR=$WORK/bin2 GSD_CODEX_SKILL_DIR=$WORK/skills-link/codex "$PKG/install.sh" --agent codex >/dev/null
 assert 'unrelated existing symlink preserved as backup' "[ -L '$WORK/skills-link/codex/gsd-flow.bak' ]"
 
+echo 'install.sh user-level hook (/gsd-new-project only after gsd-init)'
+UH=$WORK/uh; mkdir -p "$UH/claude"
+printf '{"model":"opus","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo mine"}]}]}}\n' > "$UH/claude/settings.json"
+uinstall() { GSD_BIN_DIR=$UH/bin GSD_CLAUDE_SKILL_DIR=$UH/claude/skills GSD_GEMINI_SKILL_DIR=$UH/gemini/skills GSD_CODEX_SKILL_DIR=$UH/codex/skills "$PKG/install.sh" "$@" >/dev/null; }
+ours() { jq '[.hooks[]?[]?.hooks[]? | select(.command | test("gsd-worktree-guard.*--global"))] | length' "$1"; }
+uinstall --all-agents
+assert 'claude settings get the Skill + UserPromptExpansion hooks' '[ "$(ours "$UH/claude/settings.json")" = 2 ]'
+assert '…next to the user'"'"'s own hook and keys' 'jq -e ".model == \"opus\" and any(.hooks.PreToolUse[]; .matcher == \"Bash\")" "$UH/claude/settings.json" >/dev/null'
+assert 'typed slash commands are covered (matcher gsd)' 'jq -e "any(.hooks.UserPromptExpansion[]; .matcher == \"gsd\")" "$UH/claude/settings.json" >/dev/null'
+assert 'gemini settings get the activate_skill hook' 'jq -e "[.hooks.BeforeTool[] | select(.matcher == \"activate_skill\")] | length == 1" "$UH/gemini/settings.json" >/dev/null'
+assert 'codex gets no settings file' '[ ! -e "$UH/codex/settings.json" ]'
+uinstall --reuse-install-config
+assert 'reinstall does not duplicate it' '[ "$(ours "$UH/claude/settings.json")" = 2 ]'
+cmd=$(jq -r '.hooks.UserPromptExpansion[0].hooks[0].command' "$UH/claude/settings.json")
+bare=$WORK/uh-bare; mkdir -p "$bare"; git -C "$bare" init -q
+rc=$(printf '{"command_name":"gsd-new-project","command_args":"","cwd":"%s"}' "$bare" | (cd "$bare" && env -u CLAUDE_PROJECT_DIR sh -c "$cmd") 2>/dev/null; echo $?)
+assert 'the installed command blocks /gsd-new-project in a bare repo' '[ "$rc" = 2 ]'
+rc=$(printf '{}' | env -u CLAUDE_PROJECT_DIR sh -c "$(printf '%s' "$cmd" | sed "s|$UH/bin|$UH/gone|g")" 2>/dev/null; echo $?)
+assert 'a removed toolkit fails open (exit 0)' '[ "$rc" = 0 ]'
+uinstall --reuse-install-config --no-user-hook
+assert '--no-user-hook removes it' '[ "$(ours "$UH/claude/settings.json")" = 0 ] && [ "$(ours "$UH/gemini/settings.json")" = 0 ]'
+assert '…keeping the user'"'"'s own hook' 'jq -e "any(.hooks.PreToolUse[]; .matcher == \"Bash\")" "$UH/claude/settings.json" >/dev/null'
+assert '…and the opt-out is remembered' 'grep -q "^user_hook	off" "$UH/bin/.gsd-install-manifest"'
+uinstall --reuse-install-config
+assert 'a later reinstall keeps it off' '[ "$(ours "$UH/claude/settings.json")" = 0 ]'
+printf '{"disableAllHooks":true}\n' > "$UH/claude/settings.json"
+GSD_BIN_DIR=$UH/bin2 GSD_CLAUDE_SKILL_DIR=$UH/claude/skills "$PKG/install.sh" --agent claude >/dev/null
+assert 'hooks turned off by the user → left unchanged' '[ "$(cat "$UH/claude/settings.json")" = "{\"disableAllHooks\":true}" ]'
+printf 'not json' > "$UH/claude/settings.json"
+GSD_BIN_DIR=$UH/bin2 GSD_CLAUDE_SKILL_DIR=$UH/claude/skills "$PKG/install.sh" --agent claude >/dev/null
+assert 'broken settings JSON → left unchanged' '[ "$(cat "$UH/claude/settings.json")" = "not json" ]'
+
 echo 'provider-neutral guard and doctor'
 printf 'codex_model = model-test\n' >> "$WORK/codex/.gsd.conf"
 out=$(gsd-doctor --repo "$WORK/codex" --json 2>/dev/null || true)

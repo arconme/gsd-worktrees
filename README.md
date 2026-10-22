@@ -288,6 +288,11 @@ or relocated with `GSD_CLAUDE_SKILL_DIR`, `GSD_CODEX_SKILL_DIR`, and
 `GSD_GEMINI_SKILL_DIR`. Existing unrelated files are backed up; command links
 and skills the toolkit placed earlier are replaced in place.
 Stale toolkit skill links are reported; stale toolkit command links are pruned.
+For Claude and Gemini, install also adds one user-level hook (in
+`~/.claude/settings.json` / `~/.gemini/settings.json`, next to the skills dir)
+that refuses `/gsd-new-project` and `/gsd-ingest-docs` in a repo `gsd-init` has
+not set up — run `gsd-init` instead. It checks nothing else, in any repo.
+`./install.sh --no-user-hook` leaves it out and removes it.
 
 **Staying up to date (checkout):** run `gsd-sync` — it pulls this repo, pushes your local
 commits, re-links any new commands, and verifies the reference repo's shims

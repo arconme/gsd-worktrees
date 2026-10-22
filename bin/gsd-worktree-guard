@@ -4,6 +4,10 @@
 # Optional native hooks use the same validator through a per-repo shim.
 #
 # Rules (independent of how the command was invoked):
+#   0. /gsd-new-project, /gsd-ingest-docs → only in a repo gsd-init has set
+#                              up (.gsd.conf). Run alone, they write the plan
+#                              without the toolkit's files; gsd-init installs
+#                              those first, then opens a session that runs them.
 #   1. /gsd-phase            → only on the base branch (the shared claim point).
 #   2. per-phase commands    → only inside the matching 'phase-<N>-*' worktree.
 #   3. /gsd-execute-phase    → also requires deps installed (background install
@@ -35,12 +39,17 @@
 #                                           yes). Exempt: a phase whose UI
 #                                           review is already on the base
 #
+# --global: the user-level hook install.sh registers (~/.claude, ~/.gemini).
+# It fires in EVERY repo, including ones that never use this toolkit, so it
+# applies rule 0 only and lets everything else through — an unreadable
+# payload too.
+#
 # Block = exit 2 (stderr shown). Escape hatch: GSD_SKIP_GUARD=1.
 # Repo settings (base branch, install cmd, flow): .gsd.conf, see gsd-bootstrap-repo.
 set -uo pipefail
 
 [ "${GSD_SKIP_GUARD:-}" = 1 ] && exit 0
-explicit_cmd=""; explicit_args=""; explicit_repo=""
+explicit_cmd=""; explicit_args=""; explicit_repo=""; GLOBAL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --command|--args|--phase|--repo)
@@ -54,7 +63,8 @@ while [ $# -gt 0 ]; do
         --repo) explicit_repo=$2 ;;
       esac
       shift 2 ;;
-    -h|--help) echo 'usage: gsd-worktree-guard [--command gsd-… --args "…" --repo <dir>]'; exit 0 ;;
+    --global) GLOBAL=1; shift ;;
+    -h|--help) echo 'usage: gsd-worktree-guard [--global] [--command gsd-… --args "…" --repo <dir>]'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 64 ;;
   esac
 done
@@ -72,6 +82,12 @@ GSD_PKG="$(cd "$(dirname "$SELF")/.." && pwd)"
 # shellcheck source=../lib/ui.sh
 . "$GSD_PKG/lib/ui.sh"
 
+unreadable() {  # $1=why — a payload the guard cannot classify
+  [ "$GLOBAL" = 0 ] || exit 0
+  printf 'BLOCKED: %s\n' "$1" >&2; exit 2
+}
+
+payload_cwd=""   # Claude's .cwd: the location when CLAUDE_PROJECT_DIR is unset
 # Command + args from the known payload shapes:
 #   UserPromptExpansion → .command_name / .command_args
 #   PreToolUse(Skill)   → .tool_input.skill / .tool_input.args
@@ -88,7 +104,7 @@ if [ -z "$explicit_cmd" ] && { [ "$gemini_tool" = activate_skill ] || [ "$gemini
   # A registered hook must not silently allow a GSD call when that parser is
   # unavailable or unable to classify the payload.
   py=$(gsd_python 2>/dev/null || true)
-  [ -n "$py" ] || { echo 'BLOCKED: Gemini GSD hook needs Python 3.7+ to inspect tool calls.' >&2; exit 2; }
+  [ -n "$py" ] || unreadable 'Gemini GSD hook needs Python 3.7+ to inspect tool calls.'
   hook_fields=()
   hook_field_count=0
   while IFS= read -r -d '' field; do
@@ -96,37 +112,39 @@ if [ -z "$explicit_cmd" ] && { [ "$gemini_tool" = activate_skill ] || [ "$gemini
     hook_field_count=$((hook_field_count + 1))
   done \
     < <(printf '%s' "$input" | "$py" "$GSD_PKG/lib/gsd_hook_payload.py")
-  [ "$hook_field_count" -eq 4 ] || { echo 'BLOCKED: could not parse Gemini GSD tool call.' >&2; exit 2; }
+  [ "$hook_field_count" -eq 4 ] || unreadable 'could not parse Gemini GSD tool call.'
   case "${hook_fields[0]}" in
     allow) exit 0 ;;
-    block) printf 'BLOCKED: %s\n' "${hook_fields[1]}" >&2; exit 2 ;;
+    block) unreadable "${hook_fields[1]}" ;;
     guard) cmd=${hook_fields[1]}; args=${hook_fields[2]}; explicit_repo=${hook_fields[3]} ;;
-    *) echo 'BLOCKED: invalid Gemini GSD hook result.' >&2; exit 2 ;;
+    *) unreadable 'invalid Gemini GSD hook result.' ;;
   esac
 elif [ -z "$explicit_cmd" ] && command -v jq >/dev/null 2>&1; then
   if ! printf '%s' "$input" | jq -e 'type == "object" and
     ((.command_name // .tool_input.skill // "") | type == "string") and
     ((.command_args // .tool_input.args // "") | type == "string")' >/dev/null 2>&1; then
-    echo 'BLOCKED: invalid Claude hook payload.' >&2; exit 2
+    unreadable 'invalid Claude hook payload.'
   fi
   cmd=$(printf '%s' "$input" | jq -r '.command_name // .tool_input.skill // empty' 2>/dev/null || true)
   args=$(printf '%s' "$input" | jq -r '.command_args // .tool_input.args // empty' 2>/dev/null || true)
+  payload_cwd=$(printf '%s' "$input" | jq -r '.cwd // empty | strings' 2>/dev/null || true)
 elif [ -z "$explicit_cmd" ]; then
   py=$(gsd_python 2>/dev/null || true)
-  [ -n "$py" ] || { echo 'BLOCKED: Claude hook needs jq or Python 3.7+ to inspect tool calls.' >&2; exit 2; }
+  [ -n "$py" ] || unreadable 'Claude hook needs jq or Python 3.7+ to inspect tool calls.'
   hook_fields=(); hook_field_count=0
   while IFS= read -r -d '' field; do
     hook_fields+=("$field"); hook_field_count=$((hook_field_count + 1))
   done < <(printf '%s' "$input" | "$py" "$GSD_PKG/lib/gsd_hook_payload.py" --claude)
-  [ "$hook_field_count" -eq 4 ] || { echo 'BLOCKED: could not parse Claude hook payload.' >&2; exit 2; }
+  [ "$hook_field_count" -eq 4 ] || unreadable 'could not parse Claude hook payload.'
   case "${hook_fields[0]}" in
     allow) exit 0 ;;
-    guard) cmd=${hook_fields[1]}; args=${hook_fields[2]} ;;
-    *) printf 'BLOCKED: %s\n' "${hook_fields[1]}" >&2; exit 2 ;;
+    guard) cmd=${hook_fields[1]}; args=${hook_fields[2]}; payload_cwd=${hook_fields[3]} ;;
+    *) unreadable "${hook_fields[1]}" ;;
   esac
 fi
 cmd="${cmd:-}"; args="${args:-}"
 cmd=${cmd#/}
+case "$cmd" in gsd:*) cmd="gsd-${cmd#gsd:}" ;; esac   # namespaced form of a GSD skill
 case "$cmd" in gsd-*) ;; *) exit 0 ;; esac   # not a GSD command → allow
 
 N=$(printf '%s' "$args" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1 || true)
@@ -134,7 +152,7 @@ N=$(printf '%s' "$args" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1 || true)
 # phase-8-slug, gsd-sdk decimal inserts are 02.1 in both. Compare numerically.
 pnorm() { local int=${1%%.*}; printf '%s' "$((10#$int))${1#"$int"}"; }
 
-dir="${explicit_repo:-${CLAUDE_PROJECT_DIR:-${GEMINI_PROJECT_DIR:-$PWD}}}"
+dir="${explicit_repo:-${CLAUDE_PROJECT_DIR:-${GEMINI_PROJECT_DIR:-${payload_cwd:-$PWD}}}}"
 dir=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$dir")
 branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 # Nested workers inherit phase identity only from a containing checkout in the
@@ -157,6 +175,14 @@ esac
 BASE=$(gsd_base "$dir" 2>/dev/null || echo develop)
 
 block() { printf '%s\n' "$@" >&2; exit 2; }
+
+# Rule 0 — the plan is started by gsd-init, never by the bare skill
+case "$cmd" in gsd-new-project|gsd-ingest-docs)
+  [ -f "$dir/.gsd.conf" ] || block \
+    "BLOCKED: /$cmd needs the gsd-worktrees setup first — this repo has no .gsd.conf." \
+    "Run gsd-init in a terminal in this repo instead: it installs the toolkit's files, then opens a session that runs /$cmd. (Or GSD_SKIP_GUARD=1 if the user asked to skip it.)" ;;
+esac
+[ "$GLOBAL" = 0 ] || exit 0
 
 # Rule 1 — /gsd-phase only on the base branch
 if [ "$cmd" = "gsd-phase" ]; then

@@ -211,5 +211,33 @@ rm "$PDIR/05-UI-CHECK.md" "$PDIR/05-UI-LOOK.md" "$PDIR/05-UI-APPROVAL.md"
 rc=$(GSD_SKIP_GUARD=1 "$GUARD" --command gsd-ui-review --phase 5 --repo "$REPO" 2>/dev/null; echo $?)
 [ "$rc" = 0 ] && ok "GSD_SKIP_GUARD=1 still escapes" || bad "GSD_SKIP_GUARD=1 still escapes" "rc=$rc"
 
+section "rule 0 — /gsd-new-project only after gsd-init (--global = the user-level hook)"
+# gg <payload> [extra guard args] → exit code; no project dir in the env, so
+# the payload's cwd (Claude) or GEMINI_PROJECT_DIR decides, as in a user hook
+gg() { local p=$1; shift; printf '%s' "$p" | env -u CLAUDE_PROJECT_DIR -u GEMINI_PROJECT_DIR "$GUARD" --global "$@" >/dev/null 2>"$WORK/err"; echo $?; }
+gis() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected $3, got $2: $(cat "$WORK/err")"; fi; }
+BARE="$WORK/bare-$RANDOM"; mkdir -p "$BARE"; git -C "$BARE" init -q -b main
+upe() { printf '{"hook_event_name":"UserPromptExpansion","expansion_type":"slash_command","command_name":"%s","command_args":"","cwd":"%s","prompt":"/%s"}' "$1" "$2" "$1"; }
+skl() { printf '{"tool_name":"Skill","tool_input":{"skill":"%s","args":""},"cwd":"%s"}' "$1" "$2"; }
+gis "typed /gsd-new-project in a repo without .gsd.conf → blocked"  "$(gg "$(upe gsd-new-project "$BARE")")" 2
+grep -q "Run gsd-init" "$WORK/err" && ok "…and says to run gsd-init" || bad "…and says to run gsd-init" "$(cat "$WORK/err")"
+gis "the namespaced /gsd:new-project → blocked too"                 "$(gg "$(upe gsd:new-project "$BARE")")" 2
+gis "the Skill tool calling gsd-ingest-docs → blocked"              "$(gg "$(skl gsd-ingest-docs "$BARE")")" 2
+gis "a subdirectory of that repo → blocked"                         "$(mkdir -p "$BARE/src" && gg "$(upe gsd-new-project "$BARE/src")")" 2
+gis "other GSD commands in a non-toolkit repo → allowed"            "$(gg "$(upe gsd-plan-phase "$BARE")")" 0
+gis "non-GSD commands → allowed"                                    "$(gg "$(upe review "$BARE")")" 0
+gis "an unreadable payload → allowed (fails open)"                  "$(gg 'not json')" 0
+gis "Gemini activate_skill gsd-new-project → blocked" "$(printf '{"tool_name":"activate_skill","tool_input":{"name":"gsd-new-project"}}' | env -u CLAUDE_PROJECT_DIR GEMINI_PROJECT_DIR="$BARE" "$GUARD" --global >/dev/null 2>"$WORK/err"; echo $?)" 2
+gis "GSD_SKIP_GUARD=1 escapes"                     "$(printf '%s' "$(upe gsd-new-project "$BARE")" | GSD_SKIP_GUARD=1 "$GUARD" --global 2>/dev/null; echo $?)" 0
+printf 'install = none\n' > "$BARE/.gsd.conf"
+gis "after gsd-init (.gsd.conf) → allowed"                          "$(gg "$(upe gsd-new-project "$BARE")")" 0
+mkrepo "" phase-7-thing 07-thing
+gis "--global skips the phase rules (plan-phase on a phase branch)" "$(gg "$(upe gsd-plan-phase "$REPO")")" 0
+allowed "the repo hook: new-project in a set-up repo passes"        gsd-new-project ""
+NOJQ="$WORK/no-jq"; mkdir -p "$NOJQ"
+for c in bash cat dirname sed head grep git python3 tr awk env readlink; do ln -sf "$(command -v "$c")" "$NOJQ/$c"; done
+rm -f "$BARE/.gsd.conf"
+gis "no jq: the Python reader takes the cwd too → blocked" "$(printf '%s' "$(upe gsd-new-project "$BARE")" | PATH="$NOJQ" env -u CLAUDE_PROJECT_DIR "$GUARD" --global >/dev/null 2>"$WORK/err"; echo $?)" 2
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
