@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
 # gsd-init — take a repo with NO GSD to "ready for gsd-start" in one command:
-# installs the worktree workflow (gsd-bootstrap-repo), then prints (or, with
-# --launch, opens) the right initialization prompt. Provider adapters choose
-# the actual CLI argv; print-only is the default.
+# installs the worktree workflow (gsd-bootstrap-repo), then opens the agent
+# session that makes the plan (/gsd-new-project or /gsd-ingest-docs) and, when
+# it closes, says whether the ROADMAP is there. --no-launch, or no terminal,
+# prints the command instead. Provider adapters choose the actual CLI argv.
 set -euo pipefail
 
 die() { printf '✖ %s\n' "$@" >&2; exit 1; }
@@ -13,13 +14,15 @@ usage() {
 gsd-init — set up GSD in a repo that doesn't have it yet
 
 Runs gsd-bootstrap-repo (shared scripts/config/instructions plus the selected
-provider adapter) and then prints or opens the initialization session.
+provider adapter), then opens the agent session that makes the plan:
 
   /gsd-new-project    when the repo has no planning docs (fresh interview)
   /gsd-ingest-docs    when ADRs/PRDs/SPECs are detected (bootstrap from them)
 
-The initialization itself stays interactive — that conversation is where the
-project context comes from; gsd-init removes every step around it.
+The plan is a conversation with the agent (its questions are where the
+project context comes from), so gsd-init opens that session for you and,
+when you close it, checks that .planning/ROADMAP.md was written. With no
+terminal (a script, an agent's shell) or --no-launch it prints the command.
 
 Safe to re-run: if the repo is already initialized (.planning/ROADMAP.md
 exists), the workflow files are still repaired/synced from the source, but the
@@ -42,33 +45,33 @@ OPTIONS
   --provider <p>   provider for the initialization session; when --providers
                    is omitted, also selects the single integration to install
   --provider-command <p=path> executable override for one provider; repeatable
-  --agent-command <path> executable override (implies --launch; add --no-launch to print)
+  --agent-command <path> executable override (add --no-launch to print)
   --model <id>     session model override; 'default' uses the CLI's own default
-  --agent <value>  compatibility alias: provider or custom executable;
-                   naming one implies --launch
-  --launch         open the session with the default agent (default is NO
-                   launch — the 'cd … && <agent> …' command is printed instead)
-  --no-launch      force print-only, overriding --agent/--launch
+  --agent <value>  compatibility alias: provider or custom executable
+  --launch         open the planning session (the default, in a terminal);
+                   an explicit --launch fails (127) when the agent CLI is missing
+  --no-launch      print the 'cd … && <agent> …' command instead of opening it
   -h, --help       show this help
 
 EXAMPLES
   cd ~/projects/acme/webshop && gsd-init
-      Bootstrap + commit, then print the configured init command.
+      Bootstrap + commit, then open the planning session; when it closes,
+      gsd-init says whether the ROADMAP is ready.
 
-  cd ~/projects/acme/webshop && gsd-init --launch
-      Same, but open the configured session right away.
+  cd ~/projects/acme/webshop && gsd-init --no-launch
+      Same, but print the session command to run later.
 
   gsd-init --ingest --agent gemini
       Force ingest mode and open the session with the gemini CLI.
 
   gsd-init --providers claude,codex,gemini --provider codex --no-launch
-      Install all three integrations and print the Codex initialization command.
+      Install all three integrations and print the Codex planning command.
 
   gsd-init --providers claude,codex --provider-command codex=/opt/bin/codex
       Install Claude and Codex integrations with an explicit Codex executable.
 
-  gsd-init --base main
-      Bootstrap against 'main', print the init command to run later.
+  gsd-init --base main --no-launch
+      Bootstrap against 'main', print the planning command to run later.
 
 AFTER INITIALIZATION
   gsd-start -n "<description>"   begin each feature (claim + worktree + session).
@@ -93,7 +96,8 @@ PROVIDER_COMMAND_ARGS=()
 PROVIDER_COMMAND_COUNT=0
 AGENT_COMMAND_CLI=""
 MODEL_CLI=""
-LAUNCH=0
+LAUNCH=1          # open the planning session (in a terminal); --no-launch prints it
+LAUNCH_ASKED=0    # --launch/--agent named: a missing executable is an error
 FORCE_NOLAUNCH=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -110,9 +114,9 @@ while [ $# -gt 0 ]; do
     --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, gemini, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
     --model) [ $# -ge 2 ] && [ -n "$2" ] || die "--model needs a model ID or default"; MODEL_CLI="$2"; shift 2 ;;
     --provider-command) [ $# -ge 2 ] || die "--provider-command needs provider=executable"; PROVIDER_COMMAND_ARGS+=("$2"); PROVIDER_COMMAND_COUNT=$((PROVIDER_COMMAND_COUNT+1)); shift 2 ;;
-    --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND_CLI="$2"; LAUNCH=1; shift 2 ;;
-    --agent) [ $# -ge 2 ] || die "--agent needs a provider or executable"; case "$2" in claude|codex|gemini|custom) PROVIDER_CLI="$2" ;; *) PROVIDER_CLI=custom; AGENT_COMMAND_CLI="$2" ;; esac; LAUNCH=1; shift 2 ;;
-    --launch)    LAUNCH=1; shift ;;
+    --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND_CLI="$2"; LAUNCH_ASKED=1; shift 2 ;;
+    --agent) [ $# -ge 2 ] || die "--agent needs a provider or executable"; case "$2" in claude|codex|gemini|custom) PROVIDER_CLI="$2" ;; *) PROVIDER_CLI=custom; AGENT_COMMAND_CLI="$2" ;; esac; LAUNCH_ASKED=1; shift 2 ;;
+    --launch)    LAUNCH_ASKED=1; shift ;;
     --no-launch) FORCE_NOLAUNCH=1; shift ;;
     *) die "unknown arg: $1 (see gsd-init --help)" ;;
   esac
@@ -295,16 +299,35 @@ CMD=$(gsd_provider_prompt "$GSD_PROVIDER_RESOLVED" "$MODE")
 gsd_provider_argv "$GSD_PROVIDER_RESOLVED" "$GSD_AGENT_COMMAND_RESOLVED" "$CMD" "$GSD_MODEL_RESOLVED"
 NEXT=$(gsd_provider_render "$DEST" "${GSD_LAUNCH_ARGV[@]}")
 
-# ── step 3: open the session (the initialization itself is interactive) ──────
-# The adapter builds an argv array; no shell template expansion is used.
+# ── step 3: the planning session (the plan itself is a conversation) ─────────
+# The adapter builds an argv array; no shell template expansion is used. Run as
+# a child, not exec'd: when the session closes, say whether the plan is there.
 if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
   echo ""
-  echo "▶ opening $GSD_PROVIDER_RESOLVED session in ${DEST}…"
-  cd "$DEST"
-  exec "${GSD_LAUNCH_ARGV[@]}"
+  echo "▶ opening $GSD_PROVIDER_RESOLVED in ${DEST} to make the plan (/gsd-$( [ "$MODE" = ingest ] && echo ingest-docs || echo new-project ))…"
+  echo "  Answer its questions; close the session when it has written the roadmap."
+  echo ""
+  rc=0; ( cd "$DEST" && "${GSD_LAUNCH_ARGV[@]}" ) || rc=$?
+  echo ""
+  if [ -f "$DEST/.planning/ROADMAP.md" ]; then
+    phases=$(grep -cE '^#{2,4} Phase [0-9]' "$DEST/.planning/ROADMAP.md" || true)
+    first=$(sed -n -E 's/^#{2,4} Phase ([0-9]+(\.[0-9]+)?):.*/\1/p' "$DEST/.planning/ROADMAP.md" | head -1)
+    echo "✔ plan ready: ${phases:-0} phase(s) in .planning/ROADMAP.md"
+    ui_notice
+    tracker_notice
+    if [ -n "$first" ]; then echo "Next:  gsd-start -p $first   (one per phase; each gets its own worktree and session)"
+    else echo "Next:  gsd-start -n \"<description>\"   (one per feature)"; fi
+    echo "TDD mode (tests first) turns on at the first gsd-start; turn it off with /gsd-settings."
+    exit 0
+  fi
+  echo "✖ the session closed before the plan was written (no .planning/ROADMAP.md)." >&2
+  echo "  Run gsd-init again to pick it up where it stopped." >&2
+  exit "$(( rc == 0 ? 1 : rc ))"
 else
   echo ""
-  if [ "$LAUNCH" = 1 ] && ! command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
+  # Only an explicit --launch/--agent turns a missing executable into an error;
+  # by default the command is just printed.
+  if [ "$LAUNCH" = 1 ] && [ "$LAUNCH_ASKED" = 1 ] && ! command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
     echo "✖ provider executable '$GSD_AGENT_COMMAND_RESOLVED' not found — launch cancelled." >&2
     echo "Next (after installing it or changing agent_command):  $NEXT"
     exit 127

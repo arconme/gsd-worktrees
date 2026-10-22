@@ -7,7 +7,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 
 | Feature | Where |
 |---|---|
-| One-command setup of a repo from zero: bootstrap, then open `/gsd-new-project` or `/gsd-ingest-docs` | `gsd-init` |
+| One-command setup of a repo from zero: bootstrap, then open the `/gsd-new-project` or `/gsd-ingest-docs` session (the default in a terminal; `--no-launch` prints it), and when it closes check that `.planning/ROADMAP.md` exists (exit 1 if not, "run gsd-init again") | `gsd-init` |
 | Auto-picks new-project vs ingest by scanning for ADR/PRD/RFC/spec/architecture docs (`--new` / `--ingest` force it) | `gsd-init` |
 | Idempotent re-run: with an existing `.planning/ROADMAP.md` it only repairs workflow files, never planning state | `gsd-init` |
 | Writes `.gsd.conf` (base, wtdir, install, providers, per-provider commands); migrates legacy `provider` / `agent_command` keys | `gsd-bootstrap-repo` |

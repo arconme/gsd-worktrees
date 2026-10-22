@@ -4,6 +4,18 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.12
+
+- `gsd-init` now opens the planning session by default: the agent starts
+  with `/gsd-new-project` (or `/gsd-ingest-docs` when it finds PRDs/specs).
+  When you close it, `gsd-init` checks the plan: "✔ plan ready: N phases —
+  next: gsd-start -p 1", or, with no ROADMAP yet, exit 1 and "run gsd-init
+  again". So a new repo is `gsd-init` → answer the questions → `gsd-start`.
+- Like `gsd-start`: `--no-launch` prints the command instead, and so does a
+  run with no terminal (a script, an agent's shell). A repo that already has
+  a plan opens nothing. A missing agent CLI just prints, unless `--launch`
+  was given (exit 127).
+
 ## 0.4.11
 
 - `gsd-start` now opens the session in the new worktree by default. Pass

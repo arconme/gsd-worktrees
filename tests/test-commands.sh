@@ -194,6 +194,31 @@ R="$WORK/noask"; mkdir -p "$R"; git -C "$R" init -qb main; printf 'x\n' > "$R/a.
 is  "no terminal, no flag → no question, no tracker key" "$(grep -c 'Where do this project' "$WORK/out"):$(. "$PKG/lib/common.sh"; gsd_conf_get "$R" tracker)" "0:"
 has "…and a hint how to set one"        "gsd-init --tracker clickup|custom" "$WORK/out"
 
+section "gsd-init — opens the planning session, then checks the plan"
+# a fake agent: records its argv; with PLAN=1 it writes a two-phase roadmap, as /gsd-new-project would
+cat > "$WORK/stub/claude" <<STUB
+#!/bin/sh
+printf '%s\n' "\$*" > "$WORK/init-args"
+[ "\${PLAN:-}" = 1 ] || exit 0
+mkdir -p .planning; printf '# Roadmap\n\n### Phase 1: catalog\n\n### Phase 2: cart\n' > .planning/ROADMAP.md
+STUB
+chmod +x "$WORK/stub/claude"
+R="$WORK/plan"; mkdir -p "$R"; git -C "$R" init -qb main; printf 'x\n' > "$R/a.txt"; commit "$R" code
+in_tty "cd '$R' && PLAN=1 gsd-init --provider claude --tracker none" > "$WORK/out" 2>&1 < /dev/null
+is  "in a terminal it runs the session, and the plan is there → exit 0" "$?" 0
+has "…the session got /gsd-new-project" "gsd-new-project" "$WORK/init-args"
+has "…it says the plan is ready"        "plan ready: 2 phase" "$WORK/out"
+has "…and names the first phase"        "gsd-start -p 1" "$WORK/out"
+R="$WORK/quit"; mkdir -p "$R"; git -C "$R" init -qb main; printf 'x\n' > "$R/a.txt"; commit "$R" code
+in_tty "cd '$R' && gsd-init --provider claude --tracker none; echo rc=\$?" > "$WORK/out" 2>&1 < /dev/null
+has "a session closed with no ROADMAP → exit 1" "rc=1" "$WORK/out"
+has "…saying to run gsd-init again"      "Run gsd-init again" "$WORK/out"
+rm -f "$WORK/init-args"
+in_tty "cd '$R' && gsd-init --provider claude --tracker none --no-launch" > "$WORK/out" 2>&1 < /dev/null
+if [ -e "$WORK/init-args" ]; then bad "--no-launch only prints"; else ok "--no-launch only prints"; fi
+has "…the command"                      "Next:" "$WORK/out"
+rm -f "$WORK/stub/claude"
+
 section "gsd-finish --pr — push + open a PR, keep the worktree"
 R="$WORK/pr"; project "$R"
 git -C "$R" worktree add -qb phase-1-catalog "$WORK/pr-wt"
