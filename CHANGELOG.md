@@ -4,6 +4,16 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.7
+
+- `gsd-flow` no longer asks whether to run a step the flow already agreed
+  (e.g. "shall I run `/gsd-ui-phase`?"): it starts the step and pauses only
+  where your answer is needed. The "does this phase have screens?" question
+  reuses an answer you already gave in discuss, the ticket or the session.
+- Browser testing (`verify-work` UAT and other page checks) runs in headless
+  Playwright with no window — never in your own browser, so it doesn't take
+  over the window you work in.
+
 ## 0.4.6
 
 - `gsd-start` no longer hangs at "Preparing worktree" until a background
