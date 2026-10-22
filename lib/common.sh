@@ -134,6 +134,58 @@ gsd_phase_dir() {  # $1=checkout $2=phase-<N>-* branch → GSD_PD (phase dir), G
   return 1
 }
 
+gsd_origin_lacks() {  # $1=checkout $2=branch → true when origin answers but has no such branch
+  # Tells "push the base branch first" apart from a network or divergence failure.
+  local rc=0
+  git -C "$1" ls-remote --exit-code --heads origin "$2" >/dev/null 2>&1 || rc=$?
+  [ "$rc" = 2 ]
+}
+
+gsd_phase_branch() {  # $1=MAIN $2=phase number → the phase's feature branch ('' = none)
+  # /gsd-pr-branch names its helper <branch>-pr. Skip X-pr only when X is also
+  # a phase-N branch: a phase whose own slug ends in -pr ("improve PR") counts.
+  local all b
+  all=$(git -C "$1" for-each-ref --format='%(refname:short)' "refs/heads/phase-$2-*" 2>/dev/null) || return 0
+  printf '%s\n' "$all" | while IFS= read -r b; do
+    [ -n "$b" ] || continue
+    case "$b" in *-pr) printf '%s\n' "$all" | grep -qxF -- "${b%-pr}" && continue ;; esac
+    printf '%s\n' "$b"
+  done | head -1
+}
+
+gsd_is_pr_helper() {  # $1=MAIN $2=branch → true when it is the -pr helper of another branch
+  case "$2" in *-pr) git -C "$1" show-ref --verify --quiet "refs/heads/${2%-pr}" ;; *) return 1 ;; esac
+}
+
+gsd_gate_tree() {  # $1=MAIN $2=phase branch $3=its worktree → GSD_GATE_WT: the branch's files for the finish gates
+  # The gates read the phase's files. With the worktree gone (removed by hand,
+  # or --pr after a cleanup) they would find nothing and pass, so check the
+  # branch out, detached, in a throwaway worktree. gsd_gate_tree_done removes it.
+  GSD_GATE_WT=$3; GSD_GATE_TMP=""
+  [ -n "$3" ] && [ -d "$3" ] && return 0
+  GSD_GATE_TMP=$(mktemp -d 2>/dev/null) || return 1
+  GSD_GATE_WT="$GSD_GATE_TMP/tree"
+  git -C "$1" worktree add -q --detach "$GSD_GATE_WT" "$2" >/dev/null 2>&1 && return 0
+  rm -rf "$GSD_GATE_TMP"; GSD_GATE_TMP=""; GSD_GATE_WT=$3
+  return 1
+}
+
+gsd_gate_tree_done() {  # $1=MAIN — remove the throwaway worktree gsd_gate_tree made
+  [ -n "${GSD_GATE_TMP:-}" ] || return 0
+  git -C "$1" worktree remove --force "$GSD_GATE_WT" >/dev/null 2>&1 || true
+  rm -rf "$GSD_GATE_TMP"; git -C "$1" worktree prune >/dev/null 2>&1 || true
+  GSD_GATE_TMP=""
+}
+
+gsd_finish_gates() {  # $1=MAIN $2=phase branch $3=its worktree → 1 = refuse (the UI steps, then the test audit)
+  local rc=0
+  gsd_gate_tree "$1" "$2" "$3" \
+    || echo "⚠ could not check out '$2' to check its files — the finish gates see only what is on disk" >&2
+  gsd_ui_finish_gate "$1" "$2" "$GSD_GATE_WT" && gsd_flow_finish_gate "$1" "$2" "$GSD_GATE_WT" || rc=1
+  gsd_gate_tree_done "$1"
+  return "$rc"
+}
+
 gsd_flow_finish_gate() {  # $1=MAIN $2=phase branch $3=its worktree → 1 = refuse the finish (flow = strict)
   # Called by gsd-wt-finish and gsd-finish --pr, before anything is merged or
   # pushed. It checks the test audit (/gsd-validate-phase): the guard holds
@@ -314,7 +366,11 @@ gsd_acquire_lock() {  # $1=MAIN checkout — serialize gsd commands on this chec
     sleep 1
   done
   echo "$$" > "$GSD_LOCKDIR/pid"
-  trap gsd_release_lock EXIT INT TERM
+  # A signal must STOP the command: a bare release trap on INT/TERM runs and
+  # then lets the script carry on (and exit 0). Exiting fires the EXIT release.
+  trap gsd_release_lock EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
 }
 
 gsd__npm_has_test() {  # $1=package.json — true when "scripts" defines "test"

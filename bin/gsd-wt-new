@@ -95,12 +95,18 @@ NAME="phase-$N-$SLUG"
 # Idempotent per phase: reuse any existing phase-<N>-* branch (whatever its
 # slug), and its worktree if still attached. PR branches (*-pr, from
 # /gsd-pr-branch) are NOT the feature branch — never attach to those.
-EXISTING=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$N-*" \
-             | grep -v -- '-pr$' | head -1 || true)
+EXISTING=$(gsd_phase_branch "$MAIN" "$N")
 if [ -n "$EXISTING" ]; then
   NAME="$EXISTING"
   WT=$(git -C "$MAIN" worktree list --porcelain \
         | awk -v b="branch refs/heads/$NAME" '/^worktree /{w=substr($0,10)} $0==b{print w; exit}')
+  if [ -n "$WT" ] && [ ! -d "$WT" ]; then
+    # Its folder was deleted by hand: git still lists it. Drop the dead entry
+    # and re-attach below, rather than report a worktree that is not there.
+    echo "• the worktree for '$NAME' is gone from disk ($WT) — re-creating it."
+    git -C "$MAIN" worktree prune
+    WT=""
+  fi
   if [ -n "$WT" ]; then
     echo "• branch '$NAME' already has a worktree — reusing it."
     echo ""
@@ -139,6 +145,19 @@ while IFS= read -r rel; do
 done < <( cd "$MAIN" && git ls-files --others --ignored --exclude-standard \
             -- ':(glob)**/.env.local' '.env.local' '.mcp.json' \
                '.claude/settings.local.json' 2>/dev/null )
+
+# The status/log files must never read as uncommitted work (that would stop
+# the finish). Bootstrap ignores them in .gitignore; the repo-local exclude
+# list covers a repo whose .gitignore lost the lines.
+excl=$(git -C "$MAIN" rev-parse --git-path info/exclude 2>/dev/null || true)
+case "$excl" in ''|/*) ;; *) excl="$MAIN/$excl" ;; esac
+if [ -n "$excl" ] && mkdir -p "$(dirname "$excl")" 2>/dev/null; then
+  for pat in .gsd-install.status .gsd-install.log; do
+    grep -qxF "$pat" "$excl" 2>/dev/null && continue
+    [ ! -s "$excl" ] || [ -z "$(tail -c1 "$excl")" ] || printf '\n' >> "$excl"
+    printf '%s\n' "$pat" >> "$excl"
+  done
+fi
 
 case "$INSTALL_MODE" in
   background)

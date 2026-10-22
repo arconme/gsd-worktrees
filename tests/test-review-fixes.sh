@@ -127,7 +127,7 @@ ok 'unrelated canonical filename alone is not an integration'
 
 R="$WORK/finish"; repo "$R"
 git -C "$R" branch unrelated
-git -C "$R" branch phase-1-feature-pr
+git -C "$R" branch phase-1-feature; git -C "$R" branch phase-1-feature-pr   # /gsd-pr-branch names its helper <branch>-pr
 for command in gsd-finish gsd-wt-finish; do
   for branch in unrelated phase-1-feature-pr; do
     reject bash -c 'cd "$1" && "$2" "$3"' _ "$R" "$command" "$branch"
@@ -137,7 +137,7 @@ for command in gsd-finish gsd-wt-finish; do
 done
 printf 'test = none\n' > "$R/.gsd.conf"
 git -C "$R" add .; git -C "$R" commit -qm config
-git -C "$R" worktree add -qb phase-1-feature "$WORK/phase"
+git -C "$R" worktree add -q "$WORK/phase" phase-1-feature
 git -C "$R" remote add origin "$WORK/missing-remote"
 before=$(git -C "$R" rev-parse HEAD)
 reject bash -c 'cd "$1" && gsd-wt-finish 1' _ "$R"

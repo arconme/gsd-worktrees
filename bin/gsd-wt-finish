@@ -73,14 +73,13 @@ gsd_acquire_lock "$MAIN"
 # Resolve the branch: a bare number → the phase-<N>-* branch; else use as-is.
 # PR branches (*-pr, from /gsd-pr-branch) are never the feature branch.
 if printf '%s' "$ID" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
-  BRANCH=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$ID-*" \
-             | grep -v -- '-pr$' | head -1 || true)
+  BRANCH=$(gsd_phase_branch "$MAIN" "$ID")
   [ -n "$BRANCH" ] || { echo "error: no 'phase-$ID-*' branch found" >&2; exit 1; }
 else
   printf '%s' "$ID" | grep -qE '^phase-[0-9]+(\.[0-9]+)?-.+$' || {
     echo "error: finish requires a phase number or phase-N-slug branch" >&2; exit 1;
   }
-  case "$ID" in *-pr) echo 'error: finish the phase branch, not a PR-helper branch' >&2; exit 1 ;; esac
+  ! gsd_is_pr_helper "$MAIN" "$ID" || { echo 'error: finish the phase branch, not a PR-helper branch' >&2; exit 1; }
   BRANCH="$ID"
 fi
 
@@ -148,6 +147,10 @@ if [ "$HAS_ORIGIN" = 1 ]; then
   echo "▶ syncing local '$BASE' with origin…"
   if ! git -C "$MAIN" fetch origin "$BASE" --quiet \
     || ! git -C "$MAIN" merge --ff-only "origin/$BASE"; then
+    if gsd_origin_lacks "$MAIN" "$BASE"; then
+      echo "error: origin has no '$BASE' branch — push it first (git -C \"$MAIN\" push -u origin $BASE), or set base = <branch> in .gsd.conf. Phase worktree retained." >&2
+      exit 1
+    fi
     echo "error: could not synchronize '$BASE'; resolve remote connectivity or divergence, then retry finish. Phase worktree retained." >&2
     exit 1
   fi
@@ -156,11 +159,8 @@ fi
 # ── UI steps of a phase with screens (ui_gates) ──────────────────────────────
 # After the sync: a phase whose UI review is already on the base branch is left
 # alone. strict refuses while a step is open or stale; warn only says so.
-gsd_ui_finish_gate "$MAIN" "$BRANCH" "$DEST" || {
-  echo "  Nothing was merged. Phase worktree retained." >&2; exit 1;
-}
-# ── the test audit (flow = strict) ───────────────────────────────────────────
-gsd_flow_finish_gate "$MAIN" "$BRANCH" "$DEST" || {
+# Then the test audit (flow = strict). Both read the branch's own files.
+gsd_finish_gates "$MAIN" "$BRANCH" "$DEST" || {
   echo "  Nothing was merged. Phase worktree retained." >&2; exit 1;
 }
 
@@ -237,7 +237,23 @@ fi
 
 echo "▶ removing worktree + branch…"
 if [ -d "$DEST" ]; then
-  git -C "$MAIN" worktree remove "$DEST"
+  # The worktree was clean when the finish began, so new files in it now came
+  # from the finish's own test run (coverage, caches). Its work is merged and
+  # pushed by now: those go. Anything else is kept, with the branch — and the
+  # finish still succeeds, since the merge is already on origin.
+  left=$(git -C "$DEST" status --porcelain 2>/dev/null || true)
+  if [ -n "$left" ] && printf '%s\n' "$left" | grep -qv '^?? '; then
+    echo "⚠ $DEST has changes made while the finish ran — kept it and '$BRANCH':" >&2
+    git -C "$DEST" status --short >&2
+    echo "  The phase IS merged and pushed. Once you have looked at them:" >&2
+    echo "    git worktree remove --force \"$DEST\" && git branch -D $BRANCH" >&2
+    exit 0
+  fi
+  if [ -n "$left" ]; then
+    echo "• removing files the tests left in the worktree:"
+    printf '%s\n' "$left" | sed 's/^?? /    /'
+  fi
+  git -C "$MAIN" worktree remove --force "$DEST"
 else
   echo "• worktree already removed — cleaning up the branch only"
   git -C "$MAIN" worktree prune

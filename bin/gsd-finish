@@ -143,7 +143,7 @@ fi
 # ── main checkout must be on the base branch (auto-switch when clean) ────────
 printf '%s' "$ID" | grep -qE '^([0-9]+(\.[0-9]+)?|phase-[0-9]+(\.[0-9]+)?-.+)$' \
   || die 'finish requires a phase number or phase-N-slug branch'
-case "$ID" in *-pr) die 'finish the phase branch, not a PR-helper branch' ;; esac
+case "$ID" in phase-*) ! gsd_is_pr_helper "$MAIN" "$ID" || die 'finish the phase branch, not a PR-helper branch' ;; esac
 cur=$(git -C "$MAIN" branch --show-current)
 if [ "$cur" != "$BASE" ]; then
   [ -z "$(git -C "$MAIN" status --porcelain)" ] \
@@ -161,8 +161,7 @@ PHASE_N=""
 case "$ID" in
   phase-*) BR="$ID"; PHASE_N=$(printf '%s' "$ID" | sed -E 's/^phase-([0-9]+(\.[0-9]+)?)-.*/\1/') ;;
   *)       PHASE_N="$ID"
-           BR=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$ID-*" \
-                  | grep -v -- '-pr$' | head -1 || true) ;;
+           BR=$(gsd_phase_branch "$MAIN" "$ID") ;;
 esac
 if [ "$(gsd_tracker "$MAIN")" != none ]; then
   if [ -n "$PHASE_N" ] && [ -f "$MAIN/.planning/ROADMAP.md" ]; then
@@ -180,8 +179,7 @@ if [ "$PR" = 1 ]; then
   command -v gh >/dev/null 2>&1 || die "--pr needs the GitHub CLI (gh) on PATH"
   case "$ID" in
     phase-*) BR="$ID" ;;
-    *) BR=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$ID-*" \
-              | grep -v -- '-pr$' | head -1 || true)
+    *) BR=$(gsd_phase_branch "$MAIN" "$ID")
        [ -n "$BR" ] || die "no phase-$ID-* branch found" ;;
   esac
   PHASE_N=$(printf '%s' "$BR" | sed -E 's/^phase-([0-9]+(\.[0-9]+)?)-.*/\1/')
@@ -190,8 +188,7 @@ if [ "$PR" = 1 ]; then
   # The same UI gate as the merge path (the PR is how this phase reaches the base).
   PR_WT=$(git -C "$MAIN" worktree list --porcelain \
             | awk -v b="branch refs/heads/$BR" '/^worktree /{w=substr($0,10)} $0==b{print w; exit}')
-  gsd_ui_finish_gate "$MAIN" "$BR" "${PR_WT:-}" || die "no PR was opened"
-  gsd_flow_finish_gate "$MAIN" "$BR" "${PR_WT:-}" || die "no PR was opened"
+  gsd_finish_gates "$MAIN" "$BR" "${PR_WT:-}" || die "no PR was opened"
   echo "▶ pushing '$HEAD_BR'…"
   # No retry loop here: a rejected push means origin has commits this branch
   # lacks, and only the user can say how to integrate them.

@@ -329,7 +329,12 @@ if [ -z "$ATTACH" ]; then
   git -C "$MAIN" remote get-url origin >/dev/null 2>&1 && HAS_ORIGIN=1
   if [ "$PUSH" = 1 ] && [ "$HAS_ORIGIN" = 1 ]; then
     echo "▶ syncing '$BASE' with origin (picking up other sessions' claims)…"
-    git -C "$MAIN" fetch origin "$BASE" --quiet
+    if ! git -C "$MAIN" fetch origin "$BASE" --quiet; then
+      gsd_origin_lacks "$MAIN" "$BASE" \
+        && die "origin has no '$BASE' branch — push it first: git -C \"$MAIN\" push -u origin $BASE" \
+               "(or set base = <branch> in .gsd.conf)"
+      die "could not fetch '$BASE' from origin — check the network/remote, then re-run"
+    fi
     git -C "$MAIN" merge --ff-only "origin/$BASE" --quiet \
       || die "local '$BASE' has diverged from origin — reconcile it first"
   fi
@@ -438,6 +443,13 @@ unclaim() {  # undo the local claim/insert commit after losing a same-number rac
 
 if [ -n "$ATTACH" ]; then
   # ── attach mode: the phase is already claimed — just verify it exists ──────
+  # Best-effort catch-up first: the phase may have been claimed on another
+  # machine. Attach never commits on $BASE, so a failed sync only warns.
+  if [ "$PUSH" = 1 ] && git -C "$MAIN" remote get-url origin >/dev/null 2>&1 \
+     && [ "$(git -C "$MAIN" branch --show-current)" = "$BASE" ]; then
+    { git -C "$MAIN" fetch origin "$BASE" --quiet && git -C "$MAIN" merge --ff-only "origin/$BASE" --quiet; } >/dev/null 2>&1 \
+      || echo "⚠ could not update '$BASE' from origin — using the local copy" >&2
+  fi
   N="$ATTACH"
   N_RE=$(printf '%s' "$N" | sed 's/\./\\./g')
   TITLE=$(grep -E "^### Phase $N_RE:" "$MAIN/.planning/ROADMAP.md" | head -1 \
@@ -533,7 +545,7 @@ WT_OUT=$( cd "$MAIN" && GSD_LOCK_HELD=1 GSD_WT_NEW_SUPPRESS_NEXT=1 "$GSD_PKG/bin
 printf '%s\n' "$WT_OUT"
 DEST=$(printf '%s\n' "$WT_OUT" | sed -n 's/^✅ worktree ready: \(.*\)   (phase.*/\1/p')
 if [ -z "$DEST" ] || [ ! -d "$DEST" ]; then
-  BRANCH=$(git -C "$MAIN" for-each-ref --format='%(refname:short)' "refs/heads/phase-$N-*" | head -1)
+  BRANCH=$(gsd_phase_branch "$MAIN" "$N")
   DEST=$(git -C "$MAIN" worktree list --porcelain | awk -v b="$BRANCH" '/^worktree /{w=substr($0,10)} $0=="branch refs/heads/"b{print w; exit}')
 fi
 [ -n "$DEST" ] && [ -d "$DEST" ] || die "could not locate the new worktree for phase $N"

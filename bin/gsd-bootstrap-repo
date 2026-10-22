@@ -96,7 +96,12 @@ else
 fi
 mkdir -p "$DEST/scripts/hooks" "$DEST/.gsd"
 for rel in scripts/gsd-new-worktree-feature.sh scripts/gsd-finish-worktree-feature.sh scripts/gsd-derive-port.sh scripts/gsd-planning-repair.sh scripts/hooks/gsd-worktree-guard.sh; do cp "$PKG/shims/$rel" "$DEST/$rel"; chmod +x "$DEST/$rel"; echo "✔ $rel (shim)"; done
-for pat in .gsd-install.status .gsd-install.log .claude/settings.local.json; do grep -qxF "$pat" "$DEST/.gitignore" 2>/dev/null || echo "$pat" >> "$DEST/.gitignore"; done
+for pat in .gsd-install.status .gsd-install.log .claude/settings.local.json; do
+  grep -qxF "$pat" "$DEST/.gitignore" 2>/dev/null && continue
+  # a .gitignore whose last line has no newline would glue our line onto it
+  [ ! -s "$DEST/.gitignore" ] || [ -z "$(tail -c1 "$DEST/.gitignore")" ] || printf '\n' >> "$DEST/.gitignore"
+  echo "$pat" >> "$DEST/.gitignore"
+done
 gsd_planning_apply "$DEST"
 CANON=$DEST/.gsd/INSTRUCTIONS.md
 if [ -f "$CANON" ] && grep -qx '<!-- gsd-worktrees:canonical -->' "$CANON"; then

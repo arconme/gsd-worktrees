@@ -144,6 +144,9 @@ mkdir "$R/.git/gsd-cmd.lock"; echo 999999 > "$R/.git/gsd-cmd.lock/pid"
 is  "the command still runs"      "$?" 0
 has "…after reclaiming the lock"  "reclaimed stale gsd lock" "$WORK/out"
 if [ -d "$R/.git/gsd-cmd.lock" ]; then bad "…and releases it at the end"; else ok "…and releases it at the end"; fi
+out=$(bash -c '. "$1/lib/common.sh"; gsd_acquire_lock "$2" >/dev/null; kill -TERM $$; echo went-on' _ "$PKG" "$R" 2>/dev/null); rc=$?
+is  "a TERM stops the command (exit 143)…" "$rc:$out" "143:"
+if [ -d "$R/.git/gsd-cmd.lock" ]; then bad "…and releases the lock"; else ok "…and releases the lock"; fi
 
 section "gsd-init — picks ingest when planning docs exist"
 R="$WORK/docs"; mkdir -p "$R/docs"; git -C "$R" init -qb main
@@ -190,6 +193,60 @@ commit "$WORK/audit-wt" audited
 (cd "$R" && gsd-wt-finish 1) > "$WORK/out" 2>&1
 is  "audited → finish lands"           "$?" 0
 is  "…the feature is on main"          "$(git -C "$R" log --oneline main | grep -c feature)" 1
+
+section "finish — the gates read the branch when its worktree is gone"
+R="$WORK/gone"; project "$R"
+printf 'install = none\ntest = none\nflow = strict\n' > "$R/.gsd.conf"; commit "$R" strict; git -C "$R" push -q
+git -C "$R" worktree add -qb phase-1-catalog "$WORK/gone-wt"
+mkdir -p "$WORK/gone-wt/.planning/phases/01-catalog"; : > "$WORK/gone-wt/.planning/phases/01-catalog/.gitkeep"
+printf 'feature\n' > "$WORK/gone-wt/f.txt"; commit "$WORK/gone-wt" feature
+git -C "$R" worktree remove "$WORK/gone-wt"
+fails "--pr with no worktree still refuses a missing audit" bash -c 'cd "$1" && gsd-finish 1 --pr' _ "$R"
+has   "…names the step"                 "/gsd-validate-phase 1" "$WORK/out"
+fails "…and so does the merge path"     bash -c 'cd "$1" && gsd-wt-finish 1' _ "$R"
+is    "…leaving no throwaway worktree"  "$(git -C "$R" worktree list | wc -l | tr -d ' ')" 1
+
+section "finish — files the tests leave behind do not stop the cleanup"
+R="$WORK/leftover"; project "$R"
+printf 'install = none\ntest = mkdir -p cov && echo a > cov/out\n' > "$R/.gsd.conf"; commit "$R" tests; git -C "$R" push -q
+(cd "$R" && gsd-wt-new --phase 1) >/dev/null 2>&1
+wt=$(git -C "$R" worktree list --porcelain | awk '/^worktree /{w=substr($0,10)} /^branch refs\/heads\/phase-1-/{print w; exit}')
+printf 'x\n' > "$wt/f.txt"; commit "$wt" feat
+(cd "$R" && gsd-wt-finish 1) > "$WORK/out" 2>&1
+is  "finish succeeds"                   "$?" 0
+has "…saying what it removed"           "cov/" "$WORK/out"
+if [ -d "$wt" ]; then bad "…worktree removed" "$(tail -3 "$WORK/out")"; else ok "…worktree removed"; fi
+is  "…branch deleted"                   "$(git -C "$R" branch --list 'phase-1-*' | wc -l | tr -d ' ')" 0
+
+section "phase branches — a slug ending in -pr, a worktree deleted by hand"
+R="$WORK/slugpr"; project "$R"
+printf '# Roadmap\n\n### Phase 1: improve PR\n' > "$R/.planning/ROADMAP.md"; commit "$R" title; git -C "$R" push -q
+(cd "$R" && gsd-wt-new --phase 1) >/dev/null 2>&1
+wt="$WORK/slugpr-worktrees/phase-1-improve-pr"
+is  "a phase titled 'improve PR' gets phase-1-improve-pr" "$([ -d "$wt" ] && echo yes)" yes
+rm -rf "$wt"
+(cd "$R" && gsd-wt-new --phase 1) > "$WORK/out" 2>&1
+is  "a deleted worktree folder is re-created" "$?:$([ -d "$wt" ] && echo yes)" "0:yes"
+printf 'x\n' > "$wt/f.txt"; commit "$wt" feat
+(cd "$R" && gsd-wt-finish 1) > "$WORK/out" 2>&1
+is  "…and the -pr phase finishes"       "$?" 0
+git -C "$R" branch -q phase-2-thing; git -C "$R" branch -q phase-2-thing-pr
+is  "a real /gsd-pr-branch helper is still skipped" "$(. "$PKG/lib/common.sh"; gsd_phase_branch "$R" 2)" phase-2-thing
+fails "…and finishing it by name is refused" bash -c 'cd "$1" && gsd-wt-finish phase-2-thing-pr' _ "$R"
+
+section "origin without the base branch, gsd-start -p after another machine's claim"
+R="$WORK/noorigin"; git init -q --bare -b main "$R.git"; mkdir -p "$R/.planning/phases"; git -C "$R" init -qb main
+printf '# Roadmap\n\n### Phase 1: catalog\n' > "$R/.planning/ROADMAP.md"; printf 'install = none\ntest = none\n' > "$R/.gsd.conf"
+commit "$R" init; git -C "$R" remote add origin "$R.git"
+fails "gsd-start on an empty origin refuses" bash -c 'cd "$1" && gsd-start -n "next" --no-launch' _ "$R"
+has   "…saying to push the base branch" "origin has no 'main' branch" "$WORK/out"
+(cd "$R" && gsd-wt-new --phase 1) >/dev/null 2>&1
+fails "gsd-wt-finish on an empty origin refuses" bash -c 'cd "$1" && gsd-wt-finish 1' _ "$R"
+has   "…with the same hint"             "origin has no 'main' branch" "$WORK/out"
+R="$WORK/attach"; project "$R"; git clone -q "$R.git" "$WORK/attach-other"
+printf '\n### Phase 2: other\n' >> "$WORK/attach-other/.planning/ROADMAP.md"; commit "$WORK/attach-other" claim2; git -C "$WORK/attach-other" push -q
+(cd "$R" && gsd-start -p 2 --no-launch) > "$WORK/out" 2>&1
+is  "gsd-start -p sees a phase claimed elsewhere" "$?" 0
 
 section "lint — bash 3.2 traps"
 # macOS bash 3.2 in a UTF-8 locale reads "$VAR…" as a variable named VAR plus

@@ -219,6 +219,9 @@ mv "$R/AGENTS.md" "$R/AGENTS-real.md"; ln -s AGENTS-real.md "$R/AGENTS.md"; rm -
 (cd "$R" && gsd-bootstrap-repo --agent codex) >/dev/null
 assert 'a symlinked AGENTS.md stays a link' '[ -L "$R/AGENTS.md" ] && grep -q "gsd-worktrees:provider:start" "$R/AGENTS-real.md"'
 rm -f "$R/AGENTS.md"; mv "$R/AGENTS-real.md" "$R/AGENTS.md"
+R=$WORK/gitignore-nl; repo "$R"; printf 'node_modules' > "$R/.gitignore"
+(cd "$R" && gsd-bootstrap-repo --agent codex) >/dev/null 2>&1
+assert 'a .gitignore with no final newline keeps its last line' 'grep -qx node_modules "$R/.gitignore" && grep -qx .gsd-install.status "$R/.gitignore"'
 mkdir -p "$WORK/skills/claude/gsd-flow"; echo mine > "$WORK/skills/claude/gsd-flow/user.txt"
 GSD_BIN_DIR=$WORK/bin GSD_CLAUDE_SKILL_DIR=$WORK/skills/claude GSD_CODEX_SKILL_DIR=$WORK/skills/codex GSD_GEMINI_SKILL_DIR=$WORK/skills/gemini "$PKG/install.sh" --all-agents >/dev/null
 for p in claude codex gemini; do assert "$p skills installed" "[ -e '$WORK/skills/$p/gsd-flow/SKILL.md' ]"; done
