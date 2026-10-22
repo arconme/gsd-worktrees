@@ -4,6 +4,24 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.4.9
+
+- In a repo set up with `gsd-init`, the guard blocks GSD skills that clash
+  with one phase per worktree, and names the toolkit command to use:
+  `/gsd-autonomous` and `/gsd-manager` (many phases in one checkout →
+  `gsd-start` per phase, then `/gsd-flow`), `/gsd-workspace` and
+  `/gsd-workstreams` (GSD's own isolation → `gsd-start -n`), and `/gsd-phase`
+  add / `--insert` (unpushed claim → `gsd-start -n` / `--insert`) /
+  `--remove` (renumbers phases that may have worktrees). `/gsd-phase --edit`
+  still works on the base branch. `GSD_SKIP_GUARD=1` escapes.
+- Slash commands you type are now checked too: in a set-up repo the
+  user-level hook applies the whole guard (the repo hook only saw skill
+  calls). In other repos it still checks only `/gsd-new-project` and
+  `/gsd-ingest-docs`.
+- The `gsd-worktrees` skill lists these rules, plus care notes for
+  `/gsd-ship`, `/gsd-complete-milestone`, `/gsd-cleanup`, `/gsd-quick` and
+  `/gsd-progress` — for Codex, which has no hooks, the rules are the guard.
+
 ## 0.4.8
 
 - TDD is on by default: the first `gsd-start` after `gsd-init` sets GSD's

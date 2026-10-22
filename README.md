@@ -291,7 +291,8 @@ Stale toolkit skill links are reported; stale toolkit command links are pruned.
 For Claude and Gemini, install also adds one user-level hook (in
 `~/.claude/settings.json` / `~/.gemini/settings.json`, next to the skills dir)
 that refuses `/gsd-new-project` and `/gsd-ingest-docs` in a repo `gsd-init` has
-not set up — run `gsd-init` instead. It checks nothing else, in any repo.
+not set up — run `gsd-init` instead. In other repos it checks nothing else;
+in a set-up repo it also applies the toolkit's guard to slash commands you type.
 `./install.sh --no-user-hook` leaves it out and removes it.
 
 **Staying up to date (checkout):** run `gsd-sync` — it pulls this repo, pushes your local

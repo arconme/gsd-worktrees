@@ -8,7 +8,17 @@
 #                              up (.gsd.conf). Run alone, they write the plan
 #                              without the toolkit's files; gsd-init installs
 #                              those first, then opens a session that runs them.
-#   1. /gsd-phase            → only on the base branch (the shared claim point).
+#   0b. GSD skills that clash with the worktree model → never in a set-up
+#                              repo; the block names the toolkit command:
+#                                /gsd-autonomous, /gsd-manager   (many phases in
+#                                               one checkout)  → gsd-start + /gsd-flow
+#                                /gsd-workspace, /gsd-workstreams (GSD's own
+#                                               isolation)     → gsd-start
+#                                /gsd-phase, --insert, --remove (unpushed claim;
+#                                               --remove renumbers phases that
+#                                               may have worktrees) → gsd-start
+#                                               -n / --insert. --edit is allowed.
+#   1. /gsd-phase --edit     → only on the base branch (the shared claim point).
 #   2. per-phase commands    → only inside the matching 'phase-<N>-*' worktree.
 #   3. /gsd-execute-phase    → also requires deps installed (background install
 #                              done) — skipped for repos with no install step.
@@ -40,9 +50,11 @@
 #                                           review is already on the base
 #
 # --global: the user-level hook install.sh registers (~/.claude, ~/.gemini).
-# It fires in EVERY repo, including ones that never use this toolkit, so it
-# applies rule 0 only and lets everything else through — an unreadable
-# payload too.
+# It fires in EVERY repo, including ones that never use this toolkit: there
+# (no .gsd.conf) it applies rule 0 only. In a set-up repo it applies every
+# rule — it is the only hook that sees a slash command the user TYPES (Claude
+# UserPromptExpansion); the repo hook sees skill calls. An unreadable payload
+# is let through in this mode.
 #
 # Block = exit 2 (stderr shown). Escape hatch: GSD_SKIP_GUARD=1.
 # Repo settings (base branch, install cmd, flow): .gsd.conf, see gsd-bootstrap-repo.
@@ -182,13 +194,39 @@ case "$cmd" in gsd-new-project|gsd-ingest-docs)
     "BLOCKED: /$cmd needs the gsd-worktrees setup first — this repo has no .gsd.conf." \
     "Run gsd-init in a terminal in this repo instead: it installs the toolkit's files, then opens a session that runs /$cmd. (Or GSD_SKIP_GUARD=1 if the user asked to skip it.)" ;;
 esac
-[ "$GLOBAL" = 0 ] || exit 0
+[ "$GLOBAL" = 0 ] || [ -f "$dir/.gsd.conf" ] || exit 0
+
+# Rule 0b — GSD skills that clash with one-phase-per-worktree (set-up repos)
+if [ -f "$dir/.gsd.conf" ]; then
+  clash() {  # $1=why  $2=what to run instead
+    block "BLOCKED: /$cmd does not work with gsd-worktrees — $1." \
+          "Instead: $2   (or GSD_SKIP_GUARD=1 if the user asked for it anyway)"
+  }
+  case "$cmd" in
+    gsd-autonomous) clash "it runs every phase in this one checkout and skips the review, validate and secure gates" \
+      "gsd-start -n \"<desc>\" (or -p <N>) per phase, then /gsd-flow in that phase's worktree" ;;
+    gsd-manager) clash "it runs several phases as background agents in one checkout, and two writers in one checkout are not safe" \
+      "gsd-list to see every phase, gsd-start per phase (each gets its own worktree and session)" ;;
+    gsd-workspace|gsd-workstreams) clash "it is GSD's own isolation (its own worktrees and .planning/), which fights the toolkit's" \
+      "gsd-start -n \"<desc>\" — one worktree per phase, phases run in parallel" ;;
+    gsd-phase)
+      case " $args " in
+        *" --edit "*) ;;
+        *" --remove "*) clash "--remove renumbers every later phase, and a phase already started keeps a worktree and branch with its old number" \
+          "check gsd-list first; only when no later phase is in flight, run it on $BASE with GSD_SKIP_GUARD=1" ;;
+        *" --insert "*) clash "its claim is not pushed, so two sessions can take the same number, and it leaves out the ROADMAP rows" \
+          "gsd-start --insert <N> \"<desc>\"" ;;
+        *) clash "its claim is not pushed, so two sessions can take the same number, and it leaves out the ROADMAP rows" \
+          "gsd-start -n \"<desc>\"" ;;
+      esac ;;
+  esac
+fi
 
 # Rule 1 — /gsd-phase only on the base branch
 if [ "$cmd" = "gsd-phase" ]; then
   [ "$branch" = "$BASE" ] && exit 0
   block "BLOCKED: /gsd-phase must run on '$BASE' (main checkout), not '$branch'." \
-        "Claim the phase number on $BASE first. See .gsd/INSTRUCTIONS.md."
+        "ROADMAP.md changes go through $BASE. See .gsd/INSTRUCTIONS.md."
 fi
 
 # Per-phase ("feature work") commands

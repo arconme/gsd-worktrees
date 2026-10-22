@@ -21,6 +21,25 @@ two. Run alone, they write the plan without that setup. Claude and Gemini have
 a user-level hook (from `install.sh`) that blocks it; Codex has no hooks, so
 there this rule is the only guard.
 
+**GSD skills that clash with worktrees.** In a GSD-fitted repo the guard
+blocks these (Codex: these rules are the guard). Use the toolkit command:
+
+| Don't run | Why | Run instead |
+|---|---|---|
+| `/gsd-autonomous` | every phase in one checkout; skips review, validate, secure | `gsd-start` per phase, then `/gsd-flow` |
+| `/gsd-manager` | several phases as background agents in one checkout | `gsd-list`, then `gsd-start` per phase |
+| `/gsd-workspace`, `/gsd-workstreams` | GSD's own isolation fights the toolkit's | `gsd-start -n "<desc>"` |
+| `/gsd-phase` (add), `--insert` | the claim is not pushed (number races), ROADMAP rows missing | `gsd-start -n` / `gsd-start --insert <N>` |
+| `/gsd-phase --remove` | renumbers later phases that may have worktrees | only when `gsd-list` shows no later phase in flight |
+
+`/gsd-phase --edit` is fine, on the base branch. Not blocked, but take care:
+`/gsd-ship` opens a PR without `gsd-finish`'s gates — use `gsd-finish --pr`
+(`/gsd-pr-branch` is fine: `gsd-finish --pr` uses its `-pr` branch).
+`/gsd-complete-milestone` and `/gsd-cleanup` reshape ROADMAP.md and move phase
+folders — only on the base branch with no phase in flight. `/gsd-quick` on the
+base branch lands code without `gsd-finish`'s checks — use it inside a phase
+worktree. For "what next", trust `gsd-flow-next` over `/gsd-progress`.
+
 ## The rule that matters most
 
 **Never claim a phase without checking first.** Run `gsd-list`, read it, and

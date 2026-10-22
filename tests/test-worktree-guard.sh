@@ -239,5 +239,30 @@ for c in bash cat dirname sed head grep git python3 tr awk env readlink; do ln -
 rm -f "$BARE/.gsd.conf"
 gis "no jq: the Python reader takes the cwd too → blocked" "$(printf '%s' "$(upe gsd-new-project "$BARE")" | PATH="$NOJQ" env -u CLAUDE_PROJECT_DIR "$GUARD" --global >/dev/null 2>"$WORK/err"; echo $?)" 2
 
+section "rule 0b — GSD skills that clash with the worktree model (set-up repos)"
+mkrepo "" phase-7-thing 07-thing
+says() { grep -q -- "$1" "$WORK/err" && ok "…$2" || bad "…$2" "$(cat "$WORK/err")"; }
+blocked "/gsd-autonomous is blocked"              gsd-autonomous ""
+says "gsd-start" "and names gsd-start instead"
+blocked "/gsd-manager is blocked"                 gsd-manager ""
+blocked "/gsd-workspace is blocked"               gsd-workspace "--new feature"
+blocked "/gsd-workstreams is blocked"             gsd-workstreams "create x"
+blocked "/gsd-phase (add) is blocked"             gsd-phase "checkout flow"
+says 'gsd-start -n' "and names gsd-start -n"
+blocked "/gsd-phase --insert is blocked"          gsd-phase "--insert 7 hotfix"
+says 'gsd-start --insert' "and names gsd-start --insert"
+blocked "/gsd-phase --remove is blocked"          gsd-phase "--remove 9"
+says 'renumbers' "and says why"
+git -C "$REPO" checkout -q develop
+allowed "/gsd-phase --edit on the base passes"    gsd-phase "--edit 7"
+blocked "/gsd-autonomous on the base is blocked too" gsd-autonomous ""
+GSD_SKIP_GUARD=1 allowed "GSD_SKIP_GUARD=1 escapes"  gsd-autonomous ""
+git -C "$REPO" checkout -q phase-7-thing
+blocked "/gsd-phase --edit off the base is blocked (rule 1)" gsd-phase "--edit 7"
+gis "--global: typed /gsd-autonomous in a set-up repo → blocked" "$(gg "$(upe gsd-autonomous "$REPO")")" 2
+git -C "$REPO" checkout -q develop
+gis "--global: typed feature work on the base of a set-up repo → blocked (all rules apply)" "$(gg "$(upe gsd-discuss-phase "$REPO")")" 2
+gis "--global: /gsd-autonomous in a repo without .gsd.conf → allowed" "$(gg "$(upe gsd-autonomous "$BARE")")" 0
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

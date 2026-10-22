@@ -13,7 +13,8 @@
 # Claude and Gemini also get a user-level hook (next to their skills dir:
 # ~/.claude/settings.json, ~/.gemini/settings.json). It refuses /gsd-new-project
 # and /gsd-ingest-docs in a repo gsd-init has not set up, and nothing else
-# (gsd-worktree-guard --global). --no-user-hook leaves it out (and removes it).
+# there; in a set-up repo it applies the whole guard (gsd-worktree-guard
+# --global). --no-user-hook leaves it out (and removes it).
 #
 # Env:
 #   GSD_BIN_DIR   install target (default: ~/.local/bin)
