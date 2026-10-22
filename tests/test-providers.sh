@@ -215,6 +215,10 @@ printf 'user prefix\n<!-- gsd-worktrees:provider:start -->\nold owned block\n<!-
 assert 'owned-block update preserves user suffix without newline' '[ "$(tail -c 9 "$R/AGENTS.md")" = "user tail" ]'
 before=$(cksum "$R/AGENTS.md"); (cd "$R" && gsd-bootstrap-repo --agent codex) >/dev/null
 assert 'byte-preserving owned update is idempotent' '[ "$before" = "$(cksum "$R/AGENTS.md")" ]'
+mv "$R/AGENTS.md" "$R/AGENTS-real.md"; ln -s AGENTS-real.md "$R/AGENTS.md"; rm -rf "$R/.gsd"
+(cd "$R" && gsd-bootstrap-repo --agent codex) >/dev/null
+assert 'a symlinked AGENTS.md stays a link' '[ -L "$R/AGENTS.md" ] && grep -q "gsd-worktrees:provider:start" "$R/AGENTS-real.md"'
+rm -f "$R/AGENTS.md"; mv "$R/AGENTS-real.md" "$R/AGENTS.md"
 mkdir -p "$WORK/skills/claude/gsd-flow"; echo mine > "$WORK/skills/claude/gsd-flow/user.txt"
 GSD_BIN_DIR=$WORK/bin GSD_CLAUDE_SKILL_DIR=$WORK/skills/claude GSD_CODEX_SKILL_DIR=$WORK/skills/codex GSD_GEMINI_SKILL_DIR=$WORK/skills/gemini "$PKG/install.sh" --all-agents >/dev/null
 for p in claude codex gemini; do assert "$p skills installed" "[ -e '$WORK/skills/$p/gsd-flow/SKILL.md' ]"; done
@@ -233,7 +237,8 @@ ours() { jq '[.hooks[]?[]?.hooks[]? | select(.command | test("gsd-worktree-guard
 uinstall --all-agents
 assert 'claude settings get the Skill + UserPromptExpansion hooks' '[ "$(ours "$UH/claude/settings.json")" = 2 ]'
 assert '…next to the user'"'"'s own hook and keys' 'jq -e ".model == \"opus\" and any(.hooks.PreToolUse[]; .matcher == \"Bash\")" "$UH/claude/settings.json" >/dev/null'
-assert 'typed slash commands are covered (matcher gsd)' 'jq -e "any(.hooks.UserPromptExpansion[]; .matcher == \"gsd\")" "$UH/claude/settings.json" >/dev/null'
+# the matcher is a regex: a bare word "gsd" is an exact match and never fires for /gsd-new-project
+assert 'typed slash commands are covered (matcher gsd.*)' 'jq -e "any(.hooks.UserPromptExpansion[]; .matcher == \"gsd.*\")" "$UH/claude/settings.json" >/dev/null'
 assert 'gemini settings get the activate_skill hook' 'jq -e "[.hooks.BeforeTool[] | select(.matcher == \"activate_skill\")] | length == 1" "$UH/gemini/settings.json" >/dev/null'
 assert 'codex gets no settings file' '[ ! -e "$UH/codex/settings.json" ]'
 uinstall --reuse-install-config
@@ -253,6 +258,13 @@ assert 'a later reinstall keeps it off' '[ "$(ours "$UH/claude/settings.json")" 
 printf '{"disableAllHooks":true}\n' > "$UH/claude/settings.json"
 GSD_BIN_DIR=$UH/bin2 GSD_CLAUDE_SKILL_DIR=$UH/claude/skills "$PKG/install.sh" --agent claude >/dev/null
 assert 'hooks turned off by the user → left unchanged' '[ "$(cat "$UH/claude/settings.json")" = "{\"disableAllHooks\":true}" ]'
+printf '{}\n' > "$UH/real-settings.json"; chmod 600 "$UH/real-settings.json"
+rm -f "$UH/claude/settings.json"; ln -s "$UH/real-settings.json" "$UH/claude/settings.json"
+GSD_BIN_DIR=$UH/bin2 GSD_CLAUDE_SKILL_DIR=$UH/claude/skills "$PKG/install.sh" --agent claude >/dev/null
+assert 'a symlinked settings.json stays a link…' '[ -L "$UH/claude/settings.json" ]'
+assert '…and the hook is written to its target' '[ "$(ours "$UH/real-settings.json")" = 2 ]'
+assert '…keeping its 0600 mode' '[ "$(ls -l "$UH/real-settings.json" | cut -c1-10)" = "-rw-------" ]'
+rm -f "$UH/claude/settings.json"
 printf 'not json' > "$UH/claude/settings.json"
 GSD_BIN_DIR=$UH/bin2 GSD_CLAUDE_SKILL_DIR=$UH/claude/skills "$PKG/install.sh" --agent claude >/dev/null
 assert 'broken settings JSON → left unchanged' '[ "$(cat "$UH/claude/settings.json")" = "not json" ]'

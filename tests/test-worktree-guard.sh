@@ -54,6 +54,8 @@ blocked "plan-phase without CONTEXT is blocked"  gsd-plan-phase "7"
 allowed "plan-phase --prd skips discuss"         gsd-plan-phase "7 --prd docs/x.md"
 : > "$PDIR/07-CONTEXT.md"
 allowed "plan-phase with CONTEXT passes"         gsd-plan-phase "7"
+allowed "a number inside a path is not the phase" gsd-plan-phase "--files src/v2/a.ts"
+blocked "…but a real other phase number still is" gsd-plan-phase "2 --files src/v7/a.ts"
 allowed "discuss-phase itself is never gated"    gsd-discuss-phase "7"
 
 section "flow = strict — execute-phase needs the cross-AI review"
@@ -255,6 +257,8 @@ blocked "/gsd-phase --remove is blocked"          gsd-phase "--remove 9"
 says 'renumbers' "and says why"
 git -C "$REPO" checkout -q develop
 allowed "/gsd-phase --edit on the base passes"    gsd-phase "--edit 7"
+blocked "…but --remove with --edit is still blocked" gsd-phase "--remove 3 --edit"
+blocked "…and --edit --insert is still blocked" gsd-phase "--edit --insert 3 x"
 blocked "/gsd-autonomous on the base is blocked too" gsd-autonomous ""
 GSD_SKIP_GUARD=1 allowed "GSD_SKIP_GUARD=1 escapes"  gsd-autonomous ""
 git -C "$REPO" checkout -q phase-7-thing

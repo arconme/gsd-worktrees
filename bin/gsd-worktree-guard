@@ -159,7 +159,9 @@ cmd=${cmd#/}
 case "$cmd" in gsd:*) cmd="gsd-${cmd#gsd:}" ;; esac   # namespaced form of a GSD skill
 case "$cmd" in gsd-*) ;; *) exit 0 ;; esac   # not a GSD command → allow
 
-N=$(printf '%s' "$args" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1 || true)
+# The phase is the first word that is only a number: a number inside a path or
+# a name (--files src/v2/a.ts, --prd docs/r3.md) is not a phase.
+N=$(printf '%s' "$args" | tr -s '[:space:]' '\n' | sed 's/^--phase=//' | grep -E '^[0-9]+(\.[0-9]+)?$' | head -1 || true)
 # Phase numbers come padded or not: dirs are 08-slug, integer branches are
 # phase-8-slug, gsd-sdk decimal inserts are 02.1 in both. Compare numerically.
 pnorm() { local int=${1%%.*}; printf '%s' "$((10#$int))${1#"$int"}"; }
@@ -210,12 +212,12 @@ if [ -f "$dir/.gsd.conf" ]; then
     gsd-workspace|gsd-workstreams) clash "it is GSD's own isolation (its own worktrees and .planning/), which fights the toolkit's" \
       "gsd-start -n \"<desc>\" — one worktree per phase, phases run in parallel" ;;
     gsd-phase)
-      case " $args " in
-        *" --edit "*) ;;
+      case " $args " in   # --remove/--insert win over --edit: "--remove 3 --edit" still removes
         *" --remove "*) clash "--remove renumbers every later phase, and a phase already started keeps a worktree and branch with its old number" \
           "check gsd-list first; only when no later phase is in flight, run it on $BASE with GSD_SKIP_GUARD=1" ;;
         *" --insert "*) clash "its claim is not pushed, so two sessions can take the same number, and it leaves out the ROADMAP rows" \
           "gsd-start --insert <N> \"<desc>\"" ;;
+        *" --edit "*) ;;
         *) clash "its claim is not pushed, so two sessions can take the same number, and it leaves out the ROADMAP rows" \
           "gsd-start -n \"<desc>\"" ;;
       esac ;;

@@ -289,7 +289,7 @@ if not isinstance(data, dict) or not isinstance(data.get("hooks", {}), dict):
 if mode == "on" and (data.get("disableAllHooks") is True or (data.get("hooksConfig") or {}).get("enabled") is False):
     print("• hooks are turned off in %s; %s user hook not added" % (path, provider)); sys.exit(0)
 hooks = data.setdefault("hooks", {})
-wanted = {"claude": [("PreToolUse", "Skill"), ("UserPromptExpansion", "gsd")],
+wanted = {"claude": [("PreToolUse", "Skill"), ("UserPromptExpansion", "gsd.*")],
           "gemini": [("BeforeTool", "activate_skill")]}[provider]
 def ours(h):
     c = h.get("command", "") if isinstance(h, dict) else ""
@@ -318,10 +318,16 @@ if not hooks:
     del data["hooks"]
 new = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 if new != text:
-    tmp = path + ".gsd-tmp"
+    # write through a symlink (dotfile repos link settings.json) and keep the mode
+    real = os.path.realpath(path)
+    tmp = real + ".gsd-tmp"
     with open(tmp, "w") as f:
         f.write(new)
-    os.replace(tmp, path)
+    try:
+        os.chmod(tmp, os.stat(real).st_mode & 0o7777)
+    except FileNotFoundError:
+        pass
+    os.replace(tmp, real)
 if mode == "on":
     print("✔ %s user hook: /gsd-new-project only after gsd-init → %s" % (provider, path))
 elif new != text:

@@ -221,7 +221,8 @@ gsd_replace_owned_block() { # file, kind, new block file; caller prevalidates
       s/^<!-- gsd-worktrees:\Q$kind\E:start -->\n.*?^<!-- gsd-worktrees:\Q$kind\E:end -->(?:\n|\z)/$block/msg;
     } else { $_ .= (length && !/\n\z/ ? "\n" : "") . "\n" . $block; }
   ' "${1:-/dev/null}" > "$tmp" || { rm -f "$tmp"; return 1; }
-  mv "$tmp" "$1"
+  # a linked file (AGENTS.md -> CLAUDE.md, dotfile repos) is written through, not replaced
+  if [ -L "$1" ]; then cat "$tmp" > "$1" && rm -f "$tmp"; else mv "$tmp" "$1"; fi
 }
 
 gsd_command_guards_active() { # toolkit package; native hook/shim is not required
