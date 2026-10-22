@@ -155,7 +155,7 @@ has CONTEXT.md || emit discuss "/gsd-discuss-phase $N" "$discuss_then" "discuss 
 PLANS=""
 for f in "$pd/$P"-[0-9]*-PLAN.md; do [ ! -f "$f" ] || PLANS=yes; done
 if [ -z "$UI" ] && [ -z "$PLANS" ]; then
-  emit ui-decision "" "" "ask the user: does phase $N have screens? then re-run with --ui or --no-ui" "UI is agreed BEFORE planning; plan-phase would otherwise auto-generate an un-agreed UI-SPEC"
+  emit ui-decision "" "" "does phase $N have screens? if the user already said (discuss, ticket, this session), use that; otherwise ask once. Then re-run with --ui or --no-ui" "UI is agreed BEFORE planning; plan-phase would otherwise auto-generate an un-agreed UI-SPEC"
 fi
 # 3b design system + layout — decided before the UI-SPEC, so the spec (and
 # ui-review, which checks code against it) has a layout to hold the screens to.
@@ -176,7 +176,7 @@ fi
 # 4 ui-phase
 if [ "$UI" = yes ] && ! has UI-SPEC.md; then
   ui_note=""; [ "$GATES" = off ] || ui_note="follow .planning/design/DESIGN.md and ${pd#"$REPO"/}/$P-LAYOUT.md (the chosen sketch); add the layout: sections top to bottom, the one main focus, the main button"
-  emit ui-phase "/gsd-ui-phase $N" "" "the user must agree the screens before planning" "$ui_note"
+  emit ui-phase "/gsd-ui-phase $N" "" "run it now, without asking first; when it is done, the user must agree the screens before planning" "$ui_note"
 fi
 # 5 plan — always settle the research question, or plan-phase stops to ask
 # it (it asks whenever RESEARCH.md is missing and no flag was given). Never
@@ -238,7 +238,7 @@ fi
 # 9 verify-work
 UATS=""; OPEN=""
 for u in "$pd/$P"-*UAT.md; do [ -f "$u" ] || continue; UATS=yes; st=$(sed -n '/^---$/,/^---$/p' "$u" | sed -n -E 's/^status:[[:space:]]*//p' | head -1 | tr -d '[:space:]'); case "$st" in pending|partial) OPEN="$OPEN $(basename "$u")($st)";; esac; done
-if [ -z "$UATS" ]; then emit verify-work "/gsd-verify-work $N" "" "" "agent-driven UAT walk (Playwright/screenshots), recorded as agent-verified"
+if [ -z "$UATS" ]; then emit verify-work "/gsd-verify-work $N" "" "" "agent-driven UAT walk (Playwright/screenshots), recorded as agent-verified. Use headless Playwright (no window) — never the user's own browser (Claude in Chrome, the browser pane, open <url>)"
 elif [ -n "$OPEN" ]; then emit verify-work "/gsd-verify-work $N" "" "" "open UAT items:$OPEN"; fi
 # 10 code review
 if ! has REVIEW.md; then emit code-review "/gsd-code-review $N" "" "" "execute-phase normally produces this; missing means it errored"
