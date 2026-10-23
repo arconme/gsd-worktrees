@@ -2,7 +2,7 @@
 # test-tracker.sh — tickets: id parsing, gsd-tracker with none / custom /
 # clickup, the gsd-clickup alias, and the ticket paths through gsd-start,
 # gsd-finish and gsd-doctor.
-# CI-safe: the ClickUp API is a curl stub, gsd-sdk and gh are stubbed, and
+# CI-safe: the ClickUp API is a curl stub, gsd_run (GSD) and gh are stubbed, and
 # remotes are local bare repos.
 set -uo pipefail
 PKG=$(cd "$(dirname "$0")/.." && pwd)
@@ -26,14 +26,15 @@ commit() { git -C "$1" add -A; git -C "$1" commit -qm "${2:-c}"; }
 
 # ── stubs ────────────────────────────────────────────────────────────────────
 mkdir -p "$WORK/stub"
-cat > "$WORK/stub/gsd-sdk" <<'SDK'
+cat > "$WORK/stub/gsd_run" <<'SDK'
 #!/usr/bin/env bash
 case "$1 $2" in
+  "runtime-identity --raw") echo '{"packageName":"@opengsd/gsd-core","version":"1.18.0"}' ;;
   "query phase.add")
     rm="$5/.planning/ROADMAP.md"
     n=$(grep -oE '^### Phase [0-9]+:' "$rm" | grep -oE '[0-9]+' | sort -n | tail -1)
     printf '\n### Phase %s: %s\n' "$((n + 1))" "$3" >> "$rm" ;;
-  *) echo "stub gsd-sdk: unsupported $*" >&2; exit 1 ;;
+  *) echo "stub gsd_run: unsupported $*" >&2; exit 1 ;;
 esac
 SDK
 cat > "$WORK/stub/gh" <<'GH'
@@ -81,7 +82,8 @@ case "$m $path" in
 esac
 printf '%s\n%s' "$out" "$code"
 CURL
-chmod +x "$WORK/stub/gsd-sdk" "$WORK/stub/gh" "$WORK/stub/curl"
+chmod +x "$WORK/stub/gsd_run" "$WORK/stub/gh" "$WORK/stub/curl"
+export GSD_CLI="$WORK/stub/gsd_run"
 export CURL_LOG="$WORK/curl.log"
 
 # a custom tracker: logs its argv and GSD_TRACKER_STATUS; FAIL-* ids fail

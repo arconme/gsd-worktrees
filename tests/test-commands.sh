@@ -2,7 +2,7 @@
 # test-commands.sh — command paths no other suite exercised: gsd-derive-port,
 # gsd-start's refusals / --insert / -p / --flow / TDD default, a conflicting finish, stale
 # lock reclaim, gsd-init's docs detection, and gsd-finish --pr.
-# CI-safe: gsd-sdk and gh are stubbed; remotes are local bare repos.
+# CI-safe: GSD's gsd_run and gh are stubbed; remotes are local bare repos.
 # (gsd-tracker has its own suite: tests/test-tracker.sh.)
 set -uo pipefail
 PKG=$(cd "$(dirname "$0")/.." && pwd)
@@ -22,11 +22,12 @@ commit() { git -C "$1" add -A; git -C "$1" commit -qm "${2:-c}"; }
 
 # ── stubs ────────────────────────────────────────────────────────────────────
 mkdir -p "$WORK/stub"
-# gsd-sdk: phase.add appends the next integer phase; phase.insert adds a
-# zero-padded decimal after phase $3 (as gsd-sdk 1.42 does) and prints JSON.
-cat > "$WORK/stub/gsd-sdk" <<'SDK'
+# gsd_run (gsd-core): phase.add appends the next integer phase; phase.insert
+# adds a zero-padded decimal after phase $3 (as gsd-core does) and prints JSON.
+cat > "$WORK/stub/gsd_run" <<'SDK'
 #!/usr/bin/env bash
 case "$1 $2" in
+  "runtime-identity --raw") echo '{"packageName":"@opengsd/gsd-core","version":"1.18.0"}' ;;
   "query phase.add")
     rm="$5/.planning/ROADMAP.md"
     n=$(grep -oE '^### Phase [0-9]+:' "$rm" | grep -oE '[0-9]+' | sort -n | tail -1)
@@ -46,7 +47,7 @@ d[parts[-1]] = {"true": True, "false": False}.get(val, val)
 json.dump(c, open(f, "w"), indent=2)
 PY
     ;;
-  *) echo "stub gsd-sdk: unsupported $*" >&2; exit 1 ;;
+  *) echo "stub gsd_run: unsupported $*" >&2; exit 1 ;;
 esac
 SDK
 # gh: record the call, print a PR URL.
@@ -55,7 +56,8 @@ cat > "$WORK/stub/gh" <<'GH'
 printf '%s\n' "$*" >> "$GH_LOG"
 echo "https://github.com/example/shop/pull/1"
 GH
-chmod +x "$WORK/stub/gsd-sdk" "$WORK/stub/gh"
+chmod +x "$WORK/stub/gsd_run" "$WORK/stub/gh"
+export GSD_CLI="$WORK/stub/gsd_run"
 export GH_LOG="$WORK/gh.log"
 
 project() {  # $1=dir — repo on main + bare origin, roadmap with phase 1
@@ -87,6 +89,14 @@ fails "-n and -p together are refused"  bash -c 'cd "$1" && gsd-start -n x -p 1 
 fails "-p of a phase not in the roadmap" bash -c 'cd "$1" && gsd-start -p 9 --no-launch' _ "$R"
 has   "…and says so"                    "phase 9 not found" "$WORK/out"
 fails "re-claiming an existing title"   bash -c 'cd "$1" && gsd-start -n "Catalog" --no-launch' _ "$R"
+# only the old GSD (get-shit-done-cc's gsd-sdk) → refused, with the way to migrate.
+# A bare PATH and an empty HOME, so no gsd-core of this machine is found.
+mkdir -p "$WORK/oldgsd" "$WORK/oldhome"
+printf '#!/bin/sh\necho 1.42.0\n' > "$WORK/oldgsd/gsd-sdk"; chmod +x "$WORK/oldgsd/gsd-sdk"
+fails "only the old GSD (gsd-sdk) → a claim is refused" env -u GSD_CLI -u CLAUDE_CONFIG_DIR -u CODEX_HOME \
+  HOME="$WORK/oldhome" PATH="$PKG/bin:$WORK/oldgsd:/usr/bin:/bin" bash -c 'cd "$1" && gsd-start -n "cart" --no-launch' _ "$R"
+has   "…and says to move to gsd-core"   "only the old GSD (get-shit-done-cc) is installed" "$WORK/out"
+has   "…with the install command"       "npx @opengsd/gsd-core@latest --claude --global" "$WORK/out"
 
 section "gsd-start — claim, attach, insert, flow mode"
 (cd "$R" && gsd-start -n "shopping cart" --no-launch) > "$WORK/out" 2>&1

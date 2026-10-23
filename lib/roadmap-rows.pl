@@ -2,7 +2,7 @@
 #
 # roadmap-rows.pl — give a freshly claimed phase its ROADMAP.md bookkeeping rows.
 #
-# `gsd-sdk query phase.add` / `phase.insert` write only the `### Phase N:`
+# `gsd_run query phase.add` / `phase.insert` (gsd-core, as gsd-sdk before it) write only the `### Phase N:`
 # section (plus a `- [ ] TBD (run /gsd-plan-phase N …)` line). No checklist row
 # and no Progress row — so gsd-doctor reports T022/T023, and phase.complete,
 # which ticks the FIRST unticked line matching "Phase N", would tick the TBD line

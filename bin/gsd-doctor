@@ -223,15 +223,25 @@ if command -v perl >/dev/null 2>&1; then
 else
   fail "perl not found — claims cannot add roadmap rows and the roadmap check is skipped" "install perl" "T006"
 fi
-if ! command -v gsd-sdk >/dev/null 2>&1; then
-  fail "gsd-sdk not on PATH (GSD not installed?) — gsd-start cannot claim phases" "$GSD_GSD_UPDATE_CMD" "T005"
+# GSD itself: gsd-core's gsd_run (lib/common.sh gsd_cli). The old
+# get-shit-done-cc (gsd-sdk) is not enough any more.
+case "$DOCTOR_PROVIDER" in codex) gsd_agent=codex ;; *) gsd_agent=claude ;; esac
+if gsd_run=$(gsd_cli); then
+  pass "gsd-core $(gsd_gsd_installed) ($gsd_run)"
+  command -v gsd-sdk >/dev/null 2>&1 \
+    && note "the old GSD (get-shit-done-cc) is still installed too — remove it: npm rm -g get-shit-done-cc"
+elif command -v gsd-sdk >/dev/null 2>&1; then
+  fail "only the old GSD (get-shit-done-cc) is installed — gsd-worktrees now needs gsd-core; gsd-start cannot claim phases" "$GSD_CORE_INSTALL --$gsd_agent --global (see docs/migration.md)" "T005"
+else
+  fail "GSD (gsd-core) not found — gsd-start cannot claim phases" "$GSD_CORE_INSTALL --$gsd_agent --global" "T005"
 fi
 
 # GSD hooks that run a file that is gone. The agent shows little or nothing
-# (a guard just stops guarding), so this is a finding. The usual cause: GSD's
-# installer writes the absolute node path, and nvm/Volta/fnm/asdf move it on
-# every Node upgrade. Re-running the installer writes the current path; doctor
-# never edits these files (GSD owns its entries).
+# (a guard just stops guarding), so this is a finding. The usual cause: the
+# old GSD wrote the absolute node path, and nvm/Volta/fnm/asdf move it on
+# every Node upgrade (gsd-core finds node when the hook runs). Running
+# gsd-core's installer rewrites its hooks — the status line only with
+# --force-statusline. Doctor never edits these files (GSD owns its entries).
 stale_hooks=$(gsd_stale_hooks "$MAIN")
 if [ -z "$stale_hooks" ]; then
   pass "no GSD hook runs a missing file"
@@ -240,26 +250,16 @@ else
     rows=$(printf '%s\n' "$stale_hooks" | awk -F '\t' -v f="$f" '$1 == f')
     n=$(printf '%s\n' "$rows" | cut -f4 | sort -u | wc -l | tr -d ' ')
     gone=$(printf '%s\n' "$rows" | cut -f6 | awk '!seen[$0]++' | head -2 | paste -sd ',' - | sed 's/,/, /g')
-    why=""; dead=$(printf '%s\n' "$rows" | cut -f6 | grep '/node$' | head -1)
-    [ -z "$dead" ] || why=" (a Node upgrade moved it; GSD saves the exact node path)"
-    # A gone script comes back when its installer runs again. A gone node
-    # does not: GSD's installer keeps a hook it already has, stale or not, so
-    # the saved path has to be swapped by hand.
-    fix=""
-    if printf '%s\n' "$rows" | cut -f6 | grep -qv '/node$'; then
-      if printf '%s\n' "$rows" | cut -f3 | grep -qx toolkit; then
-        fix=$REINSTALL
-      else
-        agent=claude
-        for p in gemini codex; do [ "$f" = "$(gsd_provider_user_hook_file "$p")" ] && agent=$p; done
-        case "$f" in "$MAIN"/.gemini/*) agent=gemini ;; esac
-        scope=global; printf '%s\n' "$rows" | cut -f2 | grep -qx project && scope=local
-        fix="npx get-shit-done-cc@latest --$agent --$scope"
-      fi
-    fi
-    if [ -n "$dead" ]; then
-      now=$(command -v node 2>/dev/null) || now="<your node>"
-      fix="${fix:+$fix, then }in $f replace $dead with $now"
+    why=""; printf '%s\n' "$rows" | cut -f6 | grep -q '/node$' && why=" (a Node upgrade moved it; the old GSD saved the exact node path)"
+    if printf '%s\n' "$rows" | cut -f3 | grep -qx toolkit; then
+      fix=$REINSTALL
+    else
+      agent=claude
+      [ "$f" != "$(gsd_provider_user_hook_file codex)" ] || agent=codex
+      case "$f" in "$MAIN"/.codex/*) agent=codex ;; esac
+      scope=global; printf '%s\n' "$rows" | cut -f2 | grep -qx project && scope=local
+      fix="$GSD_CORE_INSTALL --$agent --$scope"
+      printf '%s\n' "$rows" | cut -f5 | grep -qx statusLine && fix="$fix --force-statusline"
     fi
     fail "$n GSD hook(s) in $f run a missing file: $gone$why — they fail silently" "$fix" "T008"
   done <<EOF
@@ -283,17 +283,17 @@ fi
 
 # GSD itself: is a newer release on npm? A note, never a finding — the parsers
 # in lib/ track the installed version, and upgrading is the user's call.
-if [ -z "${GSD_NO_UPDATE_CHECK:-}" ] && command -v gsd-sdk >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-  have=$(gsd_gsd_installed)
+have=$(gsd_gsd_installed)
+if [ -z "${GSD_NO_UPDATE_CHECK:-}" ] && [ -n "$have" ] && command -v npm >/dev/null 2>&1; then
   gsd_gsd_stale && gsd_gsd_refresh; want=$(gsd_gsd_cached)
-  if [ -z "$have" ] || [ -z "$want" ]; then
-    note "gsd-sdk ${have:-?} installed (npm not reachable — latest unknown)"
+  if [ -z "$want" ]; then
+    note "gsd-core $have installed (npm not reachable — latest unknown)"
   elif [ "$have" = "$want" ]; then
-    pass "gsd-sdk $have is the latest on npm"
+    pass "gsd-core $have is the latest on npm"
   elif gsd_version_gt "$want" "$have"; then
-    update GSD "$have" "$want" "$GSD_GSD_UPDATE_CMD (then re-check gsd-list/gsd-planning-repair)"
+    update gsd-core "$have" "$want" "$GSD_GSD_UPDATE_CMD --$gsd_agent --global (then re-check gsd-list/gsd-planning-repair)"
   else
-    note "gsd-sdk $have installed, ahead of npm latest ($want)"
+    note "gsd-core $have installed, ahead of npm latest ($want)"
   fi
 fi
 
@@ -726,7 +726,7 @@ if { [ "$FLOW_ON" = 1 ] || [ "$UI_ON" = 1 ]; } && [ -f "$MAIN/.planning/ROADMAP.
     [ -n "$n" ] || continue
     awk -v a="$n" -v b="$SINCE" 'BEGIN{exit !(a+0 >= b+0)}' || continue
     case "$SKIP" in *" $(pn "$n") "*) skipped="$skipped $n"; continue ;; esac
-    # dirs come padded (07-, 02.1- from gsd-sdk) or not (7.1-): try both, and
+    # dirs come padded (07-, 02.1- from GSD) or not (7.1-): try both, and
     # take the artifact prefix from the dir that exists
     ni=$((10#${n%%.*})); case "$n" in *.*) nd=".${n#*.}" ;; *) nd="" ;; esac
     pd=""; for c in "$(printf '%02d' "$ni")$nd" "$ni$nd"; do

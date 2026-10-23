@@ -107,16 +107,18 @@ gsd-start -p 1 "some text" --repo "$WORK/r05" --no-launch > "$WORK/out" 2>&1 || 
 check "warning names the ignored text" 'grep -q "ignoring \"some text\"" "$WORK/out"'
 
 section "R15 — two sessions claiming at once: the loser renumbers, nobody's claim is lost"
-# Stand-in for gsd-sdk (not on CI runners): phase.add appends the next number.
+# Stand-in for gsd-core's gsd_run (not on CI runners): phase.add appends the next number.
 mkdir -p "$WORK/stub"
-cat > "$WORK/stub/gsd-sdk" <<'SDK'
+cat > "$WORK/stub/gsd_run" <<'SDK'
 #!/usr/bin/env bash
+[ "$1" != runtime-identity ] || { echo '{"packageName":"@opengsd/gsd-core","version":"1.18.0"}'; exit 0; }
 [ "$1 $2" = "query phase.add" ] || { echo "stub: unsupported $*" >&2; exit 1; }
 desc=$3; dir=$5; rm="$dir/.planning/ROADMAP.md"
 n=$(grep -oE '^### Phase [0-9]+' "$rm" | grep -oE '[0-9]+' | sort -n | tail -1)
 printf '\n### Phase %s: %s\n' "$((n + 1))" "$desc" >> "$rm"
 SDK
-chmod +x "$WORK/stub/gsd-sdk"
+chmod +x "$WORK/stub/gsd_run"
+export GSD_CLI="$WORK/stub/gsd_run"
 git init -q --bare -b main "$WORK/r15.git"
 R="$WORK/r15"; mkdir -p "$R/.planning"; git -C "$R" init -qb main
 printf '# Roadmap\n\n### Phase 1: first\n' > "$R/.planning/ROADMAP.md"

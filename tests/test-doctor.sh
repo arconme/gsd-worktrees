@@ -13,7 +13,7 @@ export HOME="$WORK/home"; mkdir -p "$HOME"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export GSD_NO_UPDATE_CHECK=1 GSD_CLAUDE_SKILL_DIR="$WORK/skills" GSD_CLICKUP_CONFIG="$WORK/clickup.env"
-unset CLICKUP_API_TOKEN GSD_SKIP_GUARD
+unset CLICKUP_API_TOKEN GSD_SKIP_GUARD GSD_CLI CLAUDE_CONFIG_DIR CODEX_HOME
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ✔ %s\n' "$1"; }
 bad() { FAIL=$((FAIL + 1)); printf '  ✘ %s\n' "$1"; [ $# -gt 1 ] && printf '%s\n' "$2" | sed 's/^/      /'; }
@@ -22,22 +22,23 @@ has() { if grep -q -- "$2" "$3"; then ok "$1"; else bad "$1" "$(tail -8 "$3")"; 
 hasnt() { if grep -q -- "$2" "$3"; then bad "$1" "$(grep -- "$2" "$3" | head -3)"; else ok "$1"; fi; }
 section() { printf '\n%s\n' "$1"; }
 
-# A stand-in gsd-sdk so T005 only fires where a test removes it.
+# A stand-in gsd-core gsd_run so T005 only fires where a test removes it.
 STUB="$WORK/stub"; mkdir -p "$STUB"
-printf '#!/bin/sh\necho 1.0.0\n' > "$STUB/gsd-sdk"; chmod +x "$STUB/gsd-sdk"
+printf '#!/bin/sh\necho %s\n' "'{\"packageName\":\"@opengsd/gsd-core\",\"version\":\"1.18.0\"}'" > "$STUB/gsd_run"; chmod +x "$STUB/gsd_run"
 BASEPATH="$PKG/bin:$PATH:$STUB"
 
 # A PATH with every command except the named ones: a dir of links to the first
 # copy of each executable on BASEPATH.
 farm() {  # $1=dir  $2...=names to leave out
   local dir=$1 d f n; shift; mkdir -p "$dir"
+  local skip=" $* "   # before IFS changes: "$*" joins with IFS's first char
   local IFS=:
   for d in $BASEPATH; do
     [ -d "$d" ] || continue
     for f in "$d"/*; do
       n=${f##*/}
       [ -x "$f" ] && [ ! -d "$f" ] && [ ! -e "$dir/$n" ] && [ ! -L "$dir/$n" ] || continue
-      case " $* " in *" $n "*) continue ;; esac
+      case "$skip" in *" $n "*) continue ;; esac
       ln -s "$f" "$dir/$n"
     done
   done
@@ -61,12 +62,24 @@ R="$WORK/repo"; mkrepo "$R"
 
 section "missing tools"
 json "$R"
-hasnt "gsd-sdk on PATH → no T005" '"T005"' "$OUT"
+hasnt "gsd-core's gsd_run on PATH → no T005" '"T005"' "$OUT"
 hasnt "perl on PATH → no T006" '"T006"' "$OUT"
-farm "$WORK/nosdk" gsd-sdk
+farm "$WORK/nosdk" gsd_run gsd-sdk
 DPATH="$WORK/nosdk" json "$R"
-has "no gsd-sdk → T005" '"T005"' "$OUT"
-has "T005 names the npm install" 'npm i -g get-shit-done-cc@latest' "$OUT"
+has "no GSD → T005" '"T005"' "$OUT"
+has "T005 names the gsd-core install" 'npx @opengsd/gsd-core@latest --claude --global' "$OUT"
+printf '#!/bin/sh\necho 1.42.3\n' > "$WORK/nosdk/gsd-sdk"; chmod +x "$WORK/nosdk/gsd-sdk"
+DPATH="$WORK/nosdk" json "$R"
+has "only the old GSD (gsd-sdk) → T005, migrate" 'only the old GSD (get-shit-done-cc) is installed' "$OUT"
+printf '#!/bin/sh\necho nope\n' > "$WORK/nosdk/gsd_run"; chmod +x "$WORK/nosdk/gsd_run"
+DPATH="$WORK/nosdk" json "$R"
+has "a gsd_run that is not gsd-core's does not count" '"T005"' "$OUT"
+rm "$WORK/nosdk/gsd_run"
+mkdir -p "$HOME/.claude/gsd-core/bin"; cp "$STUB/gsd_run" "$HOME/.claude/gsd-core/bin/gsd_run"
+DPATH="$WORK/nosdk" doc "$R"
+has "an npx install (~/.claude/gsd-core, nothing on PATH) counts" "gsd-core .*$HOME/.claude/gsd-core/bin/gsd_run" "$OUT"
+has "…and the old one still there gets a note" 'npm rm -g get-shit-done-cc' "$OUT"
+rm -rf "$HOME/.claude/gsd-core" "$WORK/nosdk/gsd-sdk"
 farm "$WORK/noperl" perl
 DPATH="$WORK/noperl" json "$R"
 has "no perl → T006" '"T006"' "$OUT"
@@ -307,8 +320,7 @@ json "$R"
 has "a GSD hook on a node that is gone → T008" '"T008"' "$OUT"
 has "T008 names the file and the missing path" "1 GSD hook(s) in $GSD_CLAUDE_SETTINGS run a missing file: $HK/old/node" "$OUT"
 has "a missing node → says why" 'a Node upgrade moved it' "$OUT"
-has "a gone node → swap in the current one (the installer keeps old hooks)" "in $GSD_CLAUDE_SETTINGS replace $HK/old/node with " "$OUT"
-hasnt "…not a reinstall, which would not fix it" 'get-shit-done-cc@latest' "$OUT"
+has "a gone node → gsd-core's installer (it rewrites its hooks)" 'npx @opengsd/gsd-core@latest --claude --global' "$OUT"
 hook PostToolUse "/Applications/Gone.app/cc-status" > "$GSD_CLAUDE_SETTINGS"
 json "$R"
 hasnt "a hook that is not GSD's is left alone" '"T008"' "$OUT"
@@ -326,22 +338,21 @@ hook PreToolUse "[ ! -x '$HK/gone/gsd-worktree-guard' ] || exec '$HK/gone/gsd-wo
 json "$R"
 has "our --global guard gone → T008" '"T008"' "$OUT"
 has "…counted once, though named twice" '1 GSD hook(s)' "$OUT"
-hasnt "…fixed by reinstalling the toolkit, not GSD" 'get-shit-done-cc@latest --claude' "$OUT"
+hasnt "…fixed by reinstalling the toolkit, not GSD" 'gsd-core@latest --claude' "$OUT"
 has "…with the reinstall command" 'install.sh --reuse-install-config' "$OUT"
 rm "$GSD_CLAUDE_SETTINGS"
-printf '{"statusLine":{"type":"command","command":"\\"%s/old/node\\" \\"%s/gsd-statusline.js\\""}}\n' "$HK" "$HK" > "$GSD_GEMINI_SETTINGS"
+printf '{"statusLine":{"type":"command","command":"\\"%s/old/node\\" \\"%s/gsd-statusline.js\\""}}\n' "$HK" "$HK" > "$GSD_CLAUDE_SETTINGS"
 json "$R"
-has "a Gemini status line on missing files → T008 for gemini" 'npx get-shit-done-cc@latest --gemini --global' "$OUT"
-has "…and the node swap after it" "then in $GSD_GEMINI_SETTINGS replace $HK/old/node" "$OUT"
+has "a status line on missing files → T008, --force-statusline (the installer keeps one otherwise)" 'npx @opengsd/gsd-core@latest --claude --global --force-statusline' "$OUT"
 has "…both missing files listed" "$HK/old/node, $HK/gsd-statusline.js" "$OUT"
-rm "$GSD_GEMINI_SETTINGS"
+rm "$GSD_CLAUDE_SETTINGS"
 hook SessionStart "\"$HK/bin/node\" \"$HK/gsd-check-update.js\"" > "$GSD_CODEX_HOOKS"
 json "$R"
-has "a Codex hooks.json → T008 for codex" 'npx get-shit-done-cc@latest --codex --global' "$OUT"
+has "a Codex hooks.json → T008 for codex" 'npx @opengsd/gsd-core@latest --codex --global' "$OUT"
 rm "$GSD_CODEX_HOOKS"
 hook PreToolUse "node \"\$CLAUDE_PROJECT_DIR/.claude/hooks/gsd-read-guard.js\"" > "$R/.claude/settings.json"
 json "$R"
-has "a repo-level GSD hook on a missing file → T008, local fix" 'npx get-shit-done-cc@latest --claude --local' "$OUT"
+has "a repo-level GSD hook on a missing file → T008, local fix" 'npx @opengsd/gsd-core@latest --claude --local' "$OUT"
 has "…\$CLAUDE_PROJECT_DIR read as the repo" "$R/.claude/hooks/gsd-read-guard.js" "$OUT"
 printf 'not json' > "$R/.claude/settings.json"
 json "$R"

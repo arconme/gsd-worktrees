@@ -3,9 +3,9 @@
 #
 # Two things are checked:
 #   gsd-worktrees  GitHub releases of $GSD_UPDATE_REPO (default below), vX.Y.Z
-#   GSD itself     the get-shit-done-cc package on npm (gsd-sdk -v installed)
+#   GSD itself     @opengsd/gsd-core on npm (installed: read beside its gsd_run)
 # Each latest version is cached for a day in ${XDG_CACHE_HOME:-~/.cache}/
-# gsd-worktrees/ (latest-version, latest-gsd-version), so commands never wait
+# gsd-worktrees/ (latest-version, latest-gsd-core-version), so commands never wait
 # on the network: gsd_update_notice reads the caches and refreshes stale ones
 # in the background. GSD_NO_UPDATE_CHECK=1 turns every check off.
 # Sourced after lib/common.sh; needs GSD_PKG.
@@ -55,16 +55,36 @@ gsd_latest_stale() {  # true when the cache is missing or older than a day
 gsd_latest_cached() { head -1 "$(gsd_update_cache)" 2>/dev/null | tr -d '[:space:]' || true; }
 
 # ── GSD itself (npm) ─────────────────────────────────────────────────────────
-gsd_gsd_cache() { printf '%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}/gsd-worktrees/latest-gsd-version"; }
+# latest-gsd-version held get-shit-done-cc's 1.42.x: a new name, so it is
+# never compared against gsd-core's own (restarted) numbers.
+gsd_gsd_cache() { printf '%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}/gsd-worktrees/latest-gsd-core-version"; }
 
-gsd_gsd_installed() {  # → installed gsd-sdk X.Y.Z ('' when not installed)
-  command -v gsd-sdk >/dev/null 2>&1 || return 0
-  gsd-sdk -v 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true
+# The places gsd_cli (lib/common.sh) looks, for code that must not start node.
+gsd_gsd_candidates() {
+  printf '%s\n' "${GSD_CLI:-}" "$(command -v gsd_run 2>/dev/null || true)" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd_run" "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/gsd_run"
 }
 
-gsd_gsd_fetch() {  # → latest get-shit-done-cc on npm ('' when unreachable)
+gsd_gsd_installed() {  # → installed gsd-core X.Y.Z ('' when not found)
+  # No node: an agent-dir install has gsd-core/VERSION beside bin/, the npm
+  # package its package.json two levels up. The old get-shit-done-cc
+  # (gsd-sdk) is not gsd-core and is never reported here.
+  local c t v
+  while IFS= read -r c; do
+    [ -n "$c" ] && [ -e "$c" ] || continue
+    while [ -L "$c" ]; do t=$(readlink "$c"); case "$t" in /*) c=$t ;; *) c="$(dirname "$c")/$t" ;; esac; done
+    c=$(dirname "$c")
+    v=$(head -1 "$c/../VERSION" 2>/dev/null | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' || true)
+    [ -n "$v" ] || v=$(grep -A0 '"version"' "$c/../../package.json" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+    if [ -n "$v" ]; then printf '%s\n' "$v"; return 0; fi
+  done <<EOF
+$(gsd_gsd_candidates)
+EOF
+}
+
+gsd_gsd_fetch() {  # → latest @opengsd/gsd-core on npm ('' when unreachable)
   command -v npm >/dev/null 2>&1 || return 0
-  npm view get-shit-done-cc dist-tags.latest --fetch-retries=0 --fetch-timeout=5000 2>/dev/null \
+  npm view @opengsd/gsd-core dist-tags.latest --fetch-retries=0 --fetch-timeout=5000 2>/dev/null \
     | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true
 }
 
@@ -83,7 +103,7 @@ gsd_gsd_stale() {
 
 gsd_gsd_cached() { head -1 "$(gsd_gsd_cache)" 2>/dev/null | tr -d '[:space:]' || true; }
 
-GSD_GSD_UPDATE_CMD="npm i -g get-shit-done-cc@latest"
+GSD_GSD_UPDATE_CMD="npx @opengsd/gsd-core@latest"   # then the agent: --claude --global
 
 gsd_update_how() {  # the command that updates THIS install
   if [ -e "$GSD_PKG/.git" ]; then echo gsd-sync; else echo gsd-update; fi
@@ -96,10 +116,13 @@ gsd_update_notice() {
   [ -z "${GSD_NO_UPDATE_CHECK:-}" ] || return 0
   [ -t 2 ] || [ "${GSD_UPDATE_NOTICE:-}" = always ] || return 0
   if gsd_latest_stale; then ( gsd_latest_refresh ) >/dev/null 2>&1 </dev/null & fi
-  if command -v gsd-sdk >/dev/null 2>&1 && gsd_gsd_stale; then ( gsd_gsd_refresh ) >/dev/null 2>&1 </dev/null & fi
+  if [ -n "$(gsd_gsd_installed)" ] && gsd_gsd_stale; then ( gsd_gsd_refresh ) >/dev/null 2>&1 </dev/null & fi
   local new cur; new=$(gsd_latest_cached); cur=$(gsd_version)
   if [ -n "$new" ] && gsd_version_gt "$new" "$cur"; then
     printf '• gsd-worktrees %s is out (you have %s) — update: %s\n' "$new" "$cur" "$(gsd_update_how)" >&2
+  fi
+  if [ -z "$(gsd_gsd_installed)" ] && command -v gsd-sdk >/dev/null 2>&1; then
+    printf '• GSD moved to gsd-core and gsd-worktrees needs it — migrate: see docs/migration.md\n' >&2
   fi
   new=$(gsd_gsd_cached)
   if [ -n "$new" ]; then

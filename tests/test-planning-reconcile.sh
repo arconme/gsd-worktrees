@@ -27,12 +27,12 @@ FAIL=0
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# Doctor reports a missing gsd-sdk (T005). CI has none, and these checks are
-# about the repo under inspection, so give them a stand-in.
+# Doctor reports a missing gsd-core (T005). CI may have none, and these checks
+# are about the repo under inspection, so give them a stand-in.
 mkdir -p "$WORK/stub-bin"
-printf '#!/bin/sh\necho 1.0.0\n' > "$WORK/stub-bin/gsd-sdk"
-chmod +x "$WORK/stub-bin/gsd-sdk"
-PATH="$PATH:$WORK/stub-bin"
+printf '#!/bin/sh\necho '"'"'{"packageName":"@opengsd/gsd-core","version":"1.0.0"}'"'"'\n' > "$WORK/stub-bin/gsd_run"
+chmod +x "$WORK/stub-bin/gsd_run"
+export GSD_CLI="$WORK/stub-bin/gsd_run"
 # …and reads the user's agent settings for broken GSD hooks (T008): point it
 # at files that don't exist, so the machine running the tests can't fail them.
 export GSD_CLAUDE_SETTINGS="$WORK/none" GSD_GEMINI_SETTINGS="$WORK/none" GSD_CODEX_HOOKS="$WORK/none"

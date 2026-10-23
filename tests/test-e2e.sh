@@ -3,7 +3,7 @@
 # test-e2e.sh — the whole journey, end to end, in a throwaway fake project.
 #
 # Runs the REAL commands from this checkout (bin/ first on PATH) and the REAL
-# gsd-sdk, against a local bare repo standing in for GitHub. The AI's work is
+# gsd-core (gsd_run), against a local bare repo standing in for GitHub. The AI's work is
 # simulated with plain files and commits, so it costs nothing. It covers what
 # unit suites cannot: pieces working together —
 #   gsd-init for claude+codex+gemini · two clones claiming at the same moment ·
@@ -13,11 +13,14 @@
 # pull-then-claim block (R17) and the padded-decimal guard block (R18).
 #
 # Run it after any change to start / finish / guard / flow / planning code:
-#   tests/test-e2e.sh            (≈1 min; needs gsd-sdk — skipped without it)
+#   tests/test-e2e.sh            (≈1 min; needs gsd-core — skipped without it)
 set -uo pipefail
 PKG=$(cd "$(dirname "$0")/.." && pwd)
-if ! command -v gsd-sdk >/dev/null 2>&1; then
-  echo "SKIPPED: gsd-sdk not installed (npm i -g get-shit-done-cc) — this suite drives the real claim path"
+# GSD_TEST_REQUIRE_GSD=1 (CI) turns the skip into a failure.
+# shellcheck source=../lib/common.sh disable=SC1091
+if ! (GSD_PKG="$PKG"; . "$PKG/lib/common.sh"; gsd_cli >/dev/null); then
+  echo "SKIPPED: gsd-core not installed (npm i -g @opengsd/gsd-core) — this suite drives the real claim path"
+  [ "${GSD_TEST_REQUIRE_GSD:-}" != 1 ] || exit 1
   exit 0
 fi
 S=$(mktemp -d); trap 'rm -rf "$S"' EXIT; cd "$S" || exit 1

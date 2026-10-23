@@ -81,5 +81,9 @@ jobs:
         env:
           GSD_TEST_REQUIRE_BROWSER: 1   # a skip here would mean an untested checker
         run: GSD_PLAYWRIGHT_ROOT="$RUNNER_TEMP/pw" tests/test-ui-browser.sh
-      - name: end-to-end suite (skips without gsd-sdk)
+      - name: GSD (gsd-core) for the end-to-end suite
+        run: npm install -g --no-audit --no-fund @opengsd/gsd-core@1.18.0
+      - name: end-to-end suite (real gsd-core)
+        env:
+          GSD_TEST_REQUIRE_GSD: 1   # a skip here would mean an untested claim path
         run: tests/test-e2e.sh

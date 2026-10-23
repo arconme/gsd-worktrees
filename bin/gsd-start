@@ -9,7 +9,7 @@
 #
 # Provider adapters choose the CLI argv. Default is to launch it, in a terminal.
 #
-# The claim uses `gsd-sdk query phase.add` — the same deterministic CLI the
+# The claim uses `gsd_run query phase.add` (gsd-core) — the same deterministic CLI the
 # /gsd-phase skill delegates to — so no LLM call is needed and the ROADMAP
 # entry format is identical. Safe for parallel use: the claim is pulled-then-
 # pushed with a rebase-and-retry loop, so two sessions claiming at once get
@@ -27,7 +27,7 @@
 #                    new one (no ROADMAP commit/push; reuses the phase's
 #                    worktree if it exists — safe to rerun after a failure)
 #   --insert <N>   claim a FRACTIONAL phase after phase N (11 → 11.1, then
-#   --after <N>    11.2, …) via gsd-sdk phase.insert, instead of the next
+#   --after <N>    11.2, …) via gsd-core's phase.insert, instead of the next
 #                  integer. Requires a description. (alias: --after)
 #   --ticket <id>  the tracker ticket driving this phase (id, tk-<id> or URL).
 #                  Tags the phase title/slug with tk-<id>; with a tracker set
@@ -95,7 +95,7 @@ OPTIONS
                   The description is taken from ROADMAP.md and may be omitted.
   --insert <N>    claim a decimal phase inserted after phase N instead of the
   --after <N>     next integer: 11 → 11.1, a second insert → 11.2, and so on
-                  (delegates to gsd-sdk phase.insert). Needs a description;
+                  (delegates to gsd-core's phase.insert). Needs a description;
                   cannot be combined with -p. (alias: --after)
   --ticket <id>   the ticket driving this phase: an issue/task in your
                   tracker (accepts 869e33cv4, PROJ-42, tk-<id>, or its URL).
@@ -185,8 +185,8 @@ PARALLEL SESSIONS
     automatically renumbers and continues.
 
 NOTES
-  - The claim is deterministic — gsd-sdk query phase.add (next integer) or,
-    with --insert/--after, gsd-sdk query phase.insert (next decimal after N),
+  - The claim is deterministic — gsd-core's query phase.add (next integer) or,
+    with --insert/--after, query phase.insert (next decimal after N),
     the same CLIs the /gsd-phase skill uses; no LLM call is made.
   - A claim is refused when the roadmap already has a phase with this exact
     description, or (with --ticket) a phase already tagged with the same ticket
@@ -297,7 +297,9 @@ else
   MAIN=$(gsd_main .)
 fi
 [ -f "$MAIN/.planning/ROADMAP.md" ] || die "$MAIN has no .planning/ROADMAP.md — initialize GSD first (/gsd-new-project)"
-[ -n "$ATTACH" ] || command -v gsd-sdk >/dev/null 2>&1 || die "gsd-sdk CLI not found (GSD not installed?)"
+if [ -z "$ATTACH" ]; then
+  GSD_RUN=$(gsd_cli) || { gsd_cli_missing | sed '1s/^/✖ /' >&2; exit 1; }
+fi
 
 # Base branch: .gsd.conf override, else detection (lib/common.sh).
 BASE=$(gsd_base "$MAIN")
@@ -355,7 +357,7 @@ if [ -z "$ATTACH" ]; then
 fi
 
 # ── claim the phase (deterministic, no LLM) ──────────────────────────────────
-add_roadmap_rows() {  # gsd-sdk writes no checklist/Progress row for phase $N — add them
+add_roadmap_rows() {  # GSD writes no checklist/Progress row for phase $N — add them
   perl "$GSD_PKG/lib/roadmap-rows.pl" "$MAIN/.planning/ROADMAP.md" "$N" \
     || echo "⚠ could not add the ROADMAP rows for phase $N — gsd-doctor will list them (T022/T023)" >&2
   # Recompute STATE.md's progress counters (total_phases, …) in the claim
@@ -375,7 +377,7 @@ tdd_default() {  # TDD is the toolkit's default — turn GSD's tdd_mode on in th
   [ -f "$MAIN/.planning/config.json" ] || return 0
   gsd_python >/dev/null || return 0   # cannot tell unset from false without it
   [ -z "$(gsd_workflow_flag "$MAIN" tdd_mode)" ] || return 0
-  if gsd-sdk query config-set workflow.tdd_mode true --project-dir "$MAIN" >/dev/null 2>&1; then
+  if "$GSD_RUN" query config-set workflow.tdd_mode true --project-dir "$MAIN" >/dev/null 2>&1; then
     echo "▶ TDD mode on for this project (workflow.tdd_mode; turn it off with /gsd-settings)"
   else
     echo "⚠ could not turn on TDD mode — set it with /gsd-settings" >&2
@@ -383,8 +385,8 @@ tdd_default() {  # TDD is the toolkit's default — turn GSD's tdd_mode on in th
 }
 
 claim() {  # claims the next phase number and commits; sets $N
-  gsd-sdk query phase.add "$DESC" --project-dir "$MAIN" >/dev/null \
-    || die "gsd-sdk query phase.add failed"
+  "$GSD_RUN" query phase.add "$DESC" --project-dir "$MAIN" >/dev/null \
+    || die "gsd_run query phase.add failed"
   # Source of truth for what was claimed: the heading just added to ROADMAP.md.
   # `|| true`: grep exits 1 when nothing matched, and with pipefail that would
   # kill the script HERE, before the die below can explain what went wrong.
@@ -411,8 +413,8 @@ claim() {  # claims the next phase number and commits; sets $N
 
 insert_phase() {  # inserts a decimal phase after $INSERT and commits; sets $N (and $SLUG if unset)
   local out
-  out=$(gsd-sdk query phase.insert "$INSERT" "$DESC" --project-dir "$MAIN") \
-    || die "gsd-sdk query phase.insert failed — does phase $INSERT exist in ROADMAP.md?"
+  out=$("$GSD_RUN" query phase.insert "$INSERT" "$DESC" --project-dir "$MAIN") \
+    || die "gsd_run query phase.insert failed — does phase $INSERT exist in ROADMAP.md?"
   # Source of truth for what was claimed: the phase_number from the JSON result.
   N=$(printf '%s\n' "$out" | sed -nE 's/^[[:space:]]*"phase_number"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1)
   [ -n "$N" ] || die "phase.insert did not return a phase_number — inspect $MAIN/.planning/ROADMAP.md"

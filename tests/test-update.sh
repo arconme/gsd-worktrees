@@ -116,15 +116,29 @@ hasnt "GSD_NO_UPDATE_CHECK=1 → no notice" "is out" "$WORK/err"
 : > "$WORK/curl.log"
 GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2>&1; sleep 1
 is  "a fresh cache → no GitHub call"    "$(grep -c api.github.com "$WORK/curl.log")" 0
-# GSD itself (npm): stub gsd-sdk 1.0.0 installed, npm says 1.2.0
-printf '#!/usr/bin/env bash\necho "gsd-sdk v1.0.0"\n' > "$WORK/stub/gsd-sdk"
+# GSD itself (npm): a stub gsd-core 1.0.0 (an agent-dir install: VERSION beside
+# bin/), npm says 1.2.0. GSD_CLI pins it, so this machine's own GSD never counts.
+mkdir -p "$WORK/gc/gsd-core/bin"
+printf '#!/usr/bin/env bash\necho '"'"'{"packageName":"@opengsd/gsd-core","version":"1.0.0"}'"'"'\n' > "$WORK/gc/gsd-core/bin/gsd_run"
+printf '1.0.0\n' > "$WORK/gc/gsd-core/VERSION"
 printf '#!/usr/bin/env bash\necho 1.2.0\n' > "$WORK/stub/npm"
-chmod +x "$WORK/stub/gsd-sdk" "$WORK/stub/npm"
-rm -f "$(gsd_gsd_cache)"   # a real gsd-sdk on this machine may have filled it already
+chmod +x "$WORK/gc/gsd-core/bin/gsd_run" "$WORK/stub/npm"
+export GSD_CLI="$WORK/gc/gsd-core/bin/gsd_run"
+rm -f "$(gsd_gsd_cache)"   # a real gsd-core on this machine may have filled it already
 GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2>&1
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$(gsd_gsd_cache)" ] && break; sleep 0.5; done
 GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2> "$WORK/err"
-has "a newer GSD on npm gets its own line" "GSD 1.2.0 is out (you have 1.0.0) — update: npm i -g get-shit-done-cc@latest" "$WORK/err"
+has "a newer GSD on npm gets its own line" "GSD 1.2.0 is out (you have 1.0.0) — update: npx @opengsd/gsd-core@latest" "$WORK/err"
+hasnt "gsd-core found → no migrate line" "migrate" "$WORK/err"
+# only the old GSD (gsd-sdk) → a line that says to migrate. A bare PATH and an
+# empty HOME, so no gsd-core of this machine is found.
+printf '#!/usr/bin/env bash\necho "gsd-sdk v1.0.0"\n' > "$WORK/stub/gsd-sdk"; chmod +x "$WORK/stub/gsd-sdk"
+mkdir -p "$WORK/emptyhome"
+env -u GSD_CLI -u CLAUDE_CONFIG_DIR -u CODEX_HOME HOME="$WORK/emptyhome" PATH="$WORK/stub:/usr/bin:/bin" \
+  GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2> "$WORK/err"
+has "only gsd-sdk → migrate line" "GSD moved to gsd-core and gsd-worktrees needs it — migrate: see docs/migration.md" "$WORK/err"
+hasnt "…and no npm line for it" "GSD 1.2.0 is out" "$WORK/err"
+rm -f "$WORK/stub/gsd-sdk"
 git init -qb main "$WORK/fresh"
 # gsd-init needs gsd-bootstrap-repo on PATH (the installed one, as a user has it)
 (cd "$WORK/fresh" && PATH="$BIN:$PATH" GSD_UPDATE_NOTICE=always "$BIN/gsd-init" --no-launch --no-commit) > /dev/null 2> "$WORK/err"
@@ -137,9 +151,9 @@ R="$WORK/proj"; mkdir -p "$R/.planning"; git -C "$R" init -qb main
 has "gsd-doctor shows the newer release" "gsd-worktrees 9.9.7 installed, 9.9.9 available — update: gsd-update" "$WORK/out"
 "$BIN/gsd-doctor" --repo "$R" --quiet > "$WORK/out" 2>&1
 has "…even with --quiet (gsd-worktrees)" "gsd-worktrees 9.9.7 installed, 9.9.9 available" "$WORK/out"
-has "…even with --quiet (GSD)"          "GSD 1.0.0 installed, 1.2.0 available — update: npm i -g get-shit-done-cc@latest" "$WORK/out"
+has "…even with --quiet (GSD)"          "gsd-core 1.0.0 installed, 1.2.0 available — update: npx @opengsd/gsd-core@latest --claude --global" "$WORK/out"
 "$BIN/gsd-doctor" --repo "$R" --json > "$WORK/out" 2>/dev/null
-if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); u={x["name"]:x["latest"] for x in d["updates"]}; sys.exit(0 if u=={"gsd-worktrees":"9.9.9","GSD":"1.2.0"} else 1)' "$WORK/out"; then
+if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); u={x["name"]:x["latest"] for x in d["updates"]}; sys.exit(0 if u=={"gsd-worktrees":"9.9.9","gsd-core":"1.2.0"} else 1)' "$WORK/out"; then
   ok "--json lists both under updates (valid JSON)"; else bad "--json lists both under updates (valid JSON)" "$(head -c 300 "$WORK/out")"; fi
 GSD_NO_UPDATE_CHECK=1 "$BIN/gsd-doctor" --repo "$R" --quiet > "$WORK/out" 2>&1
 hasnt "GSD_NO_UPDATE_CHECK=1 → no update lines" "available — update" "$WORK/out"

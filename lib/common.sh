@@ -202,6 +202,36 @@ gsd_flow_finish_gate() {  # $1=MAIN $2=phase branch $3=its worktree → 1 = refu
   return 1
 }
 
+# GSD's command-line tool: gsd-core's gsd_run. The name gsd-tools proves
+# nothing (the old get-shit-done-cc package ships a different gsd-tools), so
+# a candidate counts only when runtime-identity says it is gsd-core. An npx
+# install puts nothing on PATH: look in each agent's config dir too.
+# GSD_CLI overrides (tests). Cached: each probe starts node.
+GSD_CORE_INSTALL="npx @opengsd/gsd-core@latest"
+gsd_cli() {  # → gsd-core's gsd_run; nonzero when none
+  if [ -n "${GSD_CLI_RESOLVED:-}" ]; then printf '%s\n' "$GSD_CLI_RESOLVED"; return 0; fi
+  local c id
+  for c in "${GSD_CLI:-}" "$(command -v gsd_run 2>/dev/null || true)" \
+           "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd_run" \
+           "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/gsd_run"; do
+    [ -n "$c" ] && [ -x "$c" ] || continue
+    # captured, not piped to grep -q: under pipefail an early-closed pipe fails it
+    id=$("$c" runtime-identity --raw 2>/dev/null) || continue
+    case "$id" in *'"packageName":"@opengsd/gsd-core"'*|*'"packageName": "@opengsd/gsd-core"'*) ;; *) continue ;; esac
+    GSD_CLI_RESOLVED=$c
+    printf '%s\n' "$c"; return 0
+  done
+  return 1
+}
+gsd_cli_missing() {  # → why there is no gsd_cli, and the fix (lines)
+  if command -v gsd-sdk >/dev/null 2>&1; then
+    printf '%s\n' "only the old GSD (get-shit-done-cc) is installed — gsd-worktrees now needs gsd-core" \
+      "  move to it (see docs/migration.md):  $GSD_CORE_INSTALL --claude --global"
+  else
+    printf '%s\n' "GSD (gsd-core) not found — install it:  $GSD_CORE_INSTALL --claude --global"
+  fi
+}
+
 # A skill copy this toolkit installed (install.sh --copy) ends its SKILL.md
 # with this comment line. It used to be a .gsd-worktrees-skill file next to
 # SKILL.md, but gsd-core's installer stops on any file under skills/gsd-*/ it

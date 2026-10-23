@@ -5,7 +5,7 @@
 # Two upstream defects make the phase checkboxes quietly wrong, and neither
 # reports an error (observed in medyour-platform, 2026-08-12):
 #
-#   1. `gsd-sdk query phase.insert` writes the `### Phase N:` detail section
+#   1. `gsd_run query phase.insert` (gsd-core; gsd-sdk before it) writes the `### Phase N:` detail section
 #      but NOT the top-of-file checklist row, nor the Progress-table row.
 #      `phase.complete` then has nothing to tick and no-ops in silence.
 #

@@ -165,7 +165,7 @@ case "$cmd" in gsd-*) ;; *) exit 0 ;; esac   # not a GSD command → allow
 # a name (--files src/v2/a.ts, --prd docs/r3.md) is not a phase.
 N=$(printf '%s' "$args" | tr -s '[:space:]' '\n' | sed 's/^--phase=//' | grep -E '^[0-9]+(\.[0-9]+)?$' | head -1 || true)
 # Phase numbers come padded or not: dirs are 08-slug, integer branches are
-# phase-8-slug, gsd-sdk decimal inserts are 02.1 in both. Compare numerically.
+# phase-8-slug, GSD decimal inserts are 02.1 in both. Compare numerically.
 pnorm() { local int=${1%%.*}; printf '%s' "$((10#$int))${1#"$int"}"; }
 
 dir="${explicit_repo:-${CLAUDE_PROJECT_DIR:-${GEMINI_PROJECT_DIR:-${payload_cwd:-$PWD}}}}"
