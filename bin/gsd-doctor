@@ -49,6 +49,10 @@
 #                  `flow_since = <N>` in .gsd.conf limits it to phases >= N,
 #                  `flow_skip = <N>, <N>…` leaves out single phases, listed
 #                  as a note.
+#                  T008 = a GSD hook (in an agent's user settings or this
+#                  repo's) runs a file that is gone — usually a node path a
+#                  Node upgrade moved; it fails silently. The fix re-runs
+#                  GSD's installer for that agent; doctor never edits it.
 #                  T016 = the generated GSD instructions are older than this
 #                  toolkit (gsd-init refreshes them; --fix runs it).
 #                  T070–T073 = ticket tracker config (`tracker =` in .gsd.conf).
@@ -219,6 +223,35 @@ else
 fi
 if ! command -v gsd-sdk >/dev/null 2>&1; then
   fail "gsd-sdk not on PATH (GSD not installed?) — gsd-start cannot claim phases" "$GSD_GSD_UPDATE_CMD" "T005"
+fi
+
+# GSD hooks that run a file that is gone. The agent shows little or nothing
+# (a guard just stops guarding), so this is a finding. The usual cause: GSD's
+# installer writes the absolute node path, and nvm/Volta/fnm/asdf move it on
+# every Node upgrade. Re-running the installer writes the current path; doctor
+# never edits these files (GSD owns its entries).
+stale_hooks=$(gsd_stale_hooks "$MAIN")
+if [ -z "$stale_hooks" ]; then
+  pass "no GSD hook runs a missing file"
+else
+  while IFS= read -r f; do
+    rows=$(printf '%s\n' "$stale_hooks" | awk -F '\t' -v f="$f" '$1 == f')
+    n=$(printf '%s\n' "$rows" | cut -f4 | sort -u | wc -l | tr -d ' ')
+    gone=$(printf '%s\n' "$rows" | cut -f6 | awk '!seen[$0]++' | head -2 | paste -sd ',' - | sed 's/,/, /g')
+    why=""; printf '%s\n' "$rows" | cut -f6 | grep -q '/node$' && why=" (a Node upgrade moved it; GSD saves the exact node path)"
+    if printf '%s\n' "$rows" | cut -f3 | grep -qx toolkit; then
+      fix=$REINSTALL
+    else
+      agent=claude
+      for p in gemini codex; do [ "$f" = "$(gsd_provider_user_hook_file "$p")" ] && agent=$p; done
+      case "$f" in "$MAIN"/.gemini/*) agent=gemini ;; esac
+      scope=global; printf '%s\n' "$rows" | cut -f2 | grep -qx project && scope=local
+      fix="npx get-shit-done-cc@latest --$agent --$scope"
+    fi
+    fail "$n GSD hook(s) in $f run a missing file: $gone$why — they fail silently" "$fix" "T008"
+  done <<EOF
+$(printf '%s\n' "$stale_hooks" | cut -f1 | awk '!seen[$0]++')
+EOF
 fi
 
 # This toolkit: a newer release on GitHub? A note, never a finding. Uses the

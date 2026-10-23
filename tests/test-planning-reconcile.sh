@@ -33,6 +33,9 @@ mkdir -p "$WORK/stub-bin"
 printf '#!/bin/sh\necho 1.0.0\n' > "$WORK/stub-bin/gsd-sdk"
 chmod +x "$WORK/stub-bin/gsd-sdk"
 PATH="$PATH:$WORK/stub-bin"
+# …and reads the user's agent settings for broken GSD hooks (T008): point it
+# at files that don't exist, so the machine running the tests can't fail them.
+export GSD_CLAUDE_SETTINGS="$WORK/none" GSD_GEMINI_SETTINGS="$WORK/none" GSD_CODEX_HOOKS="$WORK/none"
 
 ok()   { PASS=$((PASS + 1)); printf '  ✔ %s\n' "$1"; }
 bad()  { FAIL=$((FAIL + 1)); printf '  ✘ %s\n' "$1"; [ $# -gt 1 ] && printf '      %s\n' "$2"; }

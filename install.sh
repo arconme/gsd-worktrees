@@ -263,8 +263,7 @@ oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do install_skills "$provider"; d
 user_hook() {  # $1=provider $2=on|off
   local provider=$1 settings guard cmd
   case "$provider" in
-    claude) settings=${GSD_CLAUDE_SETTINGS:-$(dirname "$(gsd_provider_skill_root claude)")/settings.json} ;;
-    gemini) settings=${GSD_GEMINI_SETTINGS:-$(dirname "$(gsd_provider_skill_root gemini)")/settings.json} ;;
+    claude|gemini) settings=$(gsd_provider_user_hook_file "$provider") ;;
     *) return 0 ;;
   esac
   [ "$2" = on ] || [ -f "$settings" ] || return 0

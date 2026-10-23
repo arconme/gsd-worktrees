@@ -120,6 +120,42 @@ gsd_provider_hook_state() { # repo, provider => present|absent|invalid|unverifie
   ' "$file" >/dev/null 2>&1; then echo present; else echo absent; fi
 }
 
+# The user-level file that holds an agent's hooks: GSD's own, and our --global
+# guard (install.sh writes it). It sits next to the agent's skills dir.
+gsd_provider_user_hook_file() { # provider => path
+  case "$1" in
+    claude) printf '%s\n' "${GSD_CLAUDE_SETTINGS:-$(dirname "$(gsd_provider_skill_root claude)")/settings.json}" ;;
+    gemini) printf '%s\n' "${GSD_GEMINI_SETTINGS:-$(dirname "$(gsd_provider_skill_root gemini)")/settings.json}" ;;
+    codex) printf '%s\n' "${GSD_CODEX_HOOKS:-$(dirname "$(gsd_provider_skill_root codex)")/hooks.json}" ;;
+    *) return 1 ;;
+  esac
+}
+
+# GSD hooks that run a file that is gone (lib/gsd_hook_paths.py): every
+# agent's user-level file, plus the repo's own settings when a repo is given.
+# Prints the helper's tab-separated lines; nothing without python.
+gsd_stale_hooks() { # [repo]
+  local py p args=()
+  py=$(gsd_python 2>/dev/null) || py=python3
+  command -v "$py" >/dev/null 2>&1 || return 0
+  for p in claude gemini codex; do args+=("user:$(gsd_provider_user_hook_file "$p")"); done
+  if [ -n "${1:-}" ]; then
+    args+=(--project "$1")
+    for p in .claude/settings.json .claude/settings.local.json .gemini/settings.json; do args+=("project:$1/$p"); done
+  fi
+  "$py" "$GSD_PKG/lib/gsd_hook_paths.py" "${args[@]}" 2>/dev/null || true
+}
+
+# One stderr line per settings file with broken GSD hooks — they fail without
+# a word, so gsd-start and gsd-list say it. Terminal only, like the update
+# notice (GSD_UPDATE_NOTICE=always forces it); gsd-doctor has the details.
+gsd_stale_hooks_notice() { # [repo]
+  [ -t 2 ] || [ "${GSD_UPDATE_NOTICE:-}" = always ] || return 0
+  gsd_stale_hooks "${1:-}" | awk -F '\t' '!seen[$1 FS $4]++ { n[$1]++ }
+    END { for (f in n) printf "⚠ %d GSD hook(s) in %s run a file that is gone, so they fail silently — run gsd-doctor\n", n[f], f }' >&2
+  return 0
+}
+
 gsd_owned_markers_valid() { # file, marker kind; an absent block is valid
   [ -f "$1" ] || return 0
   awk -v start="<!-- gsd-worktrees:$2:start -->" -v end="<!-- gsd-worktrees:$2:end -->" '

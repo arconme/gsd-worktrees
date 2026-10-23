@@ -285,6 +285,7 @@ if [ -n "$INSERT" ]; then
 fi
 
 gsd_update_notice   # a newer release? one stderr line, terminal only
+gsd_stale_hooks_notice   # GSD hooks that run a missing file (they fail silently)
 
 # ── locate the main checkout ─────────────────────────────────────────────────
 if [ -n "$REPO" ]; then

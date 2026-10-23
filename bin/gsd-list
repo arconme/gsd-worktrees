@@ -76,6 +76,8 @@ GSD_PKG=$(cd "$(dirname "$SELF")/.." && pwd)
 if [ -f "$GSD_PKG/lib/version.sh" ]; then
   # shellcheck source=../lib/version.sh
   . "$GSD_PKG/lib/version.sh"; gsd_update_notice
+  # shellcheck source=../lib/provider.sh
+  . "$GSD_PKG/lib/provider.sh"; gsd_stale_hooks_notice
 fi
 
 # ── locate the main checkout (same detection as gsd-start) ───────────────────
