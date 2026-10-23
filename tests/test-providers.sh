@@ -313,7 +313,7 @@ R=$WORK/old-gemini-only; old_gemini "$R" '' ''
 (cd "$R" && gsd-init --no-launch --no-commit) >/dev/null 2>&1
 assert 'only our block and hook → GEMINI.md and .gemini/ are gone' '[ ! -e "$R/GEMINI.md" ] && [ ! -e "$R/.gemini" ]'
 R=$WORK/old-gemini-commit; old_gemini "$R" '' ''
-(cd "$R" && gsd-bootstrap-repo --commit) >/dev/null 2>&1
+(cd "$R" && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t gsd-bootstrap-repo --commit) >/dev/null 2>&1
 assert 'bootstrap --commit commits the clean-up' '[ -z "$(git -C "$R" status --porcelain)" ] && ! git -C "$R" ls-files --error-unmatch GEMINI.md >/dev/null 2>&1'
 # install.sh: an install that set Gemini up (its manifest says so) loses our
 # skills and user hook there; the user's own skill and hook stay
