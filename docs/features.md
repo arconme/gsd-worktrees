@@ -12,8 +12,8 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Idempotent re-run: with an existing `.planning/ROADMAP.md` it only repairs workflow files, never planning state | `gsd-init` |
 | Writes `.gsd.conf` (base, wtdir, install, providers, per-provider commands); migrates legacy `provider` / `agent_command` keys | `gsd-bootstrap-repo` |
 | Installs the frozen shims into `scripts/` and `scripts/hooks/`, self-checked with `bash -n` | `gsd-bootstrap-repo` |
-| Generated instructions: canonical `.gsd/INSTRUCTIONS.md` + marked entrypoints in `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`; text outside markers preserved; markers validated before any write | `gsd-bootstrap-repo`, `lib/provider.sh` |
-| Registers native guard hooks (Claude `.claude/settings.json`, Gemini `.gemini/settings.json`) via a `jq` merge; skips cleanly without `jq` | `gsd-bootstrap-repo` |
+| Generated instructions: canonical `.gsd/INSTRUCTIONS.md` + marked entrypoints in `CLAUDE.md` / `AGENTS.md`; text outside markers preserved; markers validated before any write | `gsd-bootstrap-repo`, `lib/provider.sh` |
+| Registers native guard hooks (Claude `.claude/settings.json`) via a `jq` merge; skips cleanly without `jq` | `gsd-bootstrap-repo` |
 | `.planning` merge safety: `.gitattributes` `merge=gsd-planning`, driver registration in git config, `post-merge` hook (husky-aware) | `lib/common.sh` (`gsd_planning_status` / `gsd_planning_apply`) |
 | `--commit` stages only installed files; skipped if the repo was already dirty | `gsd-bootstrap-repo` |
 
@@ -24,7 +24,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Claim a new phase in one step: claim → push → worktree → session (`-n "desc"`; a bare description is refused) | `gsd-start` |
 | Attach to an existing phase, reusing its worktree (`-p N`, idempotent) | `gsd-start` |
 | Claim a decimal hotfix phase (`--insert N`) | `gsd-start` |
-| Deterministic claim via `gsd-sdk query phase.add` / `phase.insert` (no LLM call) | `gsd-start` |
+| Deterministic claim via `gsd_run query phase.add` / `phase.insert` (gsd-core; no LLM call) | `gsd-start` |
 | Parallel-safe claim: pull, push with rebase-and-retry, auto-renumber the loser | `gsd-start` |
 | Duplicate-description guard (case-insensitive) | `gsd-start` |
 | Claim bookkeeping: checklist + Progress rows and STATE.md counters land in the claim commit | `gsd-start`, `lib/roadmap-rows.pl` |
@@ -65,7 +65,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Counter recompute from ground truth (ROADMAP headings/checklist, `*-PLAN.md`, `*-SUMMARY.md`) | `gsd-planning-repair`, `lib/gsd_planning.py repair` |
 | `--check` CI guard (fails on merge damage; drift is advisory) / `--commit` | `gsd-planning-repair` |
 | Falls back to plain union with a warning when Python 3.7+ is missing | `gsd-planning-merge`, `lib/common.sh` (`gsd_python`) |
-| Audit for two upstream `gsd-sdk` bugs: missing checklist row, tick landing on the wrong phase | `lib/roadmap-audit.pl` |
+| Audit for two upstream `gsd_run` (gsd-core) bugs: missing checklist row, tick landing on the wrong phase | `lib/roadmap-audit.pl` |
 
 ## 5. Enforcement (the guard)
 
@@ -78,9 +78,9 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Rule 3: `/gsd-execute-phase` blocked while the install is `running` / `fail` | `gsd-worktree-guard` |
 | Rule 4 (`flow = strict`): plan needs CONTEXT, execute needs REVIEWS, secure needs REVIEW (+ UI-REVIEW when a UI-SPEC exists) and the test audit (`<P>-VALIDATION.md` compliant or audited); `--prd` / `--gaps-only` exemptions | `gsd-worktree-guard` |
 | Rule 5 (`ui_gates = strict`): ui-phase needs a filled DESIGN.md + a LAYOUT with a chosen sketch and pages; ui-review needs a passed, current UI check, a complete look file and the user's approval (a phase whose UI review is already on the base branch is exempt) | `gsd-worktree-guard`, `lib/ui.sh` (`gsd_ui_gate`) |
-| Native hooks: Claude `UserPromptExpansion` + `PreToolUse(Skill)`, Gemini `BeforeTool` (skill activation + direct `gsd-*` shell calls) | `gsd-worktree-guard`, `lib/gsd_hook_payload.py` |
-| Rule 0: `/gsd-new-project` / `/gsd-ingest-docs` only in a repo `gsd-init` set up (`.gsd.conf`). Enforced by a user-level hook `install.sh` adds to `~/.claude/settings.json` (`PreToolUse(Skill)` + `UserPromptExpansion`) and `~/.gemini/settings.json` (`BeforeTool` activate_skill): `gsd-worktree-guard --global` applies rule 0 only in a repo without `.gsd.conf` (every rule in a set-up repo, where it is the only hook that sees typed slash commands) and fails open on an unreadable payload. `--no-user-hook` opts out (remembered); Codex: the skill's written rule only | `install.sh`, `gsd-worktree-guard`, `skills/gsdw-worktrees` |
-| Hook JSON parsed without `jq` (Python fallback); compound shell text naming `gsd-` is blocked, not guessed | `lib/gsd_hook_payload.py` |
+| Native hooks: Claude `UserPromptExpansion` + `PreToolUse(Skill)` (skill calls and typed slash commands; the plugin form `gsd-core:gsd-plan-phase` counts as `gsd-plan-phase`) | `gsd-worktree-guard`, `lib/gsd_hook_payload.py` |
+| Rule 0: `/gsd-new-project` / `/gsd-ingest-docs` only in a repo `gsd-init` set up (`.gsd.conf`). Enforced by a user-level hook `install.sh` adds to `~/.claude/settings.json` (`PreToolUse(Skill)` + `UserPromptExpansion`): `gsd-worktree-guard --global` applies rule 0 only in a repo without `.gsd.conf` (every rule in a set-up repo, where it is the only hook that sees typed slash commands) and fails open on an unreadable payload. `--no-user-hook` opts out (remembered); Codex: the skill's written rule only | `install.sh`, `gsd-worktree-guard`, `skills/gsdw-worktrees` |
+| Hook JSON parsed without `jq` (Python fallback) | `lib/gsd_hook_payload.py` |
 | Escape hatch `GSD_SKIP_GUARD=1`; shim fails open when the toolkit is not installed | `gsd-worktree-guard`, `shims/` |
 
 ## 6. Phase flow
@@ -93,7 +93,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | `--all` preview, `--json`, `--ui` / `--no-ui` | `gsd-flow-next` |
 | Guard check before every step it returns | `gsd-flow-next` |
 | Configurable cross-AI reviewer (`review_provider`, default `codex`) | `gsd-flow-next`, `lib/provider.sh` |
-| A `REVIEWS.md` whose configured reviewer failed (empty section, Codex usage limit) passes neither the review step nor the guard's execute rule | `gsd-flow-next`, `gsd-worktree-guard`, `lib/common.sh` (`gsd_reviews_problem`) |
+| A `REVIEWS.md` whose configured reviewer failed (empty section, Codex usage limit) passes neither the review step nor the guard's execute rule | `gsd-flow-next`, `gsd-worktree-guard`, `lib/common.sh` (`gsd_reviews_problem`; gsd-core reviewer-instance headings such as `## Codex Review (fast)` count) |
 | Wait out a Codex usage limit: wrap a command (re-run after the reset) or `--wait-only`; reset time from Codex's message or session log, `--interval` fallback, `--max-wait` cap (exit 75, never a pass); never calls Codex; keeps a Mac awake | `gsd-codex-wait`, `lib/gsd_codex_limit.py` |
 | Agent-facing driver skill with human stop points (discuss, design system + sketch, screens, review, UI approval) | `skills/gsdw-flow` |
 | Doctor report of merged phases that skipped a mandatory step (T040: flow steps with `flow = strict`, `ui-check` / `ui-approve` with `ui_gates = strict`; `flow_since` cutoff, `flow_skip` single phases shown as a note) | `gsd-doctor` |
@@ -122,9 +122,9 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 
 | Feature | Where |
 |---|---|
-| Providers: `claude`, `codex`, `gemini`, `custom`; ordered `providers =` list, first is default | `lib/provider.sh` |
+| Providers: `claude`, `codex`, `custom` (`gemini` is refused with a reason; `gsd-init --no-launch` removes an older release's Gemini setup); ordered `providers =` list, first is default | `lib/provider.sh` |
 | Precedence chains for provider, executable, model, start mode (CLI > env > repo > legacy > default) | `lib/provider.sh` |
-| Safe argv rendering (arrays, no `eval`); Gemini `--prompt-interactive`, others positional | `lib/provider.sh` |
+| Safe argv rendering (arrays, no `eval`); positional prompts | `lib/provider.sh` |
 | Per-session model (`--model`, `GSD_MODEL`, `GSD_<P>_MODEL`, `<p>_model`, `default`) | `lib/provider.sh` |
 | Sequential cross-provider handoff on one phase (`gsd-start -p N --provider X`) | `gsd-start` |
 | Skills installed per agent (`install.sh --agent …` / `--all-agents`) | `install.sh`, `lib/provider.sh` |
@@ -136,7 +136,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Phase table: number, title, plans done/total, stage, worktree; wraps to the terminal (`--compact` for one line) | `gsd-list` |
 | Read-only health check, every finding names its fix command; `--quiet`, `--json` | `gsd-doctor` |
 | `--fix` (asks y/N, `--yes` for scripts): runs only the safe fixes — gsd-init (T010–T014, T016, T052, T058), gsd-planning-repair (T020, stale counters), `git branch --track` (T015), `chmod +x` pre-merge (T019), dead lock (T030) — then checks again; never commits | `gsd-doctor` |
-| Finding codes: T001–T008 toolkit (incl. T005 no gsd-sdk, T006 no perl, T007 stale skills, T008 a GSD hook runs a file that is gone, e.g. a node path an nvm/Volta/fnm upgrade moved — also a one-line warning in `gsd-start`/`gsd-list`), T010–T019 repo setup (T015 base branch, T016 instructions older than the toolkit, T017 unknown `.gsd.conf` key, T018 bad value, T019 pre-merge gate), T020–T025 planning (T025 duplicate phase heading), T030–T033 hygiene (T032 failed worktree install, T033 a lock with no pid — never removed for you), T040 flow debt, T050–T060 providers, T070–T073 tracker (T073 no ClickUp token), T080 no design system and T081 committed pictures (`ui_gates = strict`; notes otherwise), W017 / W027 shared with `/gsd-health` | `gsd-doctor` |
+| Finding codes: T001–T009 toolkit (incl. T005 no gsd-core (or only the old GSD), T006 no perl, T007 stale skills, T009 gsd-core skill profile is not `full`, T008 a GSD hook runs a file that is gone, e.g. a node path an nvm/Volta/fnm upgrade moved; the fix is to re-run the gsd-core installer — also a one-line warning in `gsd-start`/`gsd-list`), T010–T019 repo setup (T015 base branch, T016 instructions older than the toolkit, T017 unknown `.gsd.conf` key, T018 bad value, T019 pre-merge gate), T020–T026 planning (T025 duplicate phase heading, T026 `phase_id_convention: bracket` is unsupported), T030–T033 hygiene (T032 failed worktree install, T033 a lock with no pid — never removed for you), T040 flow debt, T050–T061 providers (T061 Gemini setup left from an older release), T070–T073 tracker (T073 no ClickUp token), T080 no design system and T081 committed pictures (`ui_gates = strict`; notes otherwise), W017 / W027 shared with `/gsd-health` | `gsd-doctor` |
 | `--json` lists the notes too (`"notes"`) | `gsd-doctor` |
 | Optional add-on notes for projects with screens, per provider and stack (files only): Impeccable design skill; shadcn MCP for Tailwind / shadcn | `gsd-doctor`, `lib/ui.sh` (`gsd_ui_stack`), `lib/provider.sh` (`gsd_provider_ui_addon`) |
 | Checks for a newer GSD on npm and branches whose upstream is gone | `gsd-doctor` |
@@ -151,7 +151,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | One-command upkeep: pull/push this repo, re-link, check the calling repo's shims; `--check` dry run | `gsd-sync` |
 | One-line install of a GitHub release, SHA256-checked, one folder per release (`--version`, `--agent`) | `get.sh` |
 | Update / go back: `gsd-update [--check \| --version X.Y.Z]`; keeps the previous release, prunes older ones | `gsd-update` |
-| "Newer version" notice for gsd-worktrees and GSD (npm) in `gsd-start` / `gsd-list` / `gsd-init` (terminal only) and `gsd-doctor` (also `--quiet`, `updates` in `--json`); day-long cache, background refresh; `GSD_NO_UPDATE_CHECK=1` | `lib/version.sh`, `gsd-doctor` |
+| "Newer version" notice for gsd-worktrees and gsd-core (npm) in `gsd-start` / `gsd-list` / `gsd-init` (terminal only) and `gsd-doctor` (also `--quiet`, `updates` in `--json`); day-long cache, background refresh; `GSD_NO_UPDATE_CHECK=1` | `lib/version.sh`, `gsd-doctor` |
 | Reinstall replaces the toolkit's own links and skills in place (no `.bak` on PATH or in skill dirs) | `install.sh` |
 | Tag-driven releases: tests → tarball + `SHA256SUMS` → GitHub release; `tools/release.sh X.Y.Z --push` | `.github/workflows/release.yml`, `tools/release.sh` |
 
@@ -176,13 +176,13 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 
 | Module | Provides |
 |---|---|
-| `lib/common.sh` | `.gsd.conf` reader, main-checkout / base / wtdir detection, checkout lock (`mkdir`, dead-PID reclaim, re-entrant), merge-driver registration, planning-safety status/apply, Python 3.7+ discovery, install/test command detection, the usable-review test (`gsd_reviews_problem`) |
+| `lib/common.sh` | `.gsd.conf` reader, main-checkout / base / wtdir detection, checkout lock (`mkdir`, dead-PID reclaim, re-entrant), merge-driver registration, planning-safety status/apply, Python 3.7+ discovery, install/test command detection, the usable-review test (`gsd_reviews_problem`; gsd-core reviewer-instance headings such as `## Codex Review (fast)` count) |
 | `lib/provider.sh` | provider identity/validation, instruction file + skill root per provider, native-hook capability + state, resolution chains, argv rendering, owned-marker block helpers |
 | `lib/gsd_planning.py` | `reconcile` and `repair` engines for ROADMAP.md / STATE.md |
-| `lib/gsd_hook_payload.py` | Claude/Gemini hook JSON → guard input |
+| `lib/gsd_hook_payload.py` | Claude hook JSON → guard input |
 | `lib/gsd_codex_limit.py` | Codex usage-limit message parsing and session-log scan, for `gsd-codex-wait` |
 | `lib/roadmap-audit.pl` | read-only ROADMAP bookkeeping audit |
-| `lib/roadmap-rows.pl` | adds a claimed phase's missing checklist + Progress rows (the ones `gsd-sdk` leaves out) |
+| `lib/roadmap-rows.pl` | adds a claimed phase's missing checklist + Progress rows (the ones gsd-core leaves out) |
 | `lib/version.sh` | this package's version, version compare, the cached latest-release check and notice |
 | `lib/tracker.sh` | tracker choice, ticket id parsing, tag extraction and matching |
 | `lib/trackers/*.sh` | one adapter per tracker (`clickup`, `custom`), sourced by `gsd-tracker` |

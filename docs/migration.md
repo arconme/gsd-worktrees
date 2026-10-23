@@ -1,20 +1,58 @@
 # Migration guide
 
+## 0.5.0: move to gsd-core
+
+GSD is now `@opengsd/gsd-core` (CLI `gsd_run`). The old `get-shit-done-cc`
+(`gsd-sdk`) is archived. gsd-worktrees 0.5.0 needs gsd-core and has no
+fallback. Gemini is gone too: gsd-core dropped it. Do these steps in order.
+
+1. Back up your settings:
+   `cp ~/.claude/settings.json ~/.claude/settings.json.bak`
+   (and `$CODEX_HOME/hooks.json`, default `~/.codex/hooks.json`, if you use
+   Codex).
+2. Update gsd-worktrees first: `gsd-update` (`gsd-sync` for a git checkout).
+   It renames our skills to `gsdw-*` before gsd-core's installer can delete
+   the old `gsd-*` ones. It also removes an old Gemini install.
+3. Dry run gsd-core and read what it says:
+   `npx -y --package=@opengsd/gsd-core@latest -- gsd-core --claude --global --dry-run`
+   The dry run only previews the cleanup of the old `get-shit-done-cc` files.
+4. Install: `npx @opengsd/gsd-core@latest --claude --global`. Add
+   `--force-statusline` if you use GSD's status line and want it replaced.
+   For Codex: `npx @opengsd/gsd-core@latest --codex --global`.
+5. Remove the old package: `npm rm -g get-shit-done-cc`.
+6. In each project: `gsd-init --no-launch` (refreshes the instructions and
+   drops the Gemini setup), then `gsd-doctor`.
+
+Notes:
+
+- Do not set `GSD_INSTALLER_MIGRATION_RESOLVE=remove`. It deletes files the
+  installer cannot classify.
+- If the installer stops on unknown files under `skills/gsd-*`, do step 2
+  first.
+- Keep the skill profile `full` (doctor T009). The phase flow needs skills
+  the smaller profiles leave out.
+- Do not turn on `"phase_id_convention": "bracket"` in `.planning/config.json`
+  (doctor T026). It is not supported.
+- Gemini: `gemini` is refused in `providers`, `--provider`, `--agent` and
+  `review_provider`. `gsd-init --no-launch` (or `gsd-doctor --fix`, T061)
+  removes an older release's Gemini setup. Switch to `claude`, `codex` or
+  `custom`.
+
+## Providers and instructions
+
 Run `gsd-init` from the desired base checkout. It delegates to the idempotent
 bootstrap layer, does not touch existing `.planning/`, and never silently
 changes providers.
 
 - Remain Claude-only: `gsd-init --provider claude --no-launch`
 - Switch to Codex: `gsd-init --provider codex --no-launch`
-- Switch to Gemini: `gsd-init --provider gemini --no-launch`
-- Support several: `gsd-init --providers claude,codex,gemini --provider claude --no-launch`
+- Support several: `gsd-init --providers claude,codex --provider claude --no-launch`
 
 Use repeated `--provider-command provider=executable` flags for nonstandard
 executable paths. `--provider` must be a member of `--providers`; invalid
 selections fail before repository files are written.
 
-For per-provider executable overrides, use `claude_command`, `codex_command`,
-and `gemini_command`. Then hand the same phase between providers with repeated
+For per-provider executable overrides, use `claude_command` and `codex_command`. Then hand the same phase between providers with repeated
 `gsd-start -p <N> --provider <name> --no-launch` calls. This reuses the phase
 worktree and planning state; do not run concurrent mutating sessions there.
 

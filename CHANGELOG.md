@@ -4,12 +4,61 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
-## 0.4.13
+## 0.5.0
 
-- `gsd-start` now opens the full flow (`/gsd-flow`) by default: the session
+Breaking:
+
+- **Needs gsd-core.** GSD is now `@opengsd/gsd-core` (CLI `gsd_run`); the old
+  `get-shit-done-cc` / `gsd-sdk` is archived and no longer used. `gsd-start`
+  claims phases with `gsd_run query phase.add` / `phase.insert`. With only
+  the old GSD installed it refuses and points to `docs/migration.md`. What
+  you do: follow "0.5.0: move to gsd-core" in `docs/migration.md`
+  (`npx @opengsd/gsd-core@latest --claude --global`, then
+  `npm rm -g get-shit-done-cc`).
+- **Gemini is removed** (gsd-core dropped it). `gemini` is refused with a
+  reason in `providers`, `--provider`, `--agent`, `GSD_AGENT`,
+  `review_provider` and `install.sh --agent gemini`. What you do: run
+  `gsd-init --no-launch` in each repo (drops gemini from `providers`,
+  removes `gemini_command` / `gemini_model`, our block in `GEMINI.md`, our
+  hook in `.gemini/settings.json`). `install.sh` removes our skills and user
+  hook under `~/.gemini` when its install manifest lists gemini.
+- **Skills are renamed:** `gsd-flow` -> `gsdw-flow`, `gsd-worktrees` ->
+  `gsdw-worktrees`, `gsd-tracker` -> `gsdw-tracker`, because gsd-core's
+  installer deletes every `skills/gsd-*` folder. What you do: update
+  gsd-worktrees first (`gsd-update`), then install gsd-core. In Claude, type
+  `/gsdw-flow <N>`.
+
+Also:
+
+- `gsd-start` now opens the full flow (`/gsdw-flow`) by default: the session
   resumes the phase at its first unfinished step. `--no-flow` opens
   discuss-phase only for one run; `start_mode = discuss` in `.gsd.conf` makes
   that the repo's default, and `--flow` overrides it.
+- `gsd-doctor` T005 looks for gsd-core (`GSD_CLI`, `gsd_run` on PATH, then
+  `gsd-core/bin/gsd_run` under the Claude or Codex folder) and notes an old
+  `get-shit-done-cc` still installed.
+- New doctor codes: T009 (gsd-core installed with a skill profile other than
+  `full`; fix `npx @opengsd/gsd-core@latest --claude --global --profile=full`),
+  T026 (`"phase_id_convention": "bracket"` in `.planning/config.json`; not
+  supported), T061 (Gemini setup left from an older release; fix
+  `gsd-init --no-launch`, also run by `gsd-doctor --fix`).
+- T008 (a GSD hook runs a missing file) now says to re-run the gsd-core
+  installer (`--force-statusline` when the status line is affected).
+- The update notice and doctor check the latest `@opengsd/gsd-core` on npm.
+  The cache file is now `latest-gsd-core-version`.
+- A `<P>-REVIEWS.md` with gsd-core reviewer-instance headings
+  (`## Codex Review (fast)`) now counts as a review.
+- The guard reads the Claude plugin form `gsd-core:gsd-plan-phase` as
+  `gsd-plan-phase`.
+- Codex skills now go to `~/.agents/skills` (`GSD_CODEX_SKILL_DIR` overrides).
+  Ours left in the old `~/.codex/skills` are removed by `install.sh`.
+- A `--copy` install marks a skill with a last line
+  `<!-- gsd-worktrees-skill X.Y.Z -->` in its `SKILL.md` (it was a
+  `.gsd-worktrees-skill` file).
+- The Codex hook file is `$CODEX_HOME/hooks.json`.
+- `tests/test-gemini-hook.sh` and `docs/gemini-hooks.md` are gone. CI installs
+  `@opengsd/gsd-core@1.18.0`, so `tests/test-e2e.sh` runs for real;
+  `GSD_TEST_REQUIRE_GSD=1` turns its skip into a failure.
 
 ## 0.4.12
 

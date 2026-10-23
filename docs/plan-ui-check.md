@@ -265,7 +265,7 @@ ui-check → ui-look → ui-approve → ui-review
   without `GSD_PLAYWRIGHT_ROOT`); `node --check lib/ui-check.mjs` in the
   syntax step.
 - Docs: `docs/features.md`, `docs/providers.md`, `docs/ui-quality-plan.md`,
-  README, CLAUDE.md, `docs/command-order.html`, the `gsd-flow` skill,
+  README, CLAUDE.md, `docs/command-order.html`, the `gsdw-flow` skill,
   CHANGELOG `## 0.4.0`.
 
 ## Later (0.4.1)

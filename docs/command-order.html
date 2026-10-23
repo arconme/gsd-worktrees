@@ -437,7 +437,7 @@
 
   <section>
     <h2>The one rule that trips people up</h2>
-    <p class="note"><strong>Every command with a phase number runs inside that phase's worktree.</strong> The provider-neutral command guard blocks them anywhere else, and with <code>flow = strict</code> in <code>.gsd.conf</code> it also refuses a step whose predecessor left no artifact. Claude and Gemini native hooks add early feedback; Codex and hook-free sessions retain the same checks through <code>gsd-flow-next</code>. Arbitrary shell commands that bypass GSD are outside this boundary.</p>
+    <p class="note"><strong>Every command with a phase number runs inside that phase's worktree.</strong> The provider-neutral command guard blocks them anywhere else, and with <code>flow = strict</code> in <code>.gsd.conf</code> it also refuses a step whose predecessor left no artifact. The Claude native hook adds early feedback; Codex and hook-free sessions retain the same checks through <code>gsd-flow-next</code>. Arbitrary shell commands that bypass GSD are outside this boundary.</p>
   </section>
 
 </div>

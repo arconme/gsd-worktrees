@@ -1,33 +1,32 @@
 # Provider capability and troubleshooting matrix
 
-| Capability | Claude Code | OpenAI Codex | Gemini |
-|---|---|---|---|
-| Project instructions | `CLAUDE.md` | `AGENTS.md` | `GEMINI.md` |
-| Skills | native directory | native directory | native directory with activation consent |
-| Interactive launch | positional prompt | positional prompt | `--prompt-interactive` |
-| Native guard hook | `PreToolUse(Skill)` | not installed by this toolkit | `BeforeTool` |
-| User-level hook (`install.sh`: `/gsd-new-project` only after `gsd-init`) | `PreToolUse(Skill)` + `UserPromptExpansion` (matcher `gsd.*`: a plain word is an exact match) in `~/.claude/settings.json` | none (the skill's written rule) | `BeforeTool` (`activate_skill`) in `~/.gemini/settings.json` |
-| Required safety | `gsd-flow-next` command guard | same | same |
+| Capability | Claude Code | OpenAI Codex |
+|---|---|---|
+| Project instructions | `CLAUDE.md` | `AGENTS.md` |
+| Skills | `~/.claude/skills` | `~/.agents/skills` (`GSD_CODEX_SKILL_DIR` overrides) |
+| Interactive launch | positional prompt | positional prompt |
+| Native guard hook | `PreToolUse(Skill)` | not installed by this toolkit |
+| User-level hook (`install.sh`: `/gsd-new-project` only after `gsd-init`) | `PreToolUse(Skill)` + `UserPromptExpansion` (matcher `gsd.*`: a plain word is an exact match) in `~/.claude/settings.json` | none (the skill's written rule) |
+| Required safety | `gsd-flow-next` command guard | same |
 
 ## Session models
 
 `gsd-init` and `gsd-start` accept `--model MODEL_ID` for the session they
 launch. Selection precedence is `--model` > `GSD_MODEL` > the matching
-`GSD_CLAUDE_MODEL`, `GSD_CODEX_MODEL`, or `GSD_GEMINI_MODEL` > the matching
-`claude_model`, `codex_model`, or `gemini_model` key in `.gsd.conf` > no model
+`GSD_CLAUDE_MODEL` or `GSD_CODEX_MODEL` > the matching
+`claude_model` or `codex_model` key in `.gsd.conf` > no model
 flag (the CLI default). The repo keys are optional. `--model default` explicitly
 omits the model flag, even when a model is configured. Custom providers reject
 non-default model selections because their model flag syntax is unknown.
 
-All three known CLIs use `--model`; Gemini retains its `--prompt-interactive`
-launch syntax. This setting affects only the session launched by these
+Both known CLIs use `--model`. This setting affects only the session launched by these
 commands, not existing or manually started sessions or upstream GSD subagent
 and review models. Model selection makes no authentication changes or direct model API calls;
 each CLI uses its existing authentication.
 
 The toolkit does not claim identical skill chaining. Claude may directly invoke
 slash skills. Codex receives a natural-language prompt naming the installed
-skill and artifacts. Gemini is asked to activate its skill. When a native GSD
+skill and artifacts. When a native GSD
 planning skill is unavailable, the adapter prints the exact next action instead
 of silently treating the gate as complete.
 
@@ -38,7 +37,7 @@ takes over. Concurrent writers in one worktree are not safe; use parallel
 providers on different phases for concurrent mutation.
 
 Configure the set once as an ordered list, for example
-`providers = codex,claude,gemini`. The first entry is the default when a
+`providers = codex,claude`. The first entry is the default when a
 session does not pass `--provider`. Legacy repositories containing only
 `provider = claude` continue to work; re-running `gsd-init` converts that key
 to the canonical list without changing the selected provider.
@@ -53,6 +52,17 @@ resumes the phase at its first unfinished step from existing artifacts.
 `--no-flow` opens only the provider's discuss-phase prompt for one invocation;
 `start_mode = discuss` makes that the repo's default, and `--flow` overrides it.
 
+### Gemini
+
+Gemini is no longer supported, because gsd-core dropped it. `gemini` is
+refused with a reason in `providers`, `--provider`, `--agent`, `GSD_AGENT` and
+`review_provider`, and is never run as a `custom` command. To clean up a repo
+an older release set up for Gemini, run `gsd-init --no-launch` (or
+`gsd-doctor --fix`; doctor finding `T061`). It drops gemini from `providers`,
+removes `gemini_command` / `gemini_model`, removes our marked block in
+`GEMINI.md` (the file is deleted if nothing else is in it) and our hook in
+`.gemini/settings.json`.
+
 Run `gsd-doctor --json` to inspect the provider, executable, instruction block,
 skill adapter, native hook, mandatory guard, stale artifacts, and remediation.
 The doctor is read-only. JSON includes `session_model` (empty means CLI default)
@@ -60,13 +70,10 @@ and finding `T059` for malformed model selection. Model availability and account
 access remain the provider CLI's responsibility. A missing executable does not
 prevent `--no-launch`.
 
-Model flag verification: Claude Code 2.1.280, Codex CLI 0.153.4, and Gemini CLI
-0.57.0 installed help, checked 2026-09-23. Codex also documents the flag in its
+Model flag verification: Claude Code 2.1.280 and Codex CLI 0.153.4 installed help, checked 2026-09-23. Codex also documents the flag in its
 [official CLI reference](https://developers.openai.com/codex/cli/reference/).
 
 Native hooks can be disabled, unsupported, or bypassed by arbitrary shell use.
-Gemini's adapter handles skill activation and direct GSD shell calls; see
-[Gemini hook boundaries](gemini-hooks.md) for compound commands and prerequisites.
 The supported enforcement boundary is the `gsd-*` launch and `gsd-flow-next`
 path. No agent tool can prevent a user from directly running unrelated shell
 commands outside that path.
@@ -99,9 +106,9 @@ on `gsd-start` do not rewrite the set. Refer to `gsd-init --help` for setup flag
 | Repository key | Meaning / default |
 |---|---|
 | `providers` | Ordered comma-separated known identities, no empty/duplicate entries; first is default |
-| `claude_command`, `codex_command`, `gemini_command`, `custom_command` | Provider executable; custom requires one |
-| `claude_model`, `codex_model`, `gemini_model` | Optional model ID; `default` omits the flag |
-| `review_provider` | Independent reviewer: `claude`, `codex` (default), `gemini`, or `custom` |
+| `claude_command`, `codex_command`, `custom_command` | Provider executable; custom requires one |
+| `claude_model`, `codex_model` | Optional model ID; `default` omits the flag |
+| `review_provider` | Independent reviewer: `claude`, `codex` (default), or `custom` |
 | `start_mode` | `flow` (default) or `discuss` |
 | `base` | Base branch; detect develop, main, then current branch |
 | `wtdir` | Sibling worktree directory; default `<repo>-worktrees` |

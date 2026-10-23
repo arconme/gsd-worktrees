@@ -1,12 +1,15 @@
 # gsd-worktrees
 
 Provider-neutral, parallel-session worktree orchestration for **GSD** (Get Shit
-Done). The shared shell engine supports Claude Code, OpenAI Codex, and Gemini;
+Done). The shared shell engine supports Claude Code and OpenAI Codex (plus a `custom` command);
 thin adapters select launch syntax, durable instructions, skill destinations,
 and optional native hooks.
 
-GSD itself provides the planning skills (`/gsd-phase`, `/gsd-discuss-phase`,
-`/gsd-plan-phase`, `/gsd-execute-phase`, …) and the `gsd-sdk` CLI. This repo
+GSD itself (now [`@opengsd/gsd-core`](https://www.npmjs.com/package/@opengsd/gsd-core))
+provides the planning skills (`/gsd-phase`, `/gsd-discuss-phase`,
+`/gsd-plan-phase`, `/gsd-execute-phase`, …) and the `gsd_run` CLI. Install it
+with `npx @opengsd/gsd-core@latest --claude --global` (or `--codex`). Coming
+from the old `get-shit-done-cc`? See [docs/migration.md](docs/migration.md). This repo
 provides everything around them: one-command feature start/finish, per-phase
 git worktrees, claim races resolved automatically, a checkout lock, per-worktree
 dev ports, ticket write-back (ClickUp, or any tracker through a script), and
@@ -28,8 +31,7 @@ integrations and choose which provider should run the initialization session:
 ```sh
 gsd-init --provider claude
 gsd-init --provider codex
-gsd-init --provider gemini
-gsd-init --providers claude,codex,gemini --provider codex
+gsd-init --providers claude,codex --provider codex
 gsd-init --providers claude,codex --provider codex \
   --provider-command codex=/opt/bin/codex
 ```
@@ -46,7 +48,6 @@ claude_command = /opt/anthropic/bin/claude
 codex_command = /opt/openai/bin/codex
 claude_model = MODEL_ID
 codex_model = MODEL_ID
-gemini_model = MODEL_ID
 flow = strict
 review_provider = codex
 start_mode = flow
@@ -56,7 +57,7 @@ tracker = clickup
 The provider-specific `*_model` keys are optional. `gsd-init --model MODEL_ID`
 and `gsd-start --model MODEL_ID` override the model for that launched session;
 otherwise model selection follows `--model`, `GSD_MODEL`, the matching
-`GSD_CLAUDE_MODEL` / `GSD_CODEX_MODEL` / `GSD_GEMINI_MODEL`, then the matching
+`GSD_CLAUDE_MODEL` / `GSD_CODEX_MODEL`, then the matching
 repo key above. With no value, the toolkit omits the model flag and lets the
 CLI use its default. An explicit `--model` value of `default` also omits that
 flag, overriding configured model values. Custom providers reject non-default
@@ -90,7 +91,6 @@ Multiple providers can use the same phase sequentially:
 ```sh
 gsd-start -p 7 --provider claude --no-launch
 gsd-start -p 7 --provider codex --no-launch
-gsd-start -p 7 --provider gemini --no-launch
 ```
 
 Each command targets the existing `phase-7-*` worktree and renders that
@@ -101,8 +101,7 @@ state. Parallel writers for different phases remain fully supported.
 | Provider | Instructions | User skills | Launch prompt | Native hook |
 |---|---|---|---|---|
 | Claude Code | `CLAUDE.md` | `~/.claude/skills` | positional slash/skill prompt | supported, optional |
-| OpenAI Codex | `AGENTS.md` | `~/.codex/skills` | positional natural-language prompt | not registered; command guard applies |
-| Gemini | `GEMINI.md` | `~/.gemini/skills` | `--prompt-interactive` | supported, optional |
+| OpenAI Codex | `AGENTS.md` | `~/.agents/skills` | positional natural-language prompt | not registered; command guard applies |
 
 All provider files point to canonical `.gsd/INSTRUCTIONS.md`. Generated blocks
 are marked and repeated bootstrap updates only those blocks. See
@@ -173,7 +172,7 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 
 **`skills/` — canonical agent-facing skills** (installed per selected provider):
 
-`gsd-worktrees/SKILL.md` teaches any supported agent, in any project, what
+`gsdw-worktrees/SKILL.md` teaches any supported agent, in any project, what
 these commands are and the order to use them in — `gsd-list` before claiming,
 `-p <N>` to attach, `-n` only for genuinely new work. Only its description line
 sits in context permanently; the body loads when a session is actually about
@@ -191,7 +190,7 @@ All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
   phase-flow debt report (T040); `flow_since = <N>` limits that report to phases >= N,
   and `flow_skip = <N>, <N>` leaves out single phases (listed as a note — a record, not a gap).
 - **`.gsd/INSTRUCTIONS.md`** — canonical marked workflow block. Selected providers
-  get minimal entrypoints in `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`, plus
+  get minimal entrypoints in `CLAUDE.md` or `AGENTS.md`, plus
   optional native-hook settings where supported. Unrelated content is preserved.
 - **`shims/` → `scripts/gsd-*.sh` + `scripts/hooks/gsd-worktree-guard.sh`** —
   frozen 7-line delegators to the PATH commands, so committed references
@@ -255,8 +254,8 @@ curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/get.sh |
 
 - Keep your projects on the Linux side (`~/projects`), not under `/mnt/c/…`:
   it is much faster there, and file permissions and line endings behave.
-- Install and run the agents (Claude Code, Codex, Gemini) and `gsd-sdk`
-  (`npm i -g get-shit-done-cc`) inside WSL too, so they see the same PATH.
+- Install and run the agents (Claude Code, Codex) and gsd-core
+  (`npx @opengsd/gsd-core@latest --claude --global`) inside WSL too, so they see the same PATH.
 - If `gsd-*` is not found after install, open a new terminal (Ubuntu adds
   `~/.local/bin` to PATH at login once it exists).
 - VS Code: the "WSL" extension opens the Linux-side folders directly.
@@ -279,7 +278,7 @@ in each release: [CHANGELOG.md](CHANGELOG.md). More: [docs/releases.md](docs/rel
 ```sh
 git clone git@github.com:arconme/gsd-worktrees.git
 cd gsd-worktrees
-./install.sh --agent claude      # or --agent codex / --agent gemini / --all-agents
+./install.sh --agent claude      # or --agent codex / --all-agents
 ```
 
 Symlink mode means `git pull` updates the live commands, and edits to the live
@@ -288,12 +287,11 @@ runtime containing commands and their required libraries; command symlinks
 point into that copy. See [copy installation](docs/copy-install.md) for
 `GSD_COPY_DIR`, backup behavior, and updates.
 Commands default to `GSD_BIN_DIR` or `~/.local/bin`. Skill roots can be isolated
-or relocated with `GSD_CLAUDE_SKILL_DIR`, `GSD_CODEX_SKILL_DIR`, and
-`GSD_GEMINI_SKILL_DIR`. Existing unrelated files are backed up; command links
+or relocated with `GSD_CLAUDE_SKILL_DIR` and `GSD_CODEX_SKILL_DIR`. Existing unrelated files are backed up; command links
 and skills the toolkit placed earlier are replaced in place.
 Stale toolkit skill links are reported; stale toolkit command links are pruned.
-For Claude and Gemini, install also adds one user-level hook (in
-`~/.claude/settings.json` / `~/.gemini/settings.json`, next to the skills dir)
+For Claude, install also adds one user-level hook (in
+`~/.claude/settings.json`, next to the skills dir)
 that refuses `/gsd-new-project` and `/gsd-ingest-docs` in a repo `gsd-init` has
 not set up — run `gsd-init` instead. In other repos it checks nothing else;
 in a set-up repo it also applies the toolkit's guard to slash commands you type.
@@ -415,7 +413,6 @@ tests/test-flow-next.sh
 tests/test-planning-reconcile.sh
 tests/test-worktree-guard.sh
 tests/test-providers.sh
-bash tests/test-gemini-hook.sh
 tests/test-install-copy.sh
 bash tests/test-review-fixes.sh
 tests/test-list.sh
@@ -427,7 +424,7 @@ tests/test-ui-browser.sh # the real page checker in a browser (needs GSD_PLAYWRI
 tests/test-doctor.sh     # doctor checks: missing tools, stale skills, .gsd.conf typos, base branch, pre-merge gate, …
 tests/test-tracker.sh    # tickets: id parsing, none/custom/fake-ClickUp, start/finish/doctor paths
 tests/test-codex-wait.sh # Codex usage limit: gsd-codex-wait (fake clock), the usable-review test
-tests/test-e2e.sh        # whole journey in a fake project; needs gsd-sdk (skips without it)
+tests/test-e2e.sh        # whole journey in a fake project; needs gsd-core (skips without it)
 ```
 
 The suites cover the two real planning corruptions from `medyour-platform`

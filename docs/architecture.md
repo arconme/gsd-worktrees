@@ -10,10 +10,11 @@ state, merge, claim, or safety policy.
 An adapter supplies CLI discovery/default executable, safe argument-array
 rendering, project instruction filename, user skill directory, native-hook
 capability, initialization/phase prompts, and warnings. Supported identities
-are `claude`, `codex`, `gemini`, and `custom`. Identity and executable are
+are `claude`, `codex`, and `custom`. `gemini` is refused with a reason
+(gsd-core dropped Gemini). Identity and executable are
 separate: ordered `providers = codex,claude` makes Codex the default and can
 use `agent_command = /opt/bin/codex`, while a multi-provider repository can
-define `claude_command`, `codex_command`, and `gemini_command` independently.
+define `claude_command` and `codex_command` independently.
 The singular `provider` key is a read-only compatibility input used only when
 `providers` is absent; bootstrap migrates it to the canonical list.
 
@@ -27,7 +28,7 @@ environment, provider-specific repository command, default-provider legacy
 ## Instructions and skills
 
 `.gsd/INSTRUCTIONS.md` is the canonical generated project instruction block.
-Provider files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) receive only a marked,
+Provider files (`CLAUDE.md`, `AGENTS.md`) receive only a marked,
 replaceable entrypoint pointing to it. Existing content outside the markers is
 preserved. The shared `gsdw-flow` skill describes state transitions and asks the
 active agent to use its own skill mechanism; it never calls a provider-native
@@ -38,7 +39,7 @@ skill API directly.
 `gsd-worktree-guard --command … --phase … --repo …` is the mandatory,
 provider-neutral validation API. `gsd-flow-next` calls it before it returns a
 phase action, so every supported flow path enforces worktree matching,
-dependency installation, and strict-flow order. Claude and Gemini adapters may
+dependency installation, and strict-flow order. The Claude adapter may
 also register native pre-tool hooks for earlier feedback. Hooks are optional
 defense in depth and Codex currently has no integration registered here.
 

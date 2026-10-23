@@ -27,13 +27,14 @@ less get.sh && bash get.sh --version 0.2.0
    `~/.local/bin` and copying the skills into each agent's skill folder;
 4. keeps the release you had before, removes older ones.
 
-Env: `GSD_BIN_DIR`, `GSD_RELEASES_DIR`, the `GSD_<AGENT>_SKILL_DIR` variables,
+Env: `GSD_BIN_DIR`, `GSD_RELEASES_DIR`, the `GSD_CLAUDE_SKILL_DIR` / `GSD_CODEX_SKILL_DIR` variables,
 and `GSD_UPDATE_REPO=owner/name` (a fork).
 
 ### Knowing about updates
 
 Two versions are watched: gsd-worktrees (GitHub releases) and GSD itself
-(`get-shit-done-cc` on npm, compared with `gsd-sdk -v`).
+(`@opengsd/gsd-core` on npm, compared with the installed gsd-core version;
+the update command is `npx @opengsd/gsd-core@latest --claude --global`).
 
 - `gsd-start`, `gsd-list` and `gsd-init` print one line on stderr per newer
   version — only when you run them in a terminal, so JSON, pipes and agent
@@ -42,7 +43,7 @@ Two versions are watched: gsd-worktrees (GitHub releases) and GSD itself
   `updates` list in `--json`). They are not findings: the exit status is 0.
 - The latest versions are cached for a day in
   `${XDG_CACHE_HOME:-~/.cache}/gsd-worktrees/` (`latest-version`,
-  `latest-gsd-version`). Commands read the cache and refresh it in the
+  `latest-gsd-core-version`). Commands read the cache and refresh it in the
   background, so they never wait on the network.
 - `GSD_NO_UPDATE_CHECK=1` turns all of this off.
 
