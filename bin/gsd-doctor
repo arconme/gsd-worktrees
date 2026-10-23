@@ -51,8 +51,10 @@
 #                  as a note.
 #                  T008 = a GSD hook (in an agent's user settings or this
 #                  repo's) runs a file that is gone — usually a node path a
-#                  Node upgrade moved; it fails silently. The fix re-runs
-#                  GSD's installer for that agent; doctor never edits it.
+#                  Node upgrade moved; it fails silently. The fix swaps in
+#                  the current node path (GSD's installer keeps a hook it
+#                  already has) or, for a gone script, re-runs GSD's
+#                  installer for that agent; doctor never edits it.
 #                  T016 = the generated GSD instructions are older than this
 #                  toolkit (gsd-init refreshes them; --fix runs it).
 #                  T070–T073 = ticket tracker config (`tracker =` in .gsd.conf).
@@ -238,15 +240,26 @@ else
     rows=$(printf '%s\n' "$stale_hooks" | awk -F '\t' -v f="$f" '$1 == f')
     n=$(printf '%s\n' "$rows" | cut -f4 | sort -u | wc -l | tr -d ' ')
     gone=$(printf '%s\n' "$rows" | cut -f6 | awk '!seen[$0]++' | head -2 | paste -sd ',' - | sed 's/,/, /g')
-    why=""; printf '%s\n' "$rows" | cut -f6 | grep -q '/node$' && why=" (a Node upgrade moved it; GSD saves the exact node path)"
-    if printf '%s\n' "$rows" | cut -f3 | grep -qx toolkit; then
-      fix=$REINSTALL
-    else
-      agent=claude
-      for p in gemini codex; do [ "$f" = "$(gsd_provider_user_hook_file "$p")" ] && agent=$p; done
-      case "$f" in "$MAIN"/.gemini/*) agent=gemini ;; esac
-      scope=global; printf '%s\n' "$rows" | cut -f2 | grep -qx project && scope=local
-      fix="npx get-shit-done-cc@latest --$agent --$scope"
+    why=""; dead=$(printf '%s\n' "$rows" | cut -f6 | grep '/node$' | head -1)
+    [ -z "$dead" ] || why=" (a Node upgrade moved it; GSD saves the exact node path)"
+    # A gone script comes back when its installer runs again. A gone node
+    # does not: GSD's installer keeps a hook it already has, stale or not, so
+    # the saved path has to be swapped by hand.
+    fix=""
+    if printf '%s\n' "$rows" | cut -f6 | grep -qv '/node$'; then
+      if printf '%s\n' "$rows" | cut -f3 | grep -qx toolkit; then
+        fix=$REINSTALL
+      else
+        agent=claude
+        for p in gemini codex; do [ "$f" = "$(gsd_provider_user_hook_file "$p")" ] && agent=$p; done
+        case "$f" in "$MAIN"/.gemini/*) agent=gemini ;; esac
+        scope=global; printf '%s\n' "$rows" | cut -f2 | grep -qx project && scope=local
+        fix="npx get-shit-done-cc@latest --$agent --$scope"
+      fi
+    fi
+    if [ -n "$dead" ]; then
+      now=$(command -v node 2>/dev/null) || now="<your node>"
+      fix="${fix:+$fix, then }in $f replace $dead with $now"
     fi
     fail "$n GSD hook(s) in $f run a missing file: $gone$why — they fail silently" "$fix" "T008"
   done <<EOF
