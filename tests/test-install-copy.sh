@@ -28,6 +28,10 @@ install_copy
 [ "$(cat "$COPY/unrelated-dir/file")" = keep ]
 [ -f "$COPY/shims/scripts/gsd-init.sh" ] || [ -d "$COPY/shims/scripts" ]
 [ -f "$COPY/skills/gsdw-flow/SKILL.md" ]
+# a skill an older release shipped leaves the runtime on the next copy install
+mkdir -p "$COPY/skills/gsd-flow"; printf 'old\n' > "$COPY/skills/gsd-flow/SKILL.md"
+install_copy
+[ ! -e "$COPY/skills/gsd-flow" ]
 # the page checker travels with the runtime: the Node script and the pinned axe-core
 [ -f "$COPY/lib/ui-check.mjs" ]
 [ -f "$COPY/lib/vendor/axe-core/axe.min.js" ]
@@ -72,6 +76,15 @@ env -u GSD_CODEX_SKILL_DIR -u CODEX_HOME HOME="$CH" GSD_BIN_DIR="$WORK/codex-bin
 [ ! -e "$CH/.codex/skills/gsd-flow" ]
 [ ! -L "$CH/.codex/skills/gsdw-tracker" ]
 [ -f "$CH/.codex/skills/mine/SKILL.md" ]
+# an older release's manifest records ~/.codex/skills: a reinstall from it
+# moves the skills too, and a recorded custom dir is kept
+CB="$WORK/codex-bin2"; mkdir -p "$CB" "$CH/.codex/skills/gsd-worktrees"
+printf 'old\n' > "$CH/.codex/skills/gsd-worktrees/SKILL.md"; printf '0.4.12\n' > "$CH/.codex/skills/gsd-worktrees/.gsd-worktrees-skill"
+printf 'providers\tcodex\ncodex_skills\t%s\n' "$(cd "$CH/.codex/skills" && pwd -P)" > "$CB/.gsd-install-manifest"
+env -u GSD_CODEX_SKILL_DIR -u CODEX_HOME HOME="$CH" GSD_BIN_DIR="$CB" GSD_COPY_DIR="$WORK/codex-runtime2" \
+  "$PKG/install.sh" --copy --reuse-install-config --no-user-hook >/dev/null
+[ ! -e "$CH/.codex/skills/gsd-worktrees" ]
+grep -q "^codex_skills	$(cd "$CH/.agents/skills" && pwd -P)\$" "$CB/.gsd-install-manifest"
 
 # Move the source away without touching it: exercise a command from an isolated
 # copy of the package, then remove only that temporary fixture.

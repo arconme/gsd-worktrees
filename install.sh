@@ -80,7 +80,9 @@ if [ "$REUSE" = 1 ] && [ -f "$MANIFEST" ]; then
       # recorded agents are kept; any --agent given now is added to them
       providers) oldifs=$IFS; IFS=,; for p in $value; do [ "$p" = gemini ] || add_provider "$p"; done; IFS=$oldifs ;;
       claude_skills) GSD_CLAUDE_SKILL_DIR=${GSD_CLAUDE_SKILL_DIR:-$value} ;;
-      codex_skills) GSD_CODEX_SKILL_DIR=${GSD_CODEX_SKILL_DIR:-$value} ;;
+      # Codex's old default (~/.codex/skills, recorded by releases before
+      # 0.5.0) is not a choice: those skills move to its own ~/.agents/skills
+      codex_skills) [ "$value" = "$(absolute_path "${CODEX_HOME:-$HOME/.codex}/skills")" ] || GSD_CODEX_SKILL_DIR=${GSD_CODEX_SKILL_DIR:-$value} ;;
       gemini_skills) ;;   # read above, for the clean-up
       user_hook) USER_HOOK=${USER_HOOK:-$value} ;;
       *) echo "invalid install manifest key: $key" >&2; exit 1 ;;
@@ -166,6 +168,13 @@ if [ "$MODE" = copy ]; then
     done < "$COPY_DIR/.gsd-owned-commands"
   fi
   for component in bin lib shims skills; do copy_tree "$REPO/$component" "$COPY_DIR/$component"; done
+  # A skill an older release shipped (renamed gsd-flow → gsdw-flow) would
+  # stay in the runtime's skills/, which is only ever ours: doctor would
+  # compare it against the installed ones. Remove it.
+  for d in "$COPY_DIR"/skills/*/; do
+    [ -f "$d/SKILL.md" ] && [ ! -d "$REPO/skills/$(basename "$d")" ] || continue
+    rm -rf "${d%/}"; echo "✂ runtime skill $(basename "$d") removed (not in this version)"
+  done
   for top in install.sh get.sh VERSION; do
     [ -f "$REPO/$top" ] || continue
     if [ -e "$COPY_DIR/$top" ] || [ -L "$COPY_DIR/$top" ]; then
