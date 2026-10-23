@@ -45,7 +45,7 @@ absolute_path() { "$INSTALL_PYTHON" -c 'import os,sys; print(os.path.realpath(sy
 within() { case "$1/" in "$2/"*) return 0 ;; *) return 1 ;; esac; }
 # A command link or skill this toolkit placed earlier (from any checkout or
 # release runtime) is replaced in place, not moved to .bak: a gsd-list.bak on
-# PATH, or a gsd-flow.bak in an agent's skill dir, would be picked up as real.
+# PATH, or a gsdw-flow.bak in an agent's skill dir, would be picked up as real.
 toolkit_pkg() { [ -f "$1/install.sh" ] && [ -f "$1/lib/common.sh" ]; }
 owned_link() {  # $1=symlink $2=bin|skills
   local t; t=$(readlink "$1") || return 1
@@ -204,7 +204,7 @@ done
 # Follows the chosen mode like bin/ does: --copy exists for machines that
 # won't keep this checkout around, and a symlinked skill would dangle there.
 install_skills() {
-  local provider=$1 SKILL_DIR d name dest bak
+  local provider=$1 SKILL_DIR d name dest bak old
   SKILL_DIR=$(gsd_provider_skill_root "$provider")
   mkdir -p "$SKILL_DIR"
   for d in "$REPO"/skills/*/; do
@@ -213,11 +213,11 @@ install_skills() {
     if [ -e "$dest" ] || [ -L "$dest" ]; then
       if [ -L "$dest" ] && [ "$(readlink "$dest")" = "${d%/}" ] && [ "$MODE" = link ]; then :
       elif [ "$MODE" = copy ] && [ -d "$dest" ] && [ ! -L "$dest" ] \
-        && diff -qr -x .gsd-worktrees-skill "${d%/}" "$dest" >/dev/null 2>&1; then
+        && ! gsd_skill_differs "$d" "$dest"; then
         echo "• $provider skill $name already current"; continue
       elif [ -L "$dest" ] && owned_link "$dest" skills; then
         rm -f "$dest"
-      elif [ -d "$dest" ] && [ ! -L "$dest" ] && [ -f "$dest/.gsd-worktrees-skill" ]; then
+      elif [ -d "$dest" ] && [ ! -L "$dest" ] && gsd_skill_owned "$dest"; then
         rm -rf "$dest"
       else
         bak=$(backup_path "$dest"); mv "$dest" "$bak"
@@ -229,26 +229,39 @@ install_skills() {
     else
       cp -R "${d%/}" "$dest"
       # marks the copy as the toolkit's, so the next update replaces it in place
-      head -1 "$REPO/VERSION" 2>/dev/null > "$dest/.gsd-worktrees-skill" || : > "$dest/.gsd-worktrees-skill"
+      # (a line in SKILL.md, not a file of its own — see gsd_skill_owned)
+      printf '%s %s -->\n' "$GSD_SKILL_MARK" "$(head -1 "$REPO/VERSION" 2>/dev/null)" >> "$dest/SKILL.md"
     fi
     echo "✔ $provider skill $name → $dest"
   done
-  # A skill this toolkit placed earlier but no longer ships (renamed or
-  # retired) would keep loading with old advice: remove it.
-  for dest in "$SKILL_DIR"/*; do
+  retire_skills "$SKILL_DIR" "$provider" ""
+  # Codex reads skills from ~/.agents/skills; ~/.codex/skills is its old place.
+  # Ours there would load twice (or stale): move them out.
+  if [ "$provider" = codex ] && [ -z "${GSD_CODEX_SKILL_DIR:-}" ]; then
+    old=${CODEX_HOME:-$HOME/.codex}/skills
+    [ ! -d "$old" ] || [ "$old" = "$SKILL_DIR" ] || retire_skills "$old" codex all
+  fi
+}
+# A skill this toolkit placed earlier but no longer ships (renamed or
+# retired) would keep loading with old advice: remove it. With "all", every
+# skill of ours in that dir goes (an old location).
+retire_skills() {  # $1=skill dir  $2=provider  $3=""|all
+  local dest name
+  for dest in "$1"/*; do
     name=$(basename "$dest")
-    [ ! -d "$REPO/skills/$name" ] || continue
+    [ "$3" = all ] || [ ! -d "$REPO/skills/$name" ] || continue
     if [ -L "$dest" ]; then
-      # only a dangling link of ours; a live link into another checkout stays
-      [ ! -e "$dest" ] || continue
+      # a dangling link of ours; a live link into another checkout stays
+      # (unless the whole dir is an old location)
+      [ "$3" = all ] || [ ! -e "$dest" ] || continue
       case "$(readlink "$dest")" in "$REPO"/skills/*) ;; *) owned_link "$dest" skills || continue ;; esac
       rm -f "$dest"
-    elif [ -d "$dest" ] && [ -f "$dest/.gsd-worktrees-skill" ]; then
+    elif [ -d "$dest" ] && gsd_skill_owned "$dest"; then
       rm -rf "$dest"
     else
       continue
     fi
-    echo "✔ $provider skill $name retired → removed $dest"
+    echo "✔ $2 skill $name retired → removed $dest"
   done
 }
 oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do install_skills "$provider"; done; IFS=$oldifs

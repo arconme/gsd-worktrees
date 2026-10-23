@@ -9,7 +9,7 @@ The pre-refactor hardcoded references were classified as follows.
 | `gsd-worktree-guard` | Claude hook JSON and `CLAUDE_PROJECT_DIR` | adapter input + core safety | explicit neutral CLI input added; Claude/Gemini payload/env parsing retained at the edge |
 | `gsd-wt-new` | copies `.claude/settings.local.json` and recognizes Claude nested worktrees | compatibility behavior | retained so existing Claude sessions continue to work; no core phase policy depends on it |
 | `install.sh` | `~/.claude/skills` only | provider adapter | per-provider destinations and overrides |
-| `gsd-flow` | literal Claude-native skill calls | provider adapter leakage | removed; shared skill follows `gsd-flow-next` and the active provider's real mechanism |
+| `gsdw-flow` | literal Claude-native skill calls | provider adapter leakage | removed; shared skill follows `gsd-flow-next` and the active provider's real mechanism |
 | README/help/shim comments | Claude-only safety claims | documentation wording | replaced with provider capabilities and enforcement boundary |
 | independent review default | Codex reviewer | workflow configuration/compatibility | `review_provider` is configurable; Codex remains the existing default |
 

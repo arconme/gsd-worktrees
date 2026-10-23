@@ -79,7 +79,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Rule 4 (`flow = strict`): plan needs CONTEXT, execute needs REVIEWS, secure needs REVIEW (+ UI-REVIEW when a UI-SPEC exists) and the test audit (`<P>-VALIDATION.md` compliant or audited); `--prd` / `--gaps-only` exemptions | `gsd-worktree-guard` |
 | Rule 5 (`ui_gates = strict`): ui-phase needs a filled DESIGN.md + a LAYOUT with a chosen sketch and pages; ui-review needs a passed, current UI check, a complete look file and the user's approval (a phase whose UI review is already on the base branch is exempt) | `gsd-worktree-guard`, `lib/ui.sh` (`gsd_ui_gate`) |
 | Native hooks: Claude `UserPromptExpansion` + `PreToolUse(Skill)`, Gemini `BeforeTool` (skill activation + direct `gsd-*` shell calls) | `gsd-worktree-guard`, `lib/gsd_hook_payload.py` |
-| Rule 0: `/gsd-new-project` / `/gsd-ingest-docs` only in a repo `gsd-init` set up (`.gsd.conf`). Enforced by a user-level hook `install.sh` adds to `~/.claude/settings.json` (`PreToolUse(Skill)` + `UserPromptExpansion`) and `~/.gemini/settings.json` (`BeforeTool` activate_skill): `gsd-worktree-guard --global` applies rule 0 only in a repo without `.gsd.conf` (every rule in a set-up repo, where it is the only hook that sees typed slash commands) and fails open on an unreadable payload. `--no-user-hook` opts out (remembered); Codex: the skill's written rule only | `install.sh`, `gsd-worktree-guard`, `skills/gsd-worktrees` |
+| Rule 0: `/gsd-new-project` / `/gsd-ingest-docs` only in a repo `gsd-init` set up (`.gsd.conf`). Enforced by a user-level hook `install.sh` adds to `~/.claude/settings.json` (`PreToolUse(Skill)` + `UserPromptExpansion`) and `~/.gemini/settings.json` (`BeforeTool` activate_skill): `gsd-worktree-guard --global` applies rule 0 only in a repo without `.gsd.conf` (every rule in a set-up repo, where it is the only hook that sees typed slash commands) and fails open on an unreadable payload. `--no-user-hook` opts out (remembered); Codex: the skill's written rule only | `install.sh`, `gsd-worktree-guard`, `skills/gsdw-worktrees` |
 | Hook JSON parsed without `jq` (Python fallback); compound shell text naming `gsd-` is blocked, not guessed | `lib/gsd_hook_payload.py` |
 | Escape hatch `GSD_SKIP_GUARD=1`; shim fails open when the toolkit is not installed | `gsd-worktree-guard`, `shims/` |
 
@@ -95,7 +95,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Configurable cross-AI reviewer (`review_provider`, default `codex`) | `gsd-flow-next`, `lib/provider.sh` |
 | A `REVIEWS.md` whose configured reviewer failed (empty section, Codex usage limit) passes neither the review step nor the guard's execute rule | `gsd-flow-next`, `gsd-worktree-guard`, `lib/common.sh` (`gsd_reviews_problem`) |
 | Wait out a Codex usage limit: wrap a command (re-run after the reset) or `--wait-only`; reset time from Codex's message or session log, `--interval` fallback, `--max-wait` cap (exit 75, never a pass); never calls Codex; keeps a Mac awake | `gsd-codex-wait`, `lib/gsd_codex_limit.py` |
-| Agent-facing driver skill with human stop points (discuss, design system + sketch, screens, review, UI approval) | `skills/gsd-flow` |
+| Agent-facing driver skill with human stop points (discuss, design system + sketch, screens, review, UI approval) | `skills/gsdw-flow` |
 | Doctor report of merged phases that skipped a mandatory step (T040: flow steps with `flow = strict`, `ui-check` / `ui-approve` with `ui_gates = strict`; `flow_since` cutoff, `flow_skip` single phases shown as a note) | `gsd-doctor` |
 
 ## 6b. UI quality gates ([ui-quality-plan.md](ui-quality-plan.md))
@@ -168,7 +168,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Snapshot `--out` writes only on success (the file marks the flow step done) | `gsd-tracker` |
 | Shared verbs `create` / `update` / `tasks` for every tracker (options passed to the connector; `none` fails them); a connector's own commands via `TRACKER_EXTRA` | `gsd-tracker` |
 | ClickUp connector: `create` / `update` (name, markdown description, assignees by me/id/email/username, status, priority, tags, parent) / `tasks` (filters, `--match` name search); own commands `lists` / `members` / `api` (any v2 call); workspace from `CLICKUP_TEAM_ID` or the token's only one | `lib/trackers/clickup.sh`, `gsd-clickup` |
-| Agent skill: read and write the repo's tickets through `gsd-tracker` (checks `which` first) | `skills/gsd-tracker` |
+| Agent skill: read and write the repo's tickets through `gsd-tracker` (checks `which` first) | `skills/gsdw-tracker` |
 | Install removes a toolkit skill no longer shipped (renamed or retired) | `install.sh` |
 | Legacy read-only: `--cu`, `cu_<id>` tags, `STORY.md` | `lib/tracker.sh` |
 

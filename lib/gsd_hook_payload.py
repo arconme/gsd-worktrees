@@ -48,6 +48,12 @@ def main():
             command = command.lstrip("/")
             if command.startswith("gsd:"):  # namespaced form of a GSD skill
                 command = "gsd-" + command[4:]
+            # a plugin's namespace names the same skill: gsd-core:gsd-plan-phase
+            plugin, sep, rest = command.partition(":")
+            if sep and rest.startswith("gsd-"):
+                command = rest
+            if command == "gsdw-flow":  # this toolkit's flow skill; the guard knows it as gsd-flow
+                command = "gsd-flow"
             cwd = payload.get("cwd")
             emit("guard" if command.startswith("gsd-") else "allow", command, args,
                  cwd if isinstance(cwd, str) and "\0" not in cwd else "")

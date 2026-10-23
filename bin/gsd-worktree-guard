@@ -11,7 +11,7 @@
 #   0b. GSD skills that clash with the worktree model → never in a set-up
 #                              repo; the block names the toolkit command:
 #                                /gsd-autonomous, /gsd-manager   (many phases in
-#                                               one checkout)  → gsd-start + /gsd-flow
+#                                               one checkout)  → gsd-start + /gsdw-flow
 #                                /gsd-workspace, /gsd-workstreams (GSD's own
 #                                               isolation)     → gsd-start
 #                                /gsd-phase, --insert, --remove (unpushed claim;
@@ -157,6 +157,8 @@ fi
 cmd="${cmd:-}"; args="${args:-}"
 cmd=${cmd#/}
 case "$cmd" in gsd:*) cmd="gsd-${cmd#gsd:}" ;; esac   # namespaced form of a GSD skill
+case "$cmd" in *:gsd-*) cmd=${cmd#*:} ;; esac          # a plugin's form: gsd-core:gsd-plan-phase
+[ "$cmd" != gsdw-flow ] || cmd=gsd-flow                # this toolkit's flow skill
 case "$cmd" in gsd-*) ;; *) exit 0 ;; esac   # not a GSD command → allow
 
 # The phase is the first word that is only a number: a number inside a path or
@@ -206,7 +208,7 @@ if [ -f "$dir/.gsd.conf" ]; then
   }
   case "$cmd" in
     gsd-autonomous) clash "it runs every phase in this one checkout and skips the review, validate and secure gates" \
-      "gsd-start -n \"<desc>\" (or -p <N>) per phase, then /gsd-flow in that phase's worktree" ;;
+      "gsd-start -n \"<desc>\" (or -p <N>) per phase, then /gsdw-flow in that phase's worktree" ;;
     gsd-manager) clash "it runs several phases as background agents in one checkout, and two writers in one checkout are not safe" \
       "gsd-list to see every phase, gsd-start per phase (each gets its own worktree and session)" ;;
     gsd-workspace|gsd-workstreams) clash "it is GSD's own isolation (its own worktrees and .planning/), which fights the toolkit's" \

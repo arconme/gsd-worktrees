@@ -381,13 +381,13 @@ for configured_provider in $configured_list; do
   skillroot=$(gsd_provider_skill_root "$configured_provider" 2>/dev/null || true)
   if [ -z "$skillroot" ]; then
     note "$configured_provider has no installable native skill format; follow .gsd/INSTRUCTIONS.md and gsd-flow-next"
-  elif [ ! -f "$skillroot/gsd-flow/SKILL.md" ]; then
+  elif [ ! -f "$skillroot/gsdw-flow/SKILL.md" ]; then
     note "$configured_provider skills not installed — $REINSTALL --agent $configured_provider"
   else
     stale_skills=""
     for sd in "$GSD_PKG"/skills/*/; do
       sn=$(basename "$sd")
-      diff -qr -x .gsd-worktrees-skill "${sd%/}" "$skillroot/$sn" >/dev/null 2>&1 || stale_skills="$stale_skills $sn"
+      ! gsd_skill_differs "$sd" "$skillroot/$sn" || stale_skills="$stale_skills $sn"
     done
     if [ -n "$stale_skills" ]; then
       fail "$configured_provider skills differ from this toolkit ($(gsd_version)):$stale_skills" "$REINSTALL --agent $configured_provider" "T007"
@@ -862,7 +862,7 @@ fi
 if [ "$JSON" = 1 ]; then
   instruction_file=$(gsd_provider_instruction_file "$DOCTOR_PROVIDER" 2>/dev/null || echo '')
   instruction_integrated=false; gsd_provider_instruction_integrated "$MAIN" "$DOCTOR_PROVIDER" && instruction_integrated=true
-  skill_installed=false; doctor_skillroot=$(gsd_provider_skill_root "$DOCTOR_PROVIDER" 2>/dev/null || true); [ -n "$doctor_skillroot" ] && [ -f "$doctor_skillroot/gsd-flow/SKILL.md" ] && skill_installed=true
+  skill_installed=false; doctor_skillroot=$(gsd_provider_skill_root "$DOCTOR_PROVIDER" 2>/dev/null || true); [ -n "$doctor_skillroot" ] && [ -f "$doctor_skillroot/gsdw-flow/SKILL.md" ] && skill_installed=true
   native_hook=$(gsd_provider_hook_state "$MAIN" "$DOCTOR_PROVIDER")
   command_guard=false; gsd_command_guards_active "$GSD_PKG" && command_guard=true
   configured_json=""; doctor_configured=$(gsd_conf_get "$MAIN" providers); doctor_configured=${doctor_configured:-$DOCTOR_PROVIDER}; oldifs=$IFS; IFS=,; for p in $doctor_configured; do configured_json="${configured_json:+$configured_json,}\"$(jstr "$p")\""; done; IFS=$oldifs

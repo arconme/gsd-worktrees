@@ -70,7 +70,8 @@ is  "installs"                          "$?" 0
 is  "commands link into releases/9.9.8" "$(points gsd-list)" 9.9.8
 is  "the runtime says 9.9.8"            "$(cat "$RUN/9.9.8/VERSION")" 9.9.8
 if [ -f "$RUN/9.9.8/get.sh" ]; then ok "the runtime carries get.sh (for gsd-update)"; else bad "the runtime carries get.sh (for gsd-update)"; fi
-if [ -f "$WORK/skills/gsd-flow/.gsd-worktrees-skill" ]; then ok "the skill copy is marked as the toolkit's"; else bad "the skill copy is marked as the toolkit's"; fi
+if grep -q '^<!-- gsd-worktrees-skill ' "$WORK/skills/gsdw-flow/SKILL.md"; then ok "the skill copy is marked as the toolkit's"; else bad "the skill copy is marked as the toolkit's"; fi
+if [ -z "$(find "$WORK/skills/gsdw-flow" -type f ! -name SKILL.md)" ]; then ok "…in SKILL.md: no other file (gsd-core's installer stops on one)"; else bad "…in SKILL.md: no other file (gsd-core's installer stops on one)"; fi
 "$BIN/gsd-list" --help >/dev/null 2>&1; is "an installed command runs" "$?" 0
 
 section "gsd-update — check, update, go back, prune"
@@ -84,7 +85,7 @@ is  "update succeeds"                   "$?" 0
 is  "commands now link into 9.9.9"      "$(points gsd-finish)" 9.9.9
 if [ -d "$RUN/9.9.8" ]; then ok "the previous release is kept"; else bad "the previous release is kept"; fi
 is  "no .bak left in bin or skills"     "$(find "$BIN" "$WORK/skills" -name '*.bak*' | wc -l | tr -d ' ')" 0
-if [ -f "$WORK/skills/gsd-flow/SKILL.md" ] && [ ! -L "$WORK/skills/gsd-flow" ]; then ok "the skill was replaced in place"; else bad "the skill was replaced in place"; fi
+if [ -f "$WORK/skills/gsdw-flow/SKILL.md" ] && [ ! -L "$WORK/skills/gsdw-flow" ]; then ok "the skill was replaced in place"; else bad "the skill was replaced in place"; fi
 "$BIN/gsd-update" > "$WORK/out" 2>&1
 has "on the latest → up to date"        "up to date" "$WORK/out"
 "$BIN/gsd-update" --version 9.9.7 > "$WORK/out" 2>&1

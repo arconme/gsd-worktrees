@@ -28,9 +28,9 @@ gsd_start_mode_resolve "$R" discuss; assert 'CLI start mode overrides repository
 printf 'start_mode = invalid\n' > "$R/.gsd.conf"; gsd_start_mode_resolve "$R" "" >/dev/null 2>&1; assert 'invalid start mode rejected' '[ $? -eq 64 ]'
 for p in claude codex gemini; do prompt=$(gsd_provider_prompt "$p" discuss 7); gsd_provider_argv "$p" "$p" "$prompt"; "$WORK/fakebin/$p" "${GSD_LAUNCH_ARGV[@]:1}" > "$WORK/$p-discuss.args"; prompt=$(gsd_provider_prompt "$p" flow 7); gsd_provider_argv "$p" "$p" "$prompt"; "$WORK/fakebin/$p" "${GSD_LAUNCH_ARGV[@]:1}" > "$WORK/$p-flow.args"; done
 assert 'Claude discuss prompt remains backward compatible' "grep -q '^/gsd-discuss-phase 7$' '$WORK/claude-discuss.args'"
-assert 'Claude flow prompt is explicit' "grep -q '^/gsd-flow 7$' '$WORK/claude-flow.args'"
+assert 'Claude flow prompt is explicit' "grep -q '^/gsdw-flow 7$' '$WORK/claude-flow.args'"
 assert 'Codex discuss prompt is natural language' "grep -q 'Discuss GSD phase 7' '$WORK/codex-discuss.args'"
-assert 'Codex flow prompt is natural language' "grep -q 'gsd-flow skill' '$WORK/codex-flow.args'"
+assert 'Codex flow prompt is natural language' "grep -q 'gsdw-flow skill' '$WORK/codex-flow.args'"
 assert 'Gemini uses prompt-interactive for discuss' "grep -q '^--prompt-interactive$' '$WORK/gemini-discuss.args'"
 assert 'Gemini uses prompt-interactive for flow' "grep -q '^--prompt-interactive$' '$WORK/gemini-flow.args'"
 render=$(gsd_provider_render '/tmp/a b' fake 'quote " and $ safe'); assert 'rendering shell-quotes cwd and prompt' "printf '%s' \"\$render\" | grep -q '/tmp/a\\\\ b'"
@@ -224,15 +224,15 @@ rm -f "$R/AGENTS.md"; mv "$R/AGENTS-real.md" "$R/AGENTS.md"
 R=$WORK/gitignore-nl; repo "$R"; printf 'node_modules' > "$R/.gitignore"
 (cd "$R" && gsd-bootstrap-repo --agent codex) >/dev/null 2>&1
 assert 'a .gitignore with no final newline keeps its last line' 'grep -qx node_modules "$R/.gitignore" && grep -qx .gsd-install.status "$R/.gitignore"'
-mkdir -p "$WORK/skills/claude/gsd-flow"; echo mine > "$WORK/skills/claude/gsd-flow/user.txt"
+mkdir -p "$WORK/skills/claude/gsdw-flow"; echo mine > "$WORK/skills/claude/gsdw-flow/user.txt"
 GSD_BIN_DIR=$WORK/bin GSD_CLAUDE_SKILL_DIR=$WORK/skills/claude GSD_CODEX_SKILL_DIR=$WORK/skills/codex GSD_GEMINI_SKILL_DIR=$WORK/skills/gemini "$PKG/install.sh" --all-agents >/dev/null
-for p in claude codex gemini; do assert "$p skills installed" "[ -e '$WORK/skills/$p/gsd-flow/SKILL.md' ]"; done
-assert 'real skill directory preserved as backup' "[ -f '$WORK/skills/claude/gsd-flow.bak/user.txt' ]"
+for p in claude codex gemini; do assert "$p skills installed" "[ -e '$WORK/skills/$p/gsdw-flow/SKILL.md' ]"; done
+assert 'real skill directory preserved as backup' "[ -f '$WORK/skills/claude/gsdw-flow.bak/user.txt' ]"
 GSD_BIN_DIR=$WORK/bin GSD_CLAUDE_SKILL_DIR=$WORK/skills/claude "$PKG/install.sh" --agent claude >/dev/null
-assert 'repeated skill install stays usable' "[ -e '$WORK/skills/claude/gsd-flow/SKILL.md' ]"
-mkdir -p "$WORK/skills-link/codex"; ln -s /tmp/unrelated-skill "$WORK/skills-link/codex/gsd-flow"
+assert 'repeated skill install stays usable' "[ -e '$WORK/skills/claude/gsdw-flow/SKILL.md' ]"
+mkdir -p "$WORK/skills-link/codex"; ln -s /tmp/unrelated-skill "$WORK/skills-link/codex/gsdw-flow"
 GSD_BIN_DIR=$WORK/bin2 GSD_CODEX_SKILL_DIR=$WORK/skills-link/codex "$PKG/install.sh" --agent codex >/dev/null
-assert 'unrelated existing symlink preserved as backup' "[ -L '$WORK/skills-link/codex/gsd-flow.bak' ]"
+assert 'unrelated existing symlink preserved as backup' "[ -L '$WORK/skills-link/codex/gsdw-flow.bak' ]"
 
 echo 'install.sh user-level hook (/gsd-new-project only after gsd-init)'
 UH=$WORK/uh; mkdir -p "$UH/claude"

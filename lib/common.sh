@@ -202,6 +202,21 @@ gsd_flow_finish_gate() {  # $1=MAIN $2=phase branch $3=its worktree → 1 = refu
   return 1
 }
 
+# A skill copy this toolkit installed (install.sh --copy) ends its SKILL.md
+# with this comment line. It used to be a .gsd-worktrees-skill file next to
+# SKILL.md, but gsd-core's installer stops on any file under skills/gsd-*/ it
+# cannot prove it owns, and it keeps SKILL.md. The old file is still read.
+GSD_SKILL_MARK='<!-- gsd-worktrees-skill'
+gsd_skill_owned() {  # dir → 0 when it is a copy this toolkit placed
+  [ -f "$1/.gsd-worktrees-skill" ] || grep -qF "$GSD_SKILL_MARK" "$1/SKILL.md" 2>/dev/null
+}
+gsd_skill_differs() {  # src dest → 0 when dest is not the current copy of src
+  local src=${1%/} dest=${2%/}
+  [ -d "$dest" ] && [ ! -f "$dest/.gsd-worktrees-skill" ] || return 0
+  diff -qr -x SKILL.md "$src" "$dest" >/dev/null 2>&1 || return 0
+  ! grep -vF "$GSD_SKILL_MARK" "$dest/SKILL.md" 2>/dev/null | cmp -s - "$src/SKILL.md"
+}
+
 gsd_python() {  # → the interpreter for lib/gsd_planning.py; nonzero when none
   # Most systems have `python3`, but minimal images (and Windows) name it
   # `python`. Checking the NAME is not enough: `python` is still Python 2 on

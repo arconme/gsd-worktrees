@@ -141,6 +141,8 @@ blocked "node_modules cannot bypass failed install" gsd-execute-phase "7"
 echo ok > "$REPO/.gsd-install.status"
 blocked "review in wrong phase is blocked" gsd-review "--phase 9 --codex"
 blocked "flow in wrong phase is blocked" gsd-flow "9"
+blocked "…by its skill name gsdw-flow too" gsdw-flow "9"
+blocked "a plugin-namespaced skill (gsd-core:gsd-review) is guarded" gsd-core:gsd-review "--phase 9 --codex"
 blocked "omitted phase still enforces discuss gate" gsd-plan-phase ""
 git -C "$REPO" checkout -q -b agent-untrusted
 blocked "agent branch name alone is not an exemption" gsd-execute-phase "7"
@@ -225,6 +227,7 @@ gis "typed /gsd-new-project in a repo without .gsd.conf → blocked"  "$(gg "$(u
 grep -q "Run gsd-init" "$WORK/err" && ok "…and says to run gsd-init" || bad "…and says to run gsd-init" "$(cat "$WORK/err")"
 gis "the namespaced /gsd:new-project → blocked too"                 "$(gg "$(upe gsd:new-project "$BARE")")" 2
 gis "the Skill tool calling gsd-ingest-docs → blocked"              "$(gg "$(skl gsd-ingest-docs "$BARE")")" 2
+gis "…in its plugin form gsd-core:gsd-ingest-docs → blocked"        "$(gg "$(skl gsd-core:gsd-ingest-docs "$BARE")")" 2
 gis "a subdirectory of that repo → blocked"                         "$(mkdir -p "$BARE/src" && gg "$(upe gsd-new-project "$BARE/src")")" 2
 gis "other GSD commands in a non-toolkit repo → allowed"            "$(gg "$(upe gsd-plan-phase "$BARE")")" 0
 gis "non-GSD commands → allowed"                                    "$(gg "$(upe review "$BARE")")" 0

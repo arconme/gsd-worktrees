@@ -115,8 +115,8 @@ chmod -x "$WORK/broken/bin/gsd-worktree-guard"
 "$WORK/broken/bin/gsd-doctor" --repo "$R" --json > "$WORK/doctor" || true
 grep -q '"command_guard":false' "$WORK/doctor"
 ok 'doctor JSON reports broken command guard honestly'
-mkdir -p "$WORK/skills/gsd-flow"
-cp "$PKG/skills/gsd-flow/SKILL.md" "$WORK/skills/gsd-flow/SKILL.md"
+mkdir -p "$WORK/skills/gsdw-flow"
+cp "$PKG/skills/gsdw-flow/SKILL.md" "$WORK/skills/gsdw-flow/SKILL.md"
 GSD_CLAUDE_SKILL_DIR="$WORK/skills" gsd-doctor --repo "$R" --json > "$WORK/doctor" || true
 grep -q '"skill_installed":true' "$WORK/doctor"
 ok 'doctor respects installer skill destination override'

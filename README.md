@@ -71,7 +71,7 @@ singular `provider` key is still read when `providers` is absent, but new and
 migrated configuration does not write it.
 
 `gsd-start` starts or resumes the complete artifact-driven workflow
-(`/gsd-flow`) by default. Pass `--no-flow` to open discuss-phase only for one
+(`/gsdw-flow`) by default. Pass `--no-flow` to open discuss-phase only for one
 invocation, or set `start_mode = discuss` to make that the repo's default
 (`--flow` overrides it).
 
@@ -142,7 +142,7 @@ are marked and repeated bootstrap updates only those blocks. See
 | `gsd-wt-new` | `gsd-start` — the worktree-creating half |
 | `gsd-wt-finish` | `gsd-finish` — the merge-and-cleanup half |
 | `gsd-worktree-guard` | Provider-neutral validator; also callable from optional native hooks |
-| `gsd-flow-next` | Which phase-flow step is next, read from the phase folder. Engine behind the `/gsd-flow` skill |
+| `gsd-flow-next` | Which phase-flow step is next, read from the phase folder. Engine behind the `/gsdw-flow` skill |
 | `gsd-planning-merge` | git, as the merge driver for `.planning/` files |
 | `gsd-derive-port` | your app's `dev` script, to pick a per-worktree port |
 
@@ -160,7 +160,7 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 | `gsd-list` | Read-only table of all phases: number, description, plan progress, lifecycle stage (live from the phase's worktree), worktree state. |
 | `gsd-init` | Take a repo with no GSD to "ready for gsd-start": bootstrap one or more providers, then open the planning session (`/gsd-new-project` or `/gsd-ingest-docs`) and, when it closes, say whether the ROADMAP is ready (`gsd-start -p <first phase>` next). With `--no-launch` or no terminal it prints the command. |
 | `gsd-bootstrap-repo` | Fit a repo with shared workflow files and explicitly selected provider adapters. Marked blocks preserve unrelated instructions. |
-| `gsd-tracker` | Tickets, one layer for every tracker: `start` / `finish` / `comment` / `status` / `snapshot` / `create` / `update` / `tasks` / `extract` / `check`, plus a tracker's own commands (ClickUp: `lists` / `members` / `api`). Tracker from `tracker =` in `.gsd.conf`: `none` (default), `clickup`, or `custom` (your script). The `gsd-tracker` skill teaches agents to use it. See [docs/trackers.md](docs/trackers.md). `gsd-clickup` is the same, fixed to ClickUp. |
+| `gsd-tracker` | Tickets, one layer for every tracker: `start` / `finish` / `comment` / `status` / `snapshot` / `create` / `update` / `tasks` / `extract` / `check`, plus a tracker's own commands (ClickUp: `lists` / `members` / `api`). Tracker from `tracker =` in `.gsd.conf`: `none` (default), `clickup`, or `custom` (your script). The `gsdw-tracker` skill teaches agents to use it. See [docs/trackers.md](docs/trackers.md). `gsd-clickup` is the same, fixed to ClickUp. |
 | `gsd-update` | Update a release install: `--check`, the latest, or `--version X.Y.Z`. Checksum-verified; keeps the previous release. |
 | `gsd-sync` | Toolkit maintenance in one command: pull + push this repo, re-link `bin/`, and verify the shims of the repo you run it from are current. `--check` for a dry run. |
 | `gsd-wt-new` / `gsd-wt-finish` | The worktree workers behind `gsd-start`/`gsd-finish` (create with config-copy + background install; merge back locked and conflict-safe). Callable standalone. |

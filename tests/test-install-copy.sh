@@ -27,23 +27,29 @@ install_copy
 [ "$(cat "$COPY/lib/common.sh.bak")" = 'local library' ]
 [ "$(cat "$COPY/unrelated-dir/file")" = keep ]
 [ -f "$COPY/shims/scripts/gsd-init.sh" ] || [ -d "$COPY/shims/scripts" ]
-[ -f "$COPY/skills/gsd-flow/SKILL.md" ]
+[ -f "$COPY/skills/gsdw-flow/SKILL.md" ]
 # the page checker travels with the runtime: the Node script and the pinned axe-core
 [ -f "$COPY/lib/ui-check.mjs" ]
 [ -f "$COPY/lib/vendor/axe-core/axe.min.js" ]
 [ -f "$COPY/lib/vendor/axe-core/LICENSE" ]
 [ -f "$COPY/lib/vendor/axe-core/VERSION" ]
-[ -f "$SKILLS/gsd-flow/SKILL.md" ]
+[ -f "$SKILLS/gsdw-flow/SKILL.md" ]
 
 # A skill an older release placed but this one no longer ships (renamed or
 # retired) is removed; a skill of the user's own, with no marker, stays.
-mkdir -p "$SKILLS/gsd-retired" "$SKILLS/my-own"
+mkdir -p "$SKILLS/gsd-retired" "$SKILLS/gsd-retired2" "$SKILLS/my-own"
 printf 'old\n' > "$SKILLS/gsd-retired/SKILL.md"; printf '0.4.4\n' > "$SKILLS/gsd-retired/.gsd-worktrees-skill"
+printf 'old\n<!-- gsd-worktrees-skill 0.5.0 -->\n' > "$SKILLS/gsd-retired2/SKILL.md"
 printf 'mine\n' > "$SKILLS/my-own/SKILL.md"
+# an older copy, marked by a file of its own, is replaced by one marked in SKILL.md
+printf '0.4.4\n' > "$SKILLS/gsdw-flow/.gsd-worktrees-skill"
 ln -s "$PKG/skills/gsd-gone" "$SKILLS/gsd-gone"
 ln -s "$WORK/elsewhere/skill" "$SKILLS/not-ours"
 install_copy
 [ ! -e "$SKILLS/gsd-retired" ]
+[ ! -e "$SKILLS/gsd-retired2" ]
+[ ! -e "$SKILLS/gsdw-flow/.gsd-worktrees-skill" ]
+grep -q '^<!-- gsd-worktrees-skill ' "$SKILLS/gsdw-flow/SKILL.md"
 [ ! -L "$SKILLS/gsd-gone" ]
 [ -f "$SKILLS/my-own/SKILL.md" ]
 [ -L "$SKILLS/not-ours" ]
@@ -53,6 +59,19 @@ before=$(find "$WORK" -name '*.bak*' | wc -l | tr -d ' ')
 install_copy
 after=$(find "$WORK" -name '*.bak*' | wc -l | tr -d ' ')
 [ "$before" = "$after" ]
+
+# Codex: skills go to ~/.agents/skills; ours left in the old ~/.codex/skills
+# (a marked copy, a link of ours, an older name) are removed, a user's stays.
+CH="$WORK/codex-home"; mkdir -p "$CH/.codex/skills/gsd-flow" "$CH/.codex/skills/mine"
+printf 'old\n' > "$CH/.codex/skills/gsd-flow/SKILL.md"; printf '0.4.4\n' > "$CH/.codex/skills/gsd-flow/.gsd-worktrees-skill"
+ln -s "$PKG/skills/gsdw-tracker" "$CH/.codex/skills/gsdw-tracker"
+printf 'mine\n' > "$CH/.codex/skills/mine/SKILL.md"
+env -u GSD_CODEX_SKILL_DIR -u CODEX_HOME HOME="$CH" GSD_BIN_DIR="$WORK/codex-bin" GSD_COPY_DIR="$WORK/codex-runtime" \
+  "$PKG/install.sh" --copy --agent codex --no-user-hook >/dev/null
+[ -f "$CH/.agents/skills/gsdw-flow/SKILL.md" ]
+[ ! -e "$CH/.codex/skills/gsd-flow" ]
+[ ! -L "$CH/.codex/skills/gsdw-tracker" ]
+[ -f "$CH/.codex/skills/mine/SKILL.md" ]
 
 # Move the source away without touching it: exercise a command from an isolated
 # copy of the package, then remove only that temporary fixture.
@@ -67,7 +86,7 @@ GSD_BIN_DIR="$WORK/sync-bin" GSD_CODEX_SKILL_DIR="$WORK/codex-skills" \
   "$FIXTURE/install.sh" --agent codex >/dev/null
 GSD_CLAUDE_SKILL_DIR="$WORK/must-not-install-claude" \
   "$WORK/sync-bin/gsd-sync" >/dev/null
-[ -L "$WORK/codex-skills/gsd-flow" ]
+[ -L "$WORK/codex-skills/gsdw-flow" ]
 [ ! -e "$WORK/must-not-install-claude" ]
 grep -q $'providers\tcodex' "$WORK/sync-bin/.gsd-install-manifest"
 git -C "$FIXTURE" remote add origin "$WORK/missing-origin"
@@ -89,11 +108,11 @@ GSD_BIN_DIR="$WORK/upgrade-bin" GSD_COPY_DIR="$WORK/upgrade-runtime" \
 [ -L "$WORK/upgrade-bin/unrelated" ]
 GSD_BIN_DIR="$WORK/isolated-bin" GSD_CLAUDE_SKILL_DIR="$WORK/isolated-skills" \
   "$FIXTURE/install.sh" >/dev/null
-[ -L "$WORK/isolated-skills/gsd-flow" ]
+[ -L "$WORK/isolated-skills/gsdw-flow" ]
 GSD_BIN_DIR="$WORK/isolated-bin" GSD_COPY_DIR="$WORK/isolated-runtime" \
   GSD_CLAUDE_SKILL_DIR="$WORK/isolated-skills" "$FIXTURE/install.sh" --copy >/dev/null
-[ -d "$WORK/isolated-skills/gsd-flow" ]
-[ ! -L "$WORK/isolated-skills/gsd-flow" ]
+[ -d "$WORK/isolated-skills/gsdw-flow" ]
+[ ! -L "$WORK/isolated-skills/gsdw-flow" ]
 rm -rf "$FIXTURE"
 "$WORK/isolated-bin/gsd-sync" --check > "$WORK/sync-output"
 grep -q 'standalone copy' "$WORK/sync-output"

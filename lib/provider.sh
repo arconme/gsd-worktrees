@@ -46,7 +46,7 @@ gsd_provider_skill_root() { # provider, optional home
   local p=$1 h=${2:-$HOME}
   case "$p" in
     claude) printf '%s\n' "${GSD_CLAUDE_SKILL_DIR:-${GSD_SKILL_DIR:-$h/.claude/skills}}" ;;
-    codex) printf '%s\n' "${GSD_CODEX_SKILL_DIR:-$h/.codex/skills}" ;;
+    codex) printf '%s\n' "${GSD_CODEX_SKILL_DIR:-$h/.agents/skills}" ;;   # Codex's own; ~/.codex/skills is its old place
     gemini) printf '%s\n' "${GSD_GEMINI_SKILL_DIR:-$h/.gemini/skills}" ;;
     custom) return 1 ;;
   esac
@@ -121,12 +121,13 @@ gsd_provider_hook_state() { # repo, provider => present|absent|invalid|unverifie
 }
 
 # The user-level file that holds an agent's hooks: GSD's own, and our --global
-# guard (install.sh writes it). It sits next to the agent's skills dir.
+# guard (install.sh writes it). Claude's sits next to its skills dir; Codex
+# keeps hooks in $CODEX_HOME but skills in ~/.agents/skills.
 gsd_provider_user_hook_file() { # provider => path
   case "$1" in
     claude) printf '%s\n' "${GSD_CLAUDE_SETTINGS:-$(dirname "$(gsd_provider_skill_root claude)")/settings.json}" ;;
     gemini) printf '%s\n' "${GSD_GEMINI_SETTINGS:-$(dirname "$(gsd_provider_skill_root gemini)")/settings.json}" ;;
-    codex) printf '%s\n' "${GSD_CODEX_HOOKS:-$(dirname "$(gsd_provider_skill_root codex)")/hooks.json}" ;;
+    codex) printf '%s\n' "${GSD_CODEX_HOOKS:-${CODEX_HOME:-$HOME/.codex}/hooks.json}" ;;
     *) return 1 ;;
   esac
 }
@@ -235,7 +236,7 @@ gsd_provider_entry_block() { # the providers sharing this instruction file
 <!-- gsd-worktrees:provider:start -->
 ## GSD worktrees ($1 adapter)
 
-Read and follow \`.gsd/INSTRUCTIONS.md\`. Use the \`gsd-flow\` skill when it is
+Read and follow \`.gsd/INSTRUCTIONS.md\`. Use the \`gsdw-flow\` skill when it is
 available; otherwise run \`gsd-flow-next <N>\` and follow each printed action.
 For toolkit command syntax and workflow order, this marked adapter and the
 canonical document supersede older unmarked GSD text in this file. Continue to
@@ -374,9 +375,9 @@ gsd_provider_prompt() { # provider, kind, phase-or-empty
       esac ;;
     flow)
       case "$p" in
-        claude) printf '/gsd-flow %s\n' "$n" ;;
-        codex) printf 'Use the gsd-flow skill to drive phase %s. Start by running gsd-flow-next %s and obey every reported gate.\n' "$n" "$n" ;;
-        gemini) printf 'Activate the gsd-flow skill and drive phase %s. Start by running gsd-flow-next %s and obey every reported gate.\n' "$n" "$n" ;;
+        claude) printf '/gsdw-flow %s\n' "$n" ;;
+        codex) printf 'Use the gsdw-flow skill to drive phase %s. Start by running gsd-flow-next %s and obey every reported gate.\n' "$n" "$n" ;;
+        gemini) printf 'Activate the gsdw-flow skill and drive phase %s. Start by running gsd-flow-next %s and obey every reported gate.\n' "$n" "$n" ;;
         custom) printf 'Drive GSD phase %s by running gsd-flow-next %s before every phase step; obey every gate in .gsd/INSTRUCTIONS.md.\n' "$n" "$n" ;;
       esac ;;
     new)

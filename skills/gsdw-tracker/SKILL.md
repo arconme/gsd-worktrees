@@ -1,5 +1,5 @@
 ---
-name: gsd-tracker
+name: gsdw-tracker
 description: "Read and write the repo's tickets (ClickUp tasks, or whatever tracker the repo uses) from the shell with gsd-tracker: read a ticket, comment, set status, create a ticket, edit its title/description/assignees/priority, or find tickets. Use whenever the user asks to look at, update, create or search tickets/tasks/issues, including when a tracker chat connector is missing, failing or out of quota."
 ---
 

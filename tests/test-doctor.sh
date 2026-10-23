@@ -77,13 +77,13 @@ section "skills (T007)"
 doc "$R"
 has "no skills → a note with the reinstall command" 'claude skills not installed' "$OUT"
 mkdir -p "$WORK/skills"; cp -R "$PKG/skills/." "$WORK/skills/"
-touch "$WORK/skills/gsd-flow/.gsd-worktrees-skill"
+printf '<!-- gsd-worktrees-skill 0.0.0 -->\n' >> "$WORK/skills/gsdw-flow/SKILL.md"
 json "$R"
 hasnt "skills same as the toolkit → no T007" '"T007"' "$OUT"
-echo "old step" >> "$WORK/skills/gsd-flow/SKILL.md"
+echo "old step" >> "$WORK/skills/gsdw-flow/SKILL.md"
 json "$R"
 has "an edited skill → T007" '"T007"' "$OUT"
-has "T007 names the stale skill" 'differ from this toolkit.*gsd-flow' "$OUT"
+has "T007 names the stale skill" 'differ from this toolkit.*gsdw-flow' "$OUT"
 has "a checkout reinstalls with its install.sh" 'install.sh --reuse-install-config --agent claude' "$OUT"
 
 # A release runtime has no .git: it re-runs its own get.sh for its version.
@@ -363,7 +363,7 @@ export GSD_CLAUDE_SKILL_DIR="$WORK/claude-skills"
 prov=$(awk -F'\t' '$1 == "providers" { print $2 }' "$GSD_BIN_DIR/.gsd-install-manifest")
 case ",$prov," in *,claude,*) ok "claude is kept" ;; *) bad "claude is kept" "providers: $prov" ;; esac
 case ",$prov," in *,codex,*) ok "codex is added" ;; *) bad "codex is added" "providers: $prov" ;; esac
-[ -f "$GSD_CODEX_SKILL_DIR/gsd-flow/SKILL.md" ] && ok "codex skills installed" || bad "codex skills installed"
+[ -f "$GSD_CODEX_SKILL_DIR/gsdw-flow/SKILL.md" ] && ok "codex skills installed" || bad "codex skills installed"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = 0 ]

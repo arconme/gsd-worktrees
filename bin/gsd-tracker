@@ -4,7 +4,7 @@
 #
 # gsd-start calls `start` when a phase tagged tk-<id> is claimed or attached;
 # gsd-finish calls `finish` after the merge (or when --pr opens the PR). The
-# /gsd-flow ticket step calls `snapshot` to save the ticket as <P>-TICKET.md.
+# /gsdw-flow ticket step calls `snapshot` to save the ticket as <P>-TICKET.md.
 # Standalone use is fine too.
 #
 # Usage:
@@ -137,7 +137,7 @@ fi
 . "$GSD_PKG/lib/trackers/$TRACKER.sh"
 if [ "$cmd" = snapshot ] && [ -n "$OUT" ]; then
   # A failed fetch must not leave an empty file: the file is what marks the
-  # /gsd-flow ticket step done.
+  # /gsdw-flow ticket step done.
   tmp="$OUT.tmp.$$"
   if ( tracker_run "$@" ) > "$tmp" && [ -s "$tmp" ]; then
     mv "$tmp" "$OUT"; echo "✔ ticket $ID → $OUT"
