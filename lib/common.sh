@@ -53,7 +53,8 @@ gsd_reviews_problem() {  # $1=<P>-REVIEWS.md  $2=review_provider → why it is n
   # gsd-flow-next (review step) and the guard (flow = strict, execute-phase).
   # /gsd-review keeps going when a reviewer fails (e.g. a Codex usage limit,
   # its stderr discarded) and can still write the file, with that reviewer's
-  # "## <Name> Review" section empty or holding only the error. Not usable:
+  # "## <Name> Review" section (gsd-core: "## <Name> Review (<instance>)" for
+  # one of several reviewer instances) empty or holding only the error. Not usable:
   # the configured reviewer's section failed, or every review section did.
   # Failed = empty, or a short body (≤ 5 lines) carrying a limit/failure
   # message — a long one is a real review that quotes it. A file without
@@ -68,7 +69,7 @@ gsd_reviews_problem() {  # $1=<P>-REVIEWS.md  $2=review_provider → why it is n
       if (bad) {
         failed++; what = sec (lines == 0 ? " is empty" : " — " mark)
         if (first == "") first = what
-        if (tolower(sec) == want) own = what
+        if (tolower(base) == want) own = what
       }
       sec = ""
     }
@@ -77,7 +78,7 @@ gsd_reviews_problem() {  # $1=<P>-REVIEWS.md  $2=review_provider → why it is n
     /^## / || /^---[[:space:]]*$/ { done_sec() }
     /^## / {
       h = substr($0, 4); sub(/[[:space:]]+$/, "", h)
-      if (tolower(h) ~ /review$/) { sec = h; lines = 0; mark = "" }
+      if (tolower(h) ~ /review( \([^)]*\))?$/) { sec = h; base = h; sub(/ \([^)]*\)$/, "", base); lines = 0; mark = "" }
       next
     }
     sec != "" && /[^[:space:]]/ {

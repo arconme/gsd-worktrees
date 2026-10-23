@@ -235,6 +235,16 @@ elif command -v gsd-sdk >/dev/null 2>&1; then
 else
   fail "GSD (gsd-core) not found — gsd-start cannot claim phases" "$GSD_CORE_INSTALL --$gsd_agent --global" "T005"
 fi
+# T009 — gsd-core's skill profile: core and standard leave out skills the
+# phase flow runs (validate-phase, secure-phase, ui-phase, sketch, …); only
+# full has them all. Its installer keeps the profile in <agent dir>/.gsd-profile.
+for p in claude codex; do
+  case ",${RAW_PROVIDERS:-$DOCTOR_PROVIDER}," in *",$p,"*) ;; *) continue ;; esac
+  case "$p" in claude) d=${CLAUDE_CONFIG_DIR:-$HOME/.claude} ;; *) d=${CODEX_HOME:-$HOME/.codex} ;; esac
+  prof=$(head -1 "$d/.gsd-profile" 2>/dev/null | tr -d '[:space:]' || true)
+  case ",$prof," in ,,|*,full,*) continue ;; esac
+  fail "gsd-core for $p has the '$prof' skill profile — the phase flow needs skills only 'full' has" "$GSD_CORE_INSTALL --$p --global --profile=full" "T009"
+done
 
 # GSD hooks that run a file that is gone. The agent shows little or nothing
 # (a guard just stops guarding), so this is a finding. The usual cause: the
@@ -655,6 +665,11 @@ if [ -f "$ROADMAP" ]; then
   dups=$(sed -nE 's/^#{2,4} Phase ([0-9]+(\.[0-9]+)?):.*/\1/p' "$ROADMAP" \
          | awk -F. '{ n = $1 + 0; if (NF > 1) n = n "." ($2 + 0); print n }' | sort | uniq -d | tr '\n' ' ')
   [ -z "$dups" ] || fail "ROADMAP has more than one heading for phase(s): ${dups% }" "$EDIT (one '### Phase N:' heading per number)" "T025"
+fi
+# T026 — gsd-core's opt-in bracket phase ids (PROJ.01-14): the ROADMAP
+# parsing, folder matching and phase-<N>-<slug> branches read numbers only.
+if grep -qsE '"phase_id_convention"[[:space:]]*:[[:space:]]*"bracket"' "$HERE/.planning/config.json"; then
+  fail "phase_id_convention is \"bracket\" in .planning/config.json — gsd-worktrees reads numbered phases only" "set phase_id_convention to null in .planning/config.json" "T026"
 fi
 
 if [ -f "$ROADMAP" ] && ! command -v perl >/dev/null 2>&1; then
