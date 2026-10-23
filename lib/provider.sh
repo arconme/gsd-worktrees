@@ -149,9 +149,10 @@ gsd_stale_hooks() { # [repo]
 # One stderr line per settings file with broken GSD hooks — they fail without
 # a word, so gsd-start and gsd-list say it. Terminal only, like the update
 # notice (GSD_UPDATE_NOTICE=always forces it); gsd-doctor has the details.
-gsd_stale_hooks_notice() { # [repo]
+# User-level files only: the repo's own are doctor's.
+gsd_stale_hooks_notice() {
   [ -t 2 ] || [ "${GSD_UPDATE_NOTICE:-}" = always ] || return 0
-  gsd_stale_hooks "${1:-}" | awk -F '\t' '!seen[$1 FS $4]++ { n[$1]++ }
+  gsd_stale_hooks "" | awk -F '\t' '!seen[$1 FS $4]++ { n[$1]++ }
     END { for (f in n) printf "⚠ %d GSD hook(s) in %s run a file that is gone, so they fail silently — run gsd-doctor\n", n[f], f }' >&2
   return 0
 }
