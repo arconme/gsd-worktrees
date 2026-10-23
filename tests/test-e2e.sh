@@ -25,6 +25,9 @@ if ! (GSD_PKG="$PKG"; . "$PKG/lib/common.sh"; gsd_cli >/dev/null); then
 fi
 S=$(mktemp -d); trap 'rm -rf "$S"' EXIT; cd "$S" || exit 1
 export PATH="$PKG/bin:$PATH"
+# the agent CLIs: doctor wants them installed; this suite never opens a session
+mkdir -p "$S/agents"; for a in claude codex; do printf '#!/bin/sh\nexit 0\n' > "$S/agents/$a"; chmod +x "$S/agents/$a"; done
+export PATH="$PATH:$S/agents"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=e2e GIT_AUTHOR_EMAIL=e2e@t GIT_COMMITTER_NAME=e2e GIT_COMMITTER_EMAIL=e2e@t
 # the laptop's installed skills are not what this checkout is testing
