@@ -9,8 +9,8 @@ version in its own folder, so the next Node upgrade orphans it).
 
 Usage: gsd_hook_paths.py <scope>:<settings file> [--project <dir>] ...
   scope = user | project (where the fix is run: --global or --local)
-  --project <dir> applies to the files after it: $CLAUDE_PROJECT_DIR and
-  $GEMINI_PROJECT_DIR expand to <dir> there.
+  --project <dir> applies to the files after it: $CLAUDE_PROJECT_DIR expands
+  to <dir> there.
 
 Prints one line per missing file, tab-separated:
   <settings file> <scope> <owner> <hook> <event> <missing path>
@@ -44,7 +44,7 @@ def commands(data):
                 if not isinstance(group, dict):
                     continue
                 inner = group.get("hooks")
-                # Gemini and Claude nest {matcher, hooks: [...]}; tolerate a
+                # Claude and Codex nest {matcher, hooks: [...]}; tolerate a
                 # flat entry too.
                 for h in inner if isinstance(inner, list) else [group]:
                     if isinstance(h, dict) and isinstance(h.get("command"), str):
@@ -60,8 +60,7 @@ def expand(word, project):
         word = home + word[1:]
     word = word.replace("${HOME}", home).replace("$HOME", home)
     if project:
-        for var in ("CLAUDE_PROJECT_DIR", "GEMINI_PROJECT_DIR"):
-            word = word.replace("${%s}" % var, project).replace("$" + var, project)
+        word = word.replace("${CLAUDE_PROJECT_DIR}", project).replace("$CLAUDE_PROJECT_DIR", project)
     return None if "$" in word else word
 
 

@@ -61,11 +61,11 @@ EXAMPLES
   cd ~/projects/acme/webshop && gsd-init --no-launch
       Same, but print the session command to run later.
 
-  gsd-init --ingest --agent gemini
-      Force ingest mode and open the session with the gemini CLI.
+  gsd-init --ingest --agent codex
+      Force ingest mode and open the session with the codex CLI.
 
-  gsd-init --providers claude,codex,gemini --provider codex --no-launch
-      Install all three integrations and print the Codex planning command.
+  gsd-init --providers claude,codex --provider codex --no-launch
+      Install both integrations and print the Codex planning command.
 
   gsd-init --providers claude,codex --provider-command codex=/opt/bin/codex
       Install Claude and Codex integrations with an explicit Codex executable.
@@ -111,10 +111,11 @@ while [ $# -gt 0 ]; do
     --tracker) [ $# -ge 2 ] || die "--tracker needs none, clickup or custom"; TRACKER_CLI="$2"; shift 2 ;;
     --tracker-command) [ $# -ge 2 ] && [ -n "$2" ] || die "--tracker-command needs the script's path"; TRACKER_COMMAND_CLI="$2"; shift 2 ;;
     --providers) [ $# -ge 2 ] || die "--providers needs a comma-separated list"; PROVIDERS_CLI="$2"; shift 2 ;;
-    --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, gemini, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
+    --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
     --model) [ $# -ge 2 ] && [ -n "$2" ] || die "--model needs a model ID or default"; MODEL_CLI="$2"; shift 2 ;;
     --provider-command) [ $# -ge 2 ] || die "--provider-command needs provider=executable"; PROVIDER_COMMAND_ARGS+=("$2"); PROVIDER_COMMAND_COUNT=$((PROVIDER_COMMAND_COUNT+1)); shift 2 ;;
     --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND_CLI="$2"; LAUNCH_ASKED=1; shift 2 ;;
+    # gemini is taken as the provider name so it is refused with the reason, not run as a command
     --agent) [ $# -ge 2 ] || die "--agent needs a provider or executable"; case "$2" in claude|codex|gemini|custom) PROVIDER_CLI="$2" ;; *) PROVIDER_CLI=custom; AGENT_COMMAND_CLI="$2" ;; esac; LAUNCH_ASKED=1; shift 2 ;;
     --launch)    LAUNCH_ASKED=1; shift ;;
     --no-launch) FORCE_NOLAUNCH=1; shift ;;
@@ -151,6 +152,7 @@ if [ -n "$PROVIDERS_CLI" ]; then
   case ",$PROVIDERS_CLI," in *",$PROVIDER_CLI,"*) ;; *) die "launch provider '$PROVIDER_CLI' is not listed in --providers $PROVIDERS_CLI" ;; esac
   BOOT_ARGS+=(--agents "$PROVIDERS_CLI")
 elif [ -n "$PROVIDER_CLI" ]; then
+  ! gsd_provider_gone "$PROVIDER_CLI" || die "$GSD_GEMINI_GONE; use claude, codex, or custom"
   gsd_provider_known "$PROVIDER_CLI" || die "unknown provider '$PROVIDER_CLI'"
   BOOT_ARGS+=(--agent "$PROVIDER_CLI")
 fi

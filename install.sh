@@ -8,10 +8,10 @@
 # machine that won't keep this checkout around).
 #
 # Usage:
-#   ./install.sh [--copy] [--agent claude|codex|gemini]... [--all-agents] [--no-user-hook]
+#   ./install.sh [--copy] [--agent claude|codex]... [--all-agents] [--no-user-hook]
 #
-# Claude and Gemini also get a user-level hook (next to their skills dir:
-# ~/.claude/settings.json, ~/.gemini/settings.json). It refuses /gsd-new-project
+# Claude also gets a user-level hook (next to its skills dir:
+# ~/.claude/settings.json). It refuses /gsd-new-project
 # and /gsd-ingest-docs in a repo gsd-init has not set up, and nothing else
 # there; in a set-up repo it applies the whole guard (gsd-worktree-guard
 # --global). --no-user-hook leaves it out (and removes it).
@@ -19,7 +19,8 @@
 # Env:
 #   GSD_BIN_DIR   install target (default: ~/.local/bin)
 #   GSD_COPY_DIR  standalone runtime (default: GSD_BIN_DIR/../share/gsd-worktrees)
-#   GSD_CLAUDE_SETTINGS, GSD_GEMINI_SETTINGS   where the user-level hook goes
+#   GSD_CLAUDE_SETTINGS   where the user-level hook goes
+#   GSD_GEMINI_SKILL_DIR, GSD_GEMINI_SETTINGS   an old Gemini setup to clean up
 set -euo pipefail
 
 BIN_DIR="${GSD_BIN_DIR:-$HOME/.local/bin}"
@@ -29,10 +30,15 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --copy) MODE=copy; shift ;;
     --reuse-install-config) REUSE=1; shift ;;
-    --agent) [ $# -ge 2 ] || { echo '--agent needs a provider' >&2; exit 1; }; case "$2" in claude|codex|gemini) add_provider "$2" ;; *) echo "unknown provider: $2" >&2; exit 1 ;; esac; shift 2 ;;
-    --all-agents) PROVIDERS=claude,codex,gemini; shift ;;
+    --agent) [ $# -ge 2 ] || { echo '--agent needs a provider' >&2; exit 1; }
+      case "$2" in
+        claude|codex) add_provider "$2" ;;
+        gemini) echo 'Gemini is no longer supported (gsd-core, the new GSD, dropped it); use --agent claude or codex' >&2; exit 1 ;;
+        *) echo "unknown provider: $2" >&2; exit 1 ;;
+      esac; shift 2 ;;
+    --all-agents) PROVIDERS=claude,codex; shift ;;
     --no-user-hook) USER_HOOK=off; shift ;;
-    -h|--help) echo 'usage: ./install.sh [--copy] [--agent claude|codex|gemini]... [--all-agents] [--no-user-hook] [--reuse-install-config]'; exit 0 ;;
+    -h|--help) echo 'usage: ./install.sh [--copy] [--agent claude|codex]... [--all-agents] [--no-user-hook] [--reuse-install-config]'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -59,14 +65,23 @@ if within "$BIN_DIR" "$REPO" || within "$REPO" "$BIN_DIR"; then
   echo "unsafe $([ "$MODE" = copy ] && printf '%s ' --copy)destination: bin and source directories must not overlap" >&2; exit 1
 fi
 MANIFEST=$BIN_DIR/.gsd-install-manifest
+# Gemini was an agent until 0.5.0. An install that set it up (its manifest
+# says so) loses our skills and user hook there; nothing else is touched.
+GEMINI_OLD=""
+if [ -f "$MANIFEST" ] && grep -qE $'^providers\t(.*,)?gemini(,|$)' "$MANIFEST"; then
+  GEMINI_OLD=$(sed -n $'s/^gemini_skills\t//p' "$MANIFEST" | head -1)
+  GEMINI_OLD=${GEMINI_OLD:-$HOME/.gemini/skills}
+fi
+GEMINI_OLD=${GSD_GEMINI_SKILL_DIR:-$GEMINI_OLD}
+[ -z "${GSD_GEMINI_SETTINGS:-}" ] || GEMINI_OLD=${GEMINI_OLD:-$(dirname "$GSD_GEMINI_SETTINGS")/skills}
 if [ "$REUSE" = 1 ] && [ -f "$MANIFEST" ]; then
   while IFS=$'\t' read -r key value; do
     case "$key" in
       # recorded agents are kept; any --agent given now is added to them
-      providers) oldifs=$IFS; IFS=,; for p in $value; do add_provider "$p"; done; IFS=$oldifs ;;
+      providers) oldifs=$IFS; IFS=,; for p in $value; do [ "$p" = gemini ] || add_provider "$p"; done; IFS=$oldifs ;;
       claude_skills) GSD_CLAUDE_SKILL_DIR=${GSD_CLAUDE_SKILL_DIR:-$value} ;;
       codex_skills) GSD_CODEX_SKILL_DIR=${GSD_CODEX_SKILL_DIR:-$value} ;;
-      gemini_skills) GSD_GEMINI_SKILL_DIR=${GSD_GEMINI_SKILL_DIR:-$value} ;;
+      gemini_skills) ;;   # read above, for the clean-up
       user_hook) USER_HOOK=${USER_HOOK:-$value} ;;
       *) echo "invalid install manifest key: $key" >&2; exit 1 ;;
     esac
@@ -265,6 +280,7 @@ retire_skills() {  # $1=skill dir  $2=provider  $3=""|all
   done
 }
 oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do install_skills "$provider"; done; IFS=$oldifs
+[ -z "$GEMINI_OLD" ] || [ ! -d "$GEMINI_OLD" ] || retire_skills "$GEMINI_OLD" gemini all
 
 # ── the user-level hook: /gsd-new-project only after gsd-init ────────────────
 # Before gsd-init a repo has no toolkit files, so no repo hook can stop a bare
@@ -276,7 +292,8 @@ oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do install_skills "$provider"; d
 user_hook() {  # $1=provider $2=on|off
   local provider=$1 settings guard cmd
   case "$provider" in
-    claude|gemini) settings=$(gsd_provider_user_hook_file "$provider") ;;
+    claude) settings=$(gsd_provider_user_hook_file "$provider") ;;
+    gemini) settings=${GSD_GEMINI_SETTINGS:-$(dirname "$GEMINI_OLD")/settings.json} ;;   # removal only
     *) return 0 ;;
   esac
   [ "$2" = on ] || [ -f "$settings" ] || return 0
@@ -347,6 +364,7 @@ elif new != text:
 PY
 }
 oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do user_hook "$provider" "$USER_HOOK"; done; IFS=$oldifs
+[ -z "$GEMINI_OLD" ] || user_hook gemini off
 
 manifest_tmp=$(mktemp)
 printf 'providers\t%s\n' "$PROVIDERS" > "$manifest_tmp"

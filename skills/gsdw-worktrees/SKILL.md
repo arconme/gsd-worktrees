@@ -17,8 +17,8 @@ answer is `gsd-init`, not a manual setup.
 **Never run `/gsd-new-project` or `/gsd-ingest-docs` in a repo without
 `.gsd.conf`.** Run `gsd-init` in the terminal instead: it installs the
 toolkit's files first, then opens a session that runs the right one of the
-two. Run alone, they write the plan without that setup. Claude and Gemini have
-a user-level hook (from `install.sh`) that blocks it; Codex has no hooks, so
+two. Run alone, they write the plan without that setup. Claude has a
+user-level hook (from `install.sh`) that blocks it; Codex has no hooks, so
 there this rule is the only guard.
 
 **GSD skills that clash with worktrees.** In a GSD-fitted repo the guard
@@ -87,7 +87,7 @@ user says no ticket covers the work.
 | `gsd-start` | `-n "<desc>"` new · `-p <N>` attach · `--insert <N> "<desc>"` decimal hotfix · `--ticket <id>` tracker ticket (tags `tk-<id>`; required for a new claim when a tracker is set) · `--no-ticket` · `--slug` · `--repo <path>` · `--provider <name>` · `--agent-command <path>` · `--model <id>` · `--flow` / `--no-flow` · `--launch` / `--no-launch` (opens the session by default in a terminal; from an agent's shell, with no terminal, it only prints) · `--no-push` |
 | `gsd-finish [<N>]` | Land the phase. No argument = infer from the current worktree branch. Runs the repo's pre-merge check or its test suite first. `--pr` opens a GitHub PR instead of merging (worktree stays; re-run after it lands). |
 | `gsd-doctor` | Read-only health check: toolkit install, shims, `.planning` merge safety, planning-file coherence, worktree hygiene. Diagnoses only — each finding names the command that fixes it, with a code; `--json` for scripts. No `--fix`, by design. |
-| `gsd-init` | Repo with no GSD → ready for `gsd-start`. Use `--providers claude,codex,gemini` for a provider set and `--provider codex` to choose the planning session. In a terminal it opens that session (`/gsd-new-project` / `/gsd-ingest-docs`); from your shell (no terminal) it prints the command — have the user run it, or run the printed skill in this session. |
+| `gsd-init` | Repo with no GSD → ready for `gsd-start`. Use `--providers claude,codex` for a provider set and `--provider codex` to choose the planning session. In a terminal it opens that session (`/gsd-new-project` / `/gsd-ingest-docs`); from your shell (no terminal) it prints the command — have the user run it, or run the printed skill in this session. |
 | `gsd-bootstrap-repo` | Just the file installation `gsd-init` wraps. Idempotent. |
 | `gsd-planning-repair` | Reconcile `ROADMAP.md` + `STATE.md` after a union merge, recompute counters. `--check` = CI guard, `--commit` = land the repair. Runs automatically from `gsd-finish` and the `post-merge` hook. |
 | `gsd-sync` | Toolkit maintenance: pull + push the toolkit repo, refresh installed commands using the recorded provider set. `--check` is read-only and uses last-fetched refs. |
@@ -109,7 +109,7 @@ handling the manual path lacks.
   reported prerequisite; location is only one possible cause. The guard runs
   through supported GSD shell routes; arbitrary direct shell commands can
   bypass those routes. `GSD_SKIP_GUARD=1` bypasses it; use only when the user
-  asks. Claude/Gemini native hooks provide optional early feedback.
+  asks. Claude's native hook provides optional early feedback.
 - **With `flow = strict` in `.gsd.conf` the guard also enforces the phase
   order.** `/gsd-plan-phase` needs the discuss artifact (`<P>-CONTEXT.md`),
   `/gsd-execute-phase` needs the cross-AI review (`<P>-REVIEWS.md`; `--gaps-only`

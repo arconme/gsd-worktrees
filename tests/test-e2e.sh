@@ -6,7 +6,7 @@
 # gsd-core (gsd_run), against a local bare repo standing in for GitHub. The AI's work is
 # simulated with plain files and commits, so it costs nothing. It covers what
 # unit suites cannot: pieces working together —
-#   gsd-init for claude+codex+gemini · two clones claiming at the same moment ·
+#   gsd-init for claude+codex · two clones claiming at the same moment ·
 #   gsd-list · a hotfix --insert · the guard · the flow order with a
 #   Claude → Codex handoff · both clones finishing at once · doctor + repair.
 # It found the claim-race phase loss (R15), missing roadmap rows (R16), the
@@ -28,7 +28,7 @@ export PATH="$PKG/bin:$PATH"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=e2e GIT_AUTHOR_EMAIL=e2e@t GIT_COMMITTER_NAME=e2e GIT_COMMITTER_EMAIL=e2e@t
 # the laptop's installed skills are not what this checkout is testing
-export GSD_CLAUDE_SKILL_DIR="$S/skills" GSD_CODEX_SKILL_DIR="$S/skills-codex" GSD_GEMINI_SKILL_DIR="$S/skills-gemini"
+export GSD_CLAUDE_SKILL_DIR="$S/skills" GSD_CODEX_SKILL_DIR="$S/skills-codex"
 unset GSD_PROVIDER GSD_AGENT GSD_AGENT_COMMAND GSD_LOCK_HELD GSD_SKIP_GUARD
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ✔ %s\n' "$1"; }
@@ -37,15 +37,15 @@ check() { if eval "$2"; then ok "$1"; else bad "$1" "${3:-}"; fi; }
 step() { printf '\n== %s\n' "$1"; }
 art() { git -C "$1" add -A; git -C "$1" commit -qm "$2"; }   # simulate an AI step's commit
 
-step "1. project + gsd-init (claude, codex, gemini)"
+step "1. project + gsd-init (claude, codex)"
 git init -q --bare -b main origin.git
 mkdir shop; git -C shop init -qb main
 printf '# Fake Shop\n' > shop/README.md; printf 'test:\n\t@test -f README.md\n' > shop/Makefile
 art shop "initial code"; git -C shop remote add origin "$S/origin.git"; git -C shop push -qu origin main
-(cd shop && gsd-init --providers claude,codex,gemini --provider claude --no-launch) > init.log 2>&1
+(cd shop && gsd-init --providers claude,codex --provider claude --no-launch) > init.log 2>&1
 check "gsd-init succeeds" '[ $? = 0 ]'
-check "3 instruction entrypoints" '[ -f shop/CLAUDE.md ] && [ -f shop/AGENTS.md ] && [ -f shop/GEMINI.md ]'
-check "claude + gemini hooks, codex none" 'grep -q gsd-worktree-guard shop/.claude/settings.json && grep -q gsd-worktree-guard shop/.gemini/settings.json && grep -q "codex native guard hook: unsupported" init.log'
+check "2 instruction entrypoints" '[ -f shop/CLAUDE.md ] && [ -f shop/AGENTS.md ] && [ ! -e shop/GEMINI.md ]'
+check "claude hook, codex none" 'grep -q gsd-worktree-guard shop/.claude/settings.json && grep -q "codex native guard hook: unsupported" init.log'
 printf 'flow = strict\ntest = test -f README.md && test -f Makefile\n' >> shop/.gsd.conf
 
 step "2. simulated /gsd-new-project"

@@ -49,7 +49,7 @@
 #                                           yes). Exempt: a phase whose UI
 #                                           review is already on the base
 #
-# --global: the user-level hook install.sh registers (~/.claude, ~/.gemini).
+# --global: the user-level hook install.sh registers (~/.claude).
 # It fires in EVERY repo, including ones that never use this toolkit: there
 # (no .gsd.conf) it applies rule 0 only. In a set-up repo it applies every
 # rule — it is the only hook that sees a slash command the user TYPES (Claude
@@ -103,35 +103,7 @@ payload_cwd=""   # Claude's .cwd: the location when CLAUDE_PROJECT_DIR is unset
 # Command + args from the known payload shapes:
 #   UserPromptExpansion → .command_name / .command_args
 #   PreToolUse(Skill)   → .tool_input.skill / .tool_input.args
-gemini_tool=""
-if [ -z "$explicit_cmd" ]; then
-  if command -v jq >/dev/null 2>&1; then
-    gemini_tool=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null || true)
-  else
-    gemini_tool=$(printf '%s' "$input" | sed -nE 's/.*"tool_name"[[:space:]]*:[[:space:]]*"(activate_skill|run_shell_command)".*/\1/p' | head -1)
-  fi
-fi
-if [ -z "$explicit_cmd" ] && { [ "$gemini_tool" = activate_skill ] || [ "$gemini_tool" = run_shell_command ]; }; then
-  # Gemini BeforeTool payloads need shell tokenization for direct commands.
-  # A registered hook must not silently allow a GSD call when that parser is
-  # unavailable or unable to classify the payload.
-  py=$(gsd_python 2>/dev/null || true)
-  [ -n "$py" ] || unreadable 'Gemini GSD hook needs Python 3.7+ to inspect tool calls.'
-  hook_fields=()
-  hook_field_count=0
-  while IFS= read -r -d '' field; do
-    hook_fields+=("$field")
-    hook_field_count=$((hook_field_count + 1))
-  done \
-    < <(printf '%s' "$input" | "$py" "$GSD_PKG/lib/gsd_hook_payload.py")
-  [ "$hook_field_count" -eq 4 ] || unreadable 'could not parse Gemini GSD tool call.'
-  case "${hook_fields[0]}" in
-    allow) exit 0 ;;
-    block) unreadable "${hook_fields[1]}" ;;
-    guard) cmd=${hook_fields[1]}; args=${hook_fields[2]}; explicit_repo=${hook_fields[3]} ;;
-    *) unreadable 'invalid Gemini GSD hook result.' ;;
-  esac
-elif [ -z "$explicit_cmd" ] && command -v jq >/dev/null 2>&1; then
+if [ -z "$explicit_cmd" ] && command -v jq >/dev/null 2>&1; then
   if ! printf '%s' "$input" | jq -e 'type == "object" and
     ((.command_name // .tool_input.skill // "") | type == "string") and
     ((.command_args // .tool_input.args // "") | type == "string")' >/dev/null 2>&1; then
@@ -168,7 +140,7 @@ N=$(printf '%s' "$args" | tr -s '[:space:]' '\n' | sed 's/^--phase=//' | grep -E
 # phase-8-slug, GSD decimal inserts are 02.1 in both. Compare numerically.
 pnorm() { local int=${1%%.*}; printf '%s' "$((10#$int))${1#"$int"}"; }
 
-dir="${explicit_repo:-${CLAUDE_PROJECT_DIR:-${GEMINI_PROJECT_DIR:-${payload_cwd:-$PWD}}}}"
+dir="${explicit_repo:-${CLAUDE_PROJECT_DIR:-${payload_cwd:-$PWD}}}"
 dir=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$dir")
 branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 # Nested workers inherit phase identity only from a containing checkout in the

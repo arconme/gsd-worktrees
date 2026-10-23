@@ -217,8 +217,8 @@ rc=$(GSD_SKIP_GUARD=1 "$GUARD" --command gsd-ui-review --phase 5 --repo "$REPO" 
 
 section "rule 0 — /gsd-new-project only after gsd-init (--global = the user-level hook)"
 # gg <payload> [extra guard args] → exit code; no project dir in the env, so
-# the payload's cwd (Claude) or GEMINI_PROJECT_DIR decides, as in a user hook
-gg() { local p=$1; shift; printf '%s' "$p" | env -u CLAUDE_PROJECT_DIR -u GEMINI_PROJECT_DIR "$GUARD" --global "$@" >/dev/null 2>"$WORK/err"; echo $?; }
+# the payload's cwd decides, as in a user hook
+gg() { local p=$1; shift; printf '%s' "$p" | env -u CLAUDE_PROJECT_DIR "$GUARD" --global "$@" >/dev/null 2>"$WORK/err"; echo $?; }
 gis() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected $3, got $2: $(cat "$WORK/err")"; fi; }
 BARE="$WORK/bare-$RANDOM"; mkdir -p "$BARE"; git -C "$BARE" init -q -b main
 upe() { printf '{"hook_event_name":"UserPromptExpansion","expansion_type":"slash_command","command_name":"%s","command_args":"","cwd":"%s","prompt":"/%s"}' "$1" "$2" "$1"; }
@@ -232,7 +232,8 @@ gis "a subdirectory of that repo → blocked"                         "$(mkdir -
 gis "other GSD commands in a non-toolkit repo → allowed"            "$(gg "$(upe gsd-plan-phase "$BARE")")" 0
 gis "non-GSD commands → allowed"                                    "$(gg "$(upe review "$BARE")")" 0
 gis "an unreadable payload → allowed (fails open)"                  "$(gg 'not json')" 0
-gis "Gemini activate_skill gsd-new-project → blocked" "$(printf '{"tool_name":"activate_skill","tool_input":{"name":"gsd-new-project"}}' | env -u CLAUDE_PROJECT_DIR GEMINI_PROJECT_DIR="$BARE" "$GUARD" --global >/dev/null 2>"$WORK/err"; echo $?)" 2
+# a hook an older release left in ~/.gemini: its payload is not read any more
+gis "an old Gemini activate_skill payload → allowed (Gemini is gone)" "$(gg '{"tool_name":"activate_skill","tool_input":{"name":"gsd-new-project"}}')" 0
 gis "GSD_SKIP_GUARD=1 escapes"                     "$(printf '%s' "$(upe gsd-new-project "$BARE")" | GSD_SKIP_GUARD=1 "$GUARD" --global 2>/dev/null; echo $?)" 0
 printf 'install = none\n' > "$BARE/.gsd.conf"
 gis "after gsd-init (.gsd.conf) → allowed"                          "$(gg "$(upe gsd-new-project "$BARE")")" 0

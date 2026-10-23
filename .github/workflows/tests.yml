@@ -43,8 +43,6 @@ jobs:
         run: tests/test-planning-reconcile.sh
       - name: worktree guard suite
         run: tests/test-worktree-guard.sh
-      - name: Gemini hook adapter suite
-        run: bash tests/test-gemini-hook.sh
       - name: flow-next suite
         run: tests/test-flow-next.sh
       - name: provider adapter suite

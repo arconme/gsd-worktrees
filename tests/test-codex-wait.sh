@@ -139,9 +139,9 @@ review "ERROR: You${RSQ}ve hit your usage limit. Try again at Oct 11th, 2026 1:2
 is "a Codex section with only the limit error is not" "$(gsd_reviews_problem "$RV" codex)" "Codex Review — usage limit hit"
 review "$(printf 'Line one.\nLine two.\nLine three.\nLine four.\nLine five.\nQuotes the message: hit your usage limit.')"
 gsd_reviews_problem "$RV" codex > /dev/null; is "a long review that quotes the message is usable" "$?" 1
-printf '## Gemini Review\n\nGood.\n\n## Codex Review\n\nCodex review failed or returned empty output.\n' > "$RV"
+printf '## Claude Review\n\nGood.\n\n## Codex Review\n\nCodex review failed or returned empty output.\n' > "$RV"
 is "configured reviewer failed, another ok → not usable" "$(gsd_reviews_problem "$RV" codex)" "Codex Review — reviewer failed"
-gsd_reviews_problem "$RV" gemini > /dev/null; is "…but fine when gemini is the configured reviewer" "$?" 1
+gsd_reviews_problem "$RV" claude > /dev/null; is "…but fine when claude is the configured reviewer" "$?" 1
 : > "$RV"; gsd_reviews_problem "$RV" codex > /dev/null; is "a hand-recorded file without sections is not judged" "$?" 1
 gsd_reviews_problem "$WORK/none.md" codex > /dev/null; is "a missing file is not judged here" "$?" 1
 

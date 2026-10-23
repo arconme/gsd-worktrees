@@ -3,8 +3,14 @@
 # deliberately contains no workflow/state-machine logic.
 
 gsd_provider_known() {
-  case "$1" in claude|codex|gemini|custom) return 0 ;; *) return 1 ;; esac
+  case "$1" in claude|codex|custom) return 0 ;; *) return 1 ;; esac
 }
+
+# Gemini was a provider until 0.5.0, when GSD (gsd-core) dropped it. The name
+# is refused with this reason — never taken as a custom executable — and
+# gsd-init --no-launch removes what an older release set up for it.
+GSD_GEMINI_GONE="Gemini is no longer supported (gsd-core, the new GSD, dropped it)"
+gsd_provider_gone() { [ "$1" = gemini ]; }
 
 gsd_provider_list_validate() {
   local remaining=$1 p seen=,
@@ -14,8 +20,12 @@ gsd_provider_list_validate() {
   esac
   while :; do
     p=${remaining%%,*}
+    if gsd_provider_gone "$p"; then
+      printf '%s — drop it from this repo with: gsd-init --no-launch\n' "$GSD_GEMINI_GONE" >&2
+      return 64
+    fi
     gsd_provider_known "$p" || {
-      printf "unknown provider '%s' in providers; expected claude, codex, gemini, or custom\n" "$p" >&2
+      printf "unknown provider '%s' in providers; expected claude, codex, or custom\n" "$p" >&2
       return 64
     }
     case "$seen" in *",$p,"*) echo "duplicate provider '$p' in providers; list each provider once" >&2; return 64 ;; esac
@@ -28,7 +38,6 @@ gsd_provider_default_command() {
   case "$1" in
     claude) printf '%s\n' claude ;;
     codex) printf '%s\n' codex ;;
-    gemini) printf '%s\n' gemini ;;
     custom) return 1 ;;
   esac
 }
@@ -37,7 +46,6 @@ gsd_provider_instruction_file() {
   case "$1" in
     claude) printf '%s\n' CLAUDE.md ;;
     codex) printf '%s\n' AGENTS.md ;;
-    gemini) printf '%s\n' GEMINI.md ;;
     custom) printf '%s\n' AGENTS.md ;;
   esac
 }
@@ -47,19 +55,18 @@ gsd_provider_skill_root() { # provider, optional home
   case "$p" in
     claude) printf '%s\n' "${GSD_CLAUDE_SKILL_DIR:-${GSD_SKILL_DIR:-$h/.claude/skills}}" ;;
     codex) printf '%s\n' "${GSD_CODEX_SKILL_DIR:-$h/.agents/skills}" ;;   # Codex's own; ~/.codex/skills is its old place
-    gemini) printf '%s\n' "${GSD_GEMINI_SKILL_DIR:-$h/.gemini/skills}" ;;
     custom) return 1 ;;
   esac
 }
 
 gsd_provider_native_hook() {
-  case "$1" in claude|gemini) printf '%s\n' supported ;; *) printf '%s\n' unsupported ;; esac
+  case "$1" in claude) printf '%s\n' supported ;; *) printf '%s\n' unsupported ;; esac
 }
 
 # Flags verified against the external GSD review skill. This toolkit prints
 # its invocation; it does not install that skill or execute a reviewer itself.
 gsd_provider_review_flag() {
-  case "$1" in claude|codex|gemini) printf -- '--%s\n' "$1" ;; *) return 1 ;; esac
+  case "$1" in claude|codex) printf -- '--%s\n' "$1" ;; *) return 1 ;; esac
 }
 
 # Optional UI tools (ui_gates): gsd-init prints these as a tip, nothing checks
@@ -68,7 +75,7 @@ gsd_provider_review_flag() {
 gsd_provider_ui_tip() {
   case "$1" in
     claude) printf '%s\n' '/plugin marketplace add anthropics/claude-code  then  /plugin install frontend-design@claude-code-plugins;  claude mcp add playwright npx @playwright/mcp@latest' ;;
-    codex|gemini) printf '%s\n' "add the Playwright MCP server (npx @playwright/mcp@latest) to the $1 config" ;;
+    codex) printf '%s\n' "add the Playwright MCP server (npx @playwright/mcp@latest) to the $1 config" ;;
     *) return 1 ;;
   esac
 }
@@ -84,14 +91,12 @@ gsd_provider_ui_addon() {
       case "$1" in
         claude) printf '%s\n' 'Impeccable design skill (/impeccable audit, polish): copy dist/claude-code/.claude from github.com/pbakaus/impeccable into the project' ;;
         codex)  printf '%s\n' 'Impeccable design skill: copy dist/agents/.agents and dist/codex/.codex/hooks.json from github.com/pbakaus/impeccable into the project' ;;
-        gemini) printf '%s\n' 'Impeccable design skill: copy dist/gemini/.gemini from github.com/pbakaus/impeccable into the project (needs Gemini skills enabled)' ;;
         *) return 1 ;;
       esac ;;
     shadcn-mcp)
       case "$1" in
         claude) printf '%s\n' 'shadcn MCP (the agent picks real components): npx shadcn@latest mcp init --client claude' ;;
         codex)  printf '%s\n' 'shadcn MCP: add [mcp_servers.shadcn] command = "npx", args = ["shadcn@latest", "mcp"] to ~/.codex/config.toml' ;;
-        gemini) printf '%s\n' 'shadcn MCP: add a server running npx shadcn@latest mcp to .gemini/settings.json' ;;
         *) return 1 ;;
       esac ;;
     *) return 1 ;;
@@ -102,7 +107,6 @@ gsd_provider_ui_addon() {
 gsd_provider_hook_metadata() {
   case "$1" in
     claude) GSD_HOOK_SETTINGS=.claude/settings.json; GSD_HOOK_EVENT=PreToolUse; GSD_HOOK_MATCHER=Skill; GSD_HOOK_COMMAND='$CLAUDE_PROJECT_DIR/scripts/hooks/gsd-worktree-guard.sh' ;;
-    gemini) GSD_HOOK_SETTINGS=.gemini/settings.json; GSD_HOOK_EVENT=BeforeTool; GSD_HOOK_MATCHER='activate_skill|run_shell_command'; GSD_HOOK_COMMAND='scripts/hooks/gsd-worktree-guard.sh' ;;
     *) return 1 ;;
   esac
 }
@@ -126,7 +130,6 @@ gsd_provider_hook_state() { # repo, provider => present|absent|invalid|unverifie
 gsd_provider_user_hook_file() { # provider => path
   case "$1" in
     claude) printf '%s\n' "${GSD_CLAUDE_SETTINGS:-$(dirname "$(gsd_provider_skill_root claude)")/settings.json}" ;;
-    gemini) printf '%s\n' "${GSD_GEMINI_SETTINGS:-$(dirname "$(gsd_provider_skill_root gemini)")/settings.json}" ;;
     codex) printf '%s\n' "${GSD_CODEX_HOOKS:-${CODEX_HOME:-$HOME/.codex}/hooks.json}" ;;
     *) return 1 ;;
   esac
@@ -139,10 +142,10 @@ gsd_stale_hooks() { # [repo]
   local py p args=()
   py=$(gsd_python 2>/dev/null) || py=python3
   command -v "$py" >/dev/null 2>&1 || return 0
-  for p in claude gemini codex; do args+=("user:$(gsd_provider_user_hook_file "$p")"); done
+  for p in claude codex; do args+=("user:$(gsd_provider_user_hook_file "$p")"); done
   if [ -n "${1:-}" ]; then
     args+=(--project "$1")
-    for p in .claude/settings.json .claude/settings.local.json .gemini/settings.json; do args+=("project:$1/$p"); done
+    for p in .claude/settings.json .claude/settings.local.json; do args+=("project:$1/$p"); done
   fi
   "$py" "$GSD_PKG/lib/gsd_hook_paths.py" "${args[@]}" 2>/dev/null || true
 }
@@ -272,8 +275,9 @@ gsd_command_guards_active() { # toolkit package; native hook/shim is not require
 
 gsd_provider_validate() { # provider, executable override
   local p=$1 c=${2:-}
+  if gsd_provider_gone "$p"; then printf '%s — use claude, codex, or custom\n' "$GSD_GEMINI_GONE" >&2; return 64; fi
   gsd_provider_known "$p" || {
-    printf "unknown provider '%s' (expected claude, codex, gemini, or custom)\n" "$p" >&2
+    printf "unknown provider '%s' (expected claude, codex, or custom)\n" "$p" >&2
     return 64
   }
   if [ "$p" = custom ] && [ -z "$c" ]; then
@@ -300,7 +304,7 @@ gsd_provider_resolve() { # repo, cli provider, cli command
   GSD_PROVIDER_RESOLVED=${cli_p:-${GSD_PROVIDER:-$conf_p}}
   if [ -z "$GSD_PROVIDER_RESOLVED" ] && [ -n "${GSD_AGENT:-}" ]; then
     legacy=$GSD_AGENT
-    if gsd_provider_known "$legacy"; then GSD_PROVIDER_RESOLVED=$legacy
+    if gsd_provider_known "$legacy" || gsd_provider_gone "$legacy"; then GSD_PROVIDER_RESOLVED=$legacy
     # An unknown legacy name is a custom executable. It is the LOWEST-priority
     # executable source: --agent-command and GSD_AGENT_COMMAND still win.
     else GSD_PROVIDER_RESOLVED=custom; legacy_c=$legacy; fi
@@ -311,7 +315,6 @@ gsd_provider_resolve() { # repo, cli provider, cli command
   case "$GSD_PROVIDER_RESOLVED" in
     claude) provider_env_c=${GSD_CLAUDE_COMMAND:-} ;;
     codex) provider_env_c=${GSD_CODEX_COMMAND:-} ;;
-    gemini) provider_env_c=${GSD_GEMINI_COMMAND:-} ;;
     custom) provider_env_c=${GSD_CUSTOM_COMMAND:-} ;;
   esac
   provider_conf_c=$(gsd_conf_get "$repo" "${GSD_PROVIDER_RESOLVED}_command")
@@ -342,7 +345,6 @@ gsd_model_resolve() { # repo, provider, optional CLI override
   case "$p" in
     claude) env_model=${GSD_CLAUDE_MODEL:-} ;;
     codex) env_model=${GSD_CODEX_MODEL:-} ;;
-    gemini) env_model=${GSD_GEMINI_MODEL:-} ;;
   esac
   configured=$(gsd_conf_get "$repo" "${p}_model")
   GSD_MODEL_RESOLVED=${cli:-${GSD_MODEL:-${env_model:-$configured}}}
@@ -370,14 +372,12 @@ gsd_provider_prompt() { # provider, kind, phase-or-empty
       case "$p" in
         claude) printf '/gsd-discuss-phase %s\n' "$n" ;;
         codex) printf 'Discuss GSD phase %s with the user and write its context artifact. Use the gsd-discuss-phase skill if available and obey .gsd/INSTRUCTIONS.md.\n' "$n" ;;
-        gemini) printf 'Discuss GSD phase %s with the user and write its context artifact. Activate the gsd-discuss-phase skill if available and obey .gsd/INSTRUCTIONS.md.\n' "$n" ;;
         custom) printf 'Discuss GSD phase %s with the user and write its context artifact; obey .gsd/INSTRUCTIONS.md.\n' "$n" ;;
       esac ;;
     flow)
       case "$p" in
         claude) printf '/gsdw-flow %s\n' "$n" ;;
         codex) printf 'Use the gsdw-flow skill to drive phase %s. Start by running gsd-flow-next %s and obey every reported gate.\n' "$n" "$n" ;;
-        gemini) printf 'Activate the gsdw-flow skill and drive phase %s. Start by running gsd-flow-next %s and obey every reported gate.\n' "$n" "$n" ;;
         custom) printf 'Drive GSD phase %s by running gsd-flow-next %s before every phase step; obey every gate in .gsd/INSTRUCTIONS.md.\n' "$n" "$n" ;;
       esac ;;
     new)
@@ -392,14 +392,11 @@ gsd_provider_argv() { # provider, executable, prompt, optional model
   gsd_model_validate "$p" "$model" || return
   GSD_LAUNCH_ARGV=("$c")
   case "$p" in
-    claude|codex|gemini)
+    claude|codex)
       if [ -n "$model" ] && [ "$model" != default ]; then GSD_LAUNCH_ARGV+=(--model "$model"); fi ;;
   esac
   # shellcheck disable=SC2034 # output array is consumed by the caller
-  case "$p" in
-    gemini) GSD_LAUNCH_ARGV+=(--prompt-interactive "$prompt") ;;
-    claude|codex|custom) GSD_LAUNCH_ARGV+=("$prompt") ;;
-  esac
+  GSD_LAUNCH_ARGV+=("$prompt")
 }
 
 gsd_shell_quote() { printf '%q' "$1"; }

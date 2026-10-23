@@ -26,7 +26,7 @@
 #   --fix          after the check, run the SAFE fixes it found — shown first,
 #                  then asked (y/N) — and check again. Safe = mechanical and
 #                  undoable: gsd-init --no-launch --no-commit (T010–T014,
-#                  T016, T052, T058), gsd-planning-repair (T020, stale counters),
+#                  T016, T052, T058, T061), gsd-planning-repair (T020, stale counters),
 #                  git branch --track <base> (T015), chmod +x the pre-merge
 #                  script (T019), remove a dead lock (T030). Never commits,
 #                  pushes, checks out, deletes branches or edits ROADMAP.md;
@@ -146,7 +146,7 @@ safe() { case $'\n'"$SAFE"$'\n' in *$'\n'"$1"$'\n'*) ;; *) SAFE="${SAFE:+$SAFE$'
 fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)  $3=code
   FINDINGS=$((FINDINGS + 1))
   case "${3:-}" in
-    T010|T011|T012|T013|T014|T016|T052|T058) safe init ;;
+    T010|T011|T012|T013|T014|T016|T052|T058|T061) safe init ;;
     T020) safe repair ;;
     T030) safe unlock ;;
   esac
@@ -335,9 +335,21 @@ fi
 if [ "$IS_GSD_REPO" = 1 ]; then
 section "repo setup"
 review_provider=$(gsd_conf_get "$MAIN" review_provider)
-if [ -n "$review_provider" ] && ! gsd_provider_known "$review_provider"; then
-  fail "invalid review_provider '$review_provider'" "set review_provider to claude, codex, gemini, or custom in .gsd.conf" "T060"
+if gsd_provider_gone "$review_provider"; then
+  fail "review_provider = gemini: $GSD_GEMINI_GONE" "set review_provider to claude, codex, or custom in .gsd.conf" "T060"
+elif [ -n "$review_provider" ] && ! gsd_provider_known "$review_provider"; then
+  fail "invalid review_provider '$review_provider'" "set review_provider to claude, codex, or custom in .gsd.conf" "T060"
 fi
+
+# T061 — Gemini setup an older release wrote: gemini in providers, its keys,
+# the marked block in GEMINI.md, the hook in .gemini/settings.json. gsd-init
+# removes only those; the user's own text and settings stay.
+gemini_left=""
+case ",$RAW_PROVIDERS,$RAW_LEGACY_PROVIDER," in *,gemini,*) gemini_left="$gemini_left providers" ;; esac
+[ -z "$(gsd_conf_get "$MAIN" gemini_command)$(gsd_conf_get "$MAIN" gemini_model)" ] || gemini_left="$gemini_left gemini_*-keys"
+[ -z "$(gsd_owned_block_get "$MAIN/GEMINI.md" provider)" ] || gemini_left="$gemini_left GEMINI.md"
+! grep -qs 'gsd-worktree-guard' "$MAIN/.gemini/settings.json" || gemini_left="$gemini_left .gemini/settings.json"
+[ -z "$gemini_left" ] || fail "Gemini setup from an older gsd-worktrees:$gemini_left — $GSD_GEMINI_GONE" "gsd-init --no-launch" "T061"
 
 if [ "$MODEL_VALID" = 0 ]; then
   fail "invalid model configuration for $DOCTOR_PROVIDER" "check ${DOCTOR_PROVIDER}_model in .gsd.conf and GSD model environment overrides" "T059"
@@ -345,7 +357,10 @@ else
   pass "session model: ${DOCTOR_MODEL:-CLI default} (model availability is checked by the provider CLI)"
 fi
 if [ "$PROVIDER_VALID" = 0 ]; then
-  fail "invalid provider configuration: '$RAW_PROVIDER'" "edit .gsd.conf: providers = claude|codex|gemini|custom" "T050"
+  case ",$RAW_PROVIDERS,$RAW_LEGACY_PROVIDER," in
+    *,gemini,*) ;;   # T061 above names it
+    *) fail "invalid provider configuration: '$RAW_PROVIDER'" "edit .gsd.conf: providers = claude|codex|custom" "T050" ;;
+  esac
 else
   pass "provider: $DOCTOR_PROVIDER (command: $DOCTOR_COMMAND)"
   [ "$PROVIDER_AVAILABLE" = true ] && pass "provider executable is available" || fail "provider executable '$DOCTOR_COMMAND' is unavailable (print-only still works)" "install $DOCTOR_COMMAND or set ${DOCTOR_PROVIDER}_command in .gsd.conf" "T051"
@@ -371,11 +386,17 @@ if [ -n "$RAW_LEGACY_PROVIDER" ]; then
 fi
 oldifs=$IFS; IFS=,
 for configured_provider in $configured_list; do
+  ! gsd_provider_gone "$configured_provider" || continue   # T061
   if ! gsd_provider_known "$configured_provider"; then fail "unknown configured provider '$configured_provider'" "edit .gsd.conf providers" "T050"; continue; fi
   if gsd_provider_resolve "$MAIN" "$configured_provider" "" 2>/dev/null; then
     if command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then pass "configured provider $configured_provider is available as $GSD_AGENT_COMMAND_RESOLVED"
     else fail "configured provider $configured_provider executable '$GSD_AGENT_COMMAND_RESOLVED' is unavailable" "install it, set ${configured_provider}_command, or use print-only" "T057"; fi
-  else fail "configured provider $configured_provider command is invalid" "check ${configured_provider}_command in .gsd.conf" "T050"; fi
+  else
+    case ",$configured_list," in
+      *,gemini,*) ;;   # the list itself is refused: T061
+      *) fail "configured provider $configured_provider command is invalid" "check ${configured_provider}_command in .gsd.conf" "T050" ;;
+    esac
+  fi
   # Skills: installed, and the same as this toolkit's (a skill left from an
   # older install, or edited by hand, makes the agent follow old steps).
   skillroot=$(gsd_provider_skill_root "$configured_provider" 2>/dev/null || true)
@@ -399,7 +420,7 @@ for configured_provider in $configured_list; do
   gsd_provider_instruction_integrated "$MAIN" "$configured_provider" || fail "$configured_provider instruction adapter is missing or malformed in $configured_file" "gsd-init --no-launch" "T058"
 done
 IFS=$oldifs
-for f in CLAUDE.md AGENTS.md GEMINI.md; do
+for f in CLAUDE.md AGENTS.md; do   # GEMINI.md: T061
   gsd_owned_markers_valid "$MAIN/$f" provider || fail "mixed/malformed GSD instruction blocks in $f" "repair the owned marker pair, then gsd-init --no-launch" "T055"
   members=$(gsd_provider_instruction_members "$MAIN/$f")
   oldifs=$IFS; IFS=,

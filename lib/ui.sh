@@ -357,11 +357,11 @@ gsd_ui_addon_present() {  # $1=checkout $2=addon (impeccable|shadcn-mcp) → tru
   local d
   case "$2" in
     impeccable)
-      for d in "$1/.claude/skills" "$1/.agents/skills" "$1/.gemini/skills" "$HOME/.claude/skills" "$HOME/.agents/skills" "$HOME/.gemini/skills"; do
+      for d in "$1/.claude/skills" "$1/.agents/skills" "$HOME/.claude/skills" "$HOME/.agents/skills"; do
         [ -e "$d/impeccable" ] && return 0
       done ;;
     shadcn-mcp)
-      grep -qs 'shadcn' "$1/.mcp.json" "$HOME/.claude.json" "$HOME/.codex/config.toml" "$HOME/.gemini/settings.json" "$1/.gemini/settings.json" && return 0 ;;
+      grep -qs 'shadcn' "$1/.mcp.json" "$HOME/.claude.json" "$HOME/.codex/config.toml" && return 0 ;;
   esac
   return 1
 }

@@ -9,14 +9,14 @@ bad(){ FAIL=$((FAIL+1)); printf '  ✘ %s\n' "$1"; }
 assert(){ if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 repo(){ mkdir -p "$1"; git -C "$1" init -q -b develop; git -C "$1" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init; }
 export PATH="$PKG/bin:$WORK/fakebin:$PATH"; mkdir -p "$WORK/fakebin"
-for x in claude codex gemini; do printf '#!/bin/sh\nprintf "%%s\\n" "$@"\n' > "$WORK/fakebin/$x"; chmod +x "$WORK/fakebin/$x"; done
+for x in claude codex; do printf '#!/bin/sh\nprintf "%%s\\n" "$@"\n' > "$WORK/fakebin/$x"; chmod +x "$WORK/fakebin/$x"; done
 . "$PKG/lib/common.sh"; . "$PKG/lib/provider.sh"
 
 echo 'configuration and rendering'
-R=$WORK/config; repo "$R"; printf 'provider = gemini\nagent_command = gem-x\n' > "$R/.gsd.conf"
-gsd_provider_resolve "$R" "" ""; assert 'legacy provider still resolves' '[ "$GSD_PROVIDER_RESOLVED:$GSD_AGENT_COMMAND_RESOLVED" = gemini:gem-x ]'
-printf 'provider = claude\nproviders = gemini,codex\nagent_command = gem-x\n' > "$R/.gsd.conf"
-gsd_provider_resolve "$R" "" ""; assert 'ordered providers overrides legacy provider' '[ "$GSD_PROVIDER_RESOLVED:$GSD_AGENT_COMMAND_RESOLVED" = gemini:gem-x ]'
+R=$WORK/config; repo "$R"; printf 'provider = codex\nagent_command = codex-x\n' > "$R/.gsd.conf"
+gsd_provider_resolve "$R" "" ""; assert 'legacy provider still resolves' '[ "$GSD_PROVIDER_RESOLVED:$GSD_AGENT_COMMAND_RESOLVED" = codex:codex-x ]'
+printf 'provider = claude\nproviders = codex,claude\nagent_command = codex-x\n' > "$R/.gsd.conf"
+gsd_provider_resolve "$R" "" ""; assert 'ordered providers overrides legacy provider' '[ "$GSD_PROVIDER_RESOLVED:$GSD_AGENT_COMMAND_RESOLVED" = codex:codex-x ]'
 GSD_PROVIDER=codex GSD_AGENT_COMMAND=codex-x gsd_provider_resolve "$R" "" ""; assert 'environment overrides repo' '[ "$GSD_PROVIDER_RESOLVED:$GSD_AGENT_COMMAND_RESOLVED" = codex:codex-x ]'
 GSD_PROVIDER=codex GSD_AGENT_COMMAND=codex-x gsd_provider_resolve "$R" claude /tmp/claude-x; assert 'CLI overrides environment' '[ "$GSD_PROVIDER_RESOLVED:$GSD_AGENT_COMMAND_RESOLVED" = claude:/tmp/claude-x ]'
 gsd_provider_resolve "$R" nope "" >/dev/null 2>&1; assert 'unknown provider rejected' '[ $? -eq 64 ]'
@@ -26,17 +26,15 @@ printf 'start_mode = discuss\n' > "$WORK/sm.conf"; cp "$R/.gsd.conf" "$WORK/sm.s
 printf 'start_mode = flow\n' >> "$R/.gsd.conf"; gsd_start_mode_resolve "$R" ""; assert 'repository start mode selects flow' '[ "$GSD_START_MODE_RESOLVED" = flow ]'
 gsd_start_mode_resolve "$R" discuss; assert 'CLI start mode overrides repository' '[ "$GSD_START_MODE_RESOLVED" = discuss ]'
 printf 'start_mode = invalid\n' > "$R/.gsd.conf"; gsd_start_mode_resolve "$R" "" >/dev/null 2>&1; assert 'invalid start mode rejected' '[ $? -eq 64 ]'
-for p in claude codex gemini; do prompt=$(gsd_provider_prompt "$p" discuss 7); gsd_provider_argv "$p" "$p" "$prompt"; "$WORK/fakebin/$p" "${GSD_LAUNCH_ARGV[@]:1}" > "$WORK/$p-discuss.args"; prompt=$(gsd_provider_prompt "$p" flow 7); gsd_provider_argv "$p" "$p" "$prompt"; "$WORK/fakebin/$p" "${GSD_LAUNCH_ARGV[@]:1}" > "$WORK/$p-flow.args"; done
+for p in claude codex; do prompt=$(gsd_provider_prompt "$p" discuss 7); gsd_provider_argv "$p" "$p" "$prompt"; "$WORK/fakebin/$p" "${GSD_LAUNCH_ARGV[@]:1}" > "$WORK/$p-discuss.args"; prompt=$(gsd_provider_prompt "$p" flow 7); gsd_provider_argv "$p" "$p" "$prompt"; "$WORK/fakebin/$p" "${GSD_LAUNCH_ARGV[@]:1}" > "$WORK/$p-flow.args"; done
 assert 'Claude discuss prompt remains backward compatible' "grep -q '^/gsd-discuss-phase 7$' '$WORK/claude-discuss.args'"
 assert 'Claude flow prompt is explicit' "grep -q '^/gsdw-flow 7$' '$WORK/claude-flow.args'"
 assert 'Codex discuss prompt is natural language' "grep -q 'Discuss GSD phase 7' '$WORK/codex-discuss.args'"
 assert 'Codex flow prompt is natural language' "grep -q 'gsdw-flow skill' '$WORK/codex-flow.args'"
-assert 'Gemini uses prompt-interactive for discuss' "grep -q '^--prompt-interactive$' '$WORK/gemini-discuss.args'"
-assert 'Gemini uses prompt-interactive for flow' "grep -q '^--prompt-interactive$' '$WORK/gemini-flow.args'"
 render=$(gsd_provider_render '/tmp/a b' fake 'quote " and $ safe'); assert 'rendering shell-quotes cwd and prompt' "printf '%s' \"\$render\" | grep -q '/tmp/a\\\\ b'"
 assert 'missing executable still renders in print-only mode' "! command -v provider-does-not-exist >/dev/null && [ -n \"\$(gsd_provider_render /tmp provider-does-not-exist prompt)\" ]"
-printf 'providers = claude,codex,gemini\nagent_command = default-claude\nclaude_command = custom-claude\ncodex_command = custom-codex\ngemini_command = custom-gemini\n' > "$R/.gsd.conf"
-for spec in claude:custom-claude codex:custom-codex gemini:custom-gemini; do p=${spec%%:*}; want=${spec#*:}; gsd_provider_resolve "$R" "$p" ""; assert "$p uses its own command in one repo" '[ "$GSD_AGENT_COMMAND_RESOLVED" = "$want" ]'; done
+printf 'providers = claude,codex\nagent_command = default-claude\nclaude_command = custom-claude\ncodex_command = custom-codex\n' > "$R/.gsd.conf"
+for spec in claude:custom-claude codex:custom-codex; do p=${spec%%:*}; want=${spec#*:}; gsd_provider_resolve "$R" "$p" ""; assert "$p uses its own command in one repo" '[ "$GSD_AGENT_COMMAND_RESOLVED" = "$want" ]'; done
 
 echo 'gsd-start discuss/flow selection'
 echo 'complete provider-list validation'
@@ -48,7 +46,7 @@ for invalid in 'claude,unknown-provider' 'claude,,codex' 'claude,' ',codex' 'cla
 done
 printf 'providers = claude,unknown-provider\n' > "$R/.gsd.conf"
 mkdir -p "$R/.planning"; printf '### Phase 7: Test\n' > "$R/.planning/ROADMAP.md"
-for p in claude codex gemini; do
+for p in claude codex; do
   gsd-start -p 7 --repo "$R" --provider "$p" --no-launch >/dev/null 2>&1; rc=$?
   assert "$p launch rejects invalid list before worktree creation" '[ "$rc" -eq 64 ] && [ "$(git -C "$R" worktree list --porcelain | grep -c "^worktree ")" -eq 1 ]'
 done
@@ -69,13 +67,13 @@ assert 'explicit base overrides configuration and instructions together' '[ "$(g
 
 echo 'model selection and safe argv'
 R=$WORK/models; repo "$R"
-printf 'claude_model = claude-test\ncodex_model = codex-test\ngemini_model = gemini-test\n' > "$R/.gsd.conf"
-for p in claude codex gemini; do
+printf 'claude_model = claude-test\ncodex_model = codex-test\n' > "$R/.gsd.conf"
+for p in claude codex; do
   gsd_model_resolve "$R" "$p" ""
   assert "$p resolves its own model" '[ "$GSD_MODEL_RESOLVED" = "$p-test" ]'
   gsd_provider_argv "$p" "$WORK/fakebin/$p" 'prompt with spaces' "$GSD_MODEL_RESOLVED"
   actual=$("${GSD_LAUNCH_ARGV[@]}")
-  expected=$(printf '%s\n' --model "$p-test"; [ "$p" != gemini ] || printf '%s\n' --prompt-interactive; printf '%s\n' 'prompt with spaces')
+  expected=$(printf '%s\n' --model "$p-test" 'prompt with spaces')
   assert "$p receives exact model and prompt arguments" '[ "$actual" = "$expected" ]'
 done
 GSD_CODEX_MODEL=env-test gsd_model_resolve "$R" codex ""; assert 'provider model environment overrides config' '[ "$GSD_MODEL_RESOLVED" = env-test ]'
@@ -117,16 +115,16 @@ git -C "$WT" -c user.name=t -c user.email=t@t commit -qm ready
 printf 'base = develop\nflow = strict\ninstall = npm install\n' > "$WT/.gsd.conf"
 echo running > "$WT/.gsd-install.status"
 mkdir -p "$WT/node_modules"
-for p in claude codex gemini; do
+for p in claude codex; do
   out=$(gsd-start -p 7 --repo "$R" --provider "$p" --flow --no-launch 2>&1); rc=$?
   assert "$p flow launch blocks pending install" '[ "$rc" -eq 2 ] && [[ "$out" != *"Next:  cd"* ]]'
 done
 echo ok > "$WT/.gsd-install.status"
-for p in claude codex gemini; do
+for p in claude codex; do
   out=$(gsd-start -p 7 --repo "$R" --provider "$p" --flow --no-launch 2>&1); rc=$?
   assert "$p flow launch permits completed install" '[ "$rc" -eq 0 ] && [[ "$out" == *"Next:  cd"* ]]'
 done
-for p in claude codex gemini; do
+for p in claude codex; do
   R=$WORK/$p; repo "$R"; printf 'user content %s\n' "$p" > "$R/$(gsd_provider_instruction_file "$p")"
   (cd "$R" && gsd-bootstrap-repo --agent "$p") >/dev/null
   assert "$p canonical instructions" "grep -q 'gsd-worktrees:canonical' '$R/.gsd/INSTRUCTIONS.md'"
@@ -136,16 +134,14 @@ for p in claude codex gemini; do
   assert "$p repeated bootstrap idempotent" '[ "$before" = "$after" ]'
 done
 assert 'Codex creates no Claude integration' "[ ! -e '$WORK/codex/CLAUDE.md' ] && [ ! -e '$WORK/codex/.claude/settings.json' ]"
-assert 'Gemini creates no Claude integration' "[ ! -e '$WORK/gemini/CLAUDE.md' ] && [ ! -e '$WORK/gemini/.claude/settings.json' ]"
 assert 'Claude native hook present' "grep -q gsd-worktree-guard '$WORK/claude/.claude/settings.json'"
-assert 'Gemini native hook present' "grep -q gsd-worktree-guard '$WORK/gemini/.gemini/settings.json'"
-R=$WORK/multi; repo "$R"; printf 'claude user\n' > "$R/CLAUDE.md"; printf 'codex user\n' > "$R/AGENTS.md"; printf 'gemini user\n' > "$R/GEMINI.md"; (cd "$R" && gsd-bootstrap-repo --agents claude,codex,gemini) >/dev/null
-assert 'multi-provider config' "grep -q '^providers = claude,codex,gemini$' '$R/.gsd.conf'"
+R=$WORK/multi; repo "$R"; printf 'claude user\n' > "$R/CLAUDE.md"; printf 'codex user\n' > "$R/AGENTS.md"; (cd "$R" && gsd-bootstrap-repo --agents claude,codex) >/dev/null
+assert 'multi-provider config' "grep -q '^providers = claude,codex$' '$R/.gsd.conf'"
 assert 'new config does not duplicate provider default' "! grep -q '^provider =' '$R/.gsd.conf'"
-assert 'multi-provider files preserved' "grep -q 'claude user' '$R/CLAUDE.md' && grep -q 'codex user' '$R/AGENTS.md' && grep -q 'gemini user' '$R/GEMINI.md'"
-R=$WORK/multi-commands; repo "$R"; (cd "$R" && gsd-bootstrap-repo --agents claude,codex,gemini --provider-command claude=claude-x --provider-command codex=codex-x --provider-command gemini=gemini-x) >/dev/null
-assert 'bootstrap stores per-provider commands' "grep -q '^claude_command = claude-x$' '$R/.gsd.conf' && grep -q '^codex_command = codex-x$' '$R/.gsd.conf' && grep -q '^gemini_command = gemini-x$' '$R/.gsd.conf'"
-for p in claude codex gemini; do gsd_provider_resolve "$R" "$p" ""; prompt=$(gsd_provider_prompt "$p" discuss 7); gsd_provider_argv "$p" "$GSD_AGENT_COMMAND_RESOLVED" "$prompt"; same_phase=$(gsd_provider_render "$R/phase-7-shared" "${GSD_LAUNCH_ARGV[@]}"); assert "same phase renders $p adapter" "printf '%s' \"\$same_phase\" | grep -q '$p-x'"; done
+assert 'multi-provider files preserved' "grep -q 'claude user' '$R/CLAUDE.md' && grep -q 'codex user' '$R/AGENTS.md'"
+R=$WORK/multi-commands; repo "$R"; (cd "$R" && gsd-bootstrap-repo --agents claude,codex --provider-command claude=claude-x --provider-command codex=codex-x) >/dev/null
+assert 'bootstrap stores per-provider commands' "grep -q '^claude_command = claude-x$' '$R/.gsd.conf' && grep -q '^codex_command = codex-x$' '$R/.gsd.conf'"
+for p in claude codex; do gsd_provider_resolve "$R" "$p" ""; prompt=$(gsd_provider_prompt "$p" discuss 7); gsd_provider_argv "$p" "$GSD_AGENT_COMMAND_RESOLVED" "$prompt"; same_phase=$(gsd_provider_render "$R/phase-7-shared" "${GSD_LAUNCH_ARGV[@]}"); assert "same phase renders $p adapter" "printf '%s' \"\$same_phase\" | grep -q '$p-x'"; done
 R=$WORK/legacy; repo "$R"; printf 'before\n## GSD planning system\nlegacy toolkit scripts/hooks/gsd-worktree-guard.sh\nrepo-specific policy\n## User section\nkeep me\n' > "$R/CLAUDE.md"; cp "$R/CLAUDE.md" "$R/CLAUDE.before"; (cd "$R" && gsd-bootstrap-repo --agent claude) >/dev/null
 assert 'legacy Claude instructions preserved byte-for-byte' "head -n 6 '$R/CLAUDE.md' | cmp -s - '$R/CLAUDE.before'"
 assert 'legacy Claude repository policy remains active' "grep -q 'repo-specific policy' '$R/CLAUDE.md' && grep -q 'keep me' '$R/CLAUDE.md'"
@@ -161,16 +157,16 @@ R=$WORK/init-print; repo "$R"; out=$(cd "$R" && gsd-init --new --provider custom
 R=$WORK/init-launch; repo "$R"; (cd "$R" && gsd-init --new --provider custom --agent-command provider-does-not-exist --launch --no-commit) >/dev/null 2>&1; assert 'launch fails safely when executable is missing' '[ $? -eq 127 ]'
 
 echo 'multi-provider init'
-R=$WORK/init-multi; repo "$R"; out=$(cd "$R" && gsd-init --new --providers claude,codex,gemini --provider codex --provider-command codex=codex-special --no-launch --no-commit 2>&1)
-assert 'init writes explicit provider set' "grep -q '^providers = claude,codex,gemini$' '$R/.gsd.conf'"
-assert 'init installs every selected adapter' "grep -q 'provider:start' '$R/CLAUDE.md' && grep -q 'provider:start' '$R/AGENTS.md' && grep -q 'provider:start' '$R/GEMINI.md'"
+R=$WORK/init-multi; repo "$R"; out=$(cd "$R" && gsd-init --new --providers claude,codex --provider codex --provider-command codex=codex-special --no-launch --no-commit 2>&1)
+assert 'init writes explicit provider set' "grep -q '^providers = claude,codex$' '$R/.gsd.conf'"
+assert 'init installs every selected adapter' "grep -q 'provider:start' '$R/CLAUDE.md' && grep -q 'provider:start' '$R/AGENTS.md'"
 assert 'init renders selected provider command' "printf '%s' \"\$out\" | grep -q 'codex-special'"
-R=$WORK/init-default-provider; repo "$R"; out=$(cd "$R" && gsd-init --new --providers gemini,codex --provider-command gemini=gemini-special --no-launch --no-commit 2>&1)
-assert 'init defaults session to first listed provider' "printf '%s' \"\$out\" | grep -q 'gemini-special --prompt-interactive'"
+R=$WORK/init-default-provider; repo "$R"; out=$(cd "$R" && gsd-init --new --providers codex,claude --provider-command codex=codex-special --no-launch --no-commit 2>&1)
+assert 'init defaults session to first listed provider' "printf '%s' \"\$out\" | grep -q 'codex-special'"
 R=$WORK/init-selected-command; repo "$R"; (cd "$R" && gsd-init --new --providers claude,codex --provider codex --agent-command codex-selected --no-launch --no-commit) >/dev/null
 assert 'legacy command flag targets selected provider' "grep -q '^codex_command = codex-selected$' '$R/.gsd.conf' && ! grep -q '^agent_command =' '$R/.gsd.conf'"
-R=$WORK/init-invalid-selection; repo "$R"; (cd "$R" && gsd-init --new --providers claude,gemini --provider codex --no-launch --no-commit) >/dev/null 2>&1; assert 'init rejects launch provider outside set' '[ $? -ne 0 ] && [ ! -e "$R/.gsd.conf" ]'
-R=$WORK/init-invalid-command; repo "$R"; (cd "$R" && gsd-init --new --providers claude,gemini --provider-command codex=codex-x --no-launch --no-commit) >/dev/null 2>&1; assert 'init rejects command override outside set' '[ $? -ne 0 ] && [ ! -e "$R/.gsd.conf" ]'
+R=$WORK/init-invalid-selection; repo "$R"; (cd "$R" && gsd-init --new --providers claude --provider codex --no-launch --no-commit) >/dev/null 2>&1; assert 'init rejects launch provider outside set' '[ $? -ne 0 ] && [ ! -e "$R/.gsd.conf" ]'
+R=$WORK/init-invalid-command; repo "$R"; (cd "$R" && gsd-init --new --providers claude --provider-command codex=codex-x --no-launch --no-commit) >/dev/null 2>&1; assert 'init rejects command override outside set' '[ $? -ne 0 ] && [ ! -e "$R/.gsd.conf" ]'
 
 echo 'installer isolation and preservation'
 echo 'migration and malformed instruction regressions'
@@ -194,7 +190,7 @@ R=$WORK/custom-repeat; repo "$R"
 (cd "$R" && gsd-bootstrap-repo --agent custom --agent-command custom-cli) >/dev/null
 (cd "$R" && gsd-bootstrap-repo) >/dev/null
 assert 'custom bootstrap can reuse saved executable' '[ $? -eq 0 ]'
-for p in claude codex gemini; do
+for p in claude codex; do
   for shape in unmatched reversed duplicate nested inline; do
     R=$WORK/markers-$p-$shape; repo "$R"
     instruction_file="$R/$(gsd_provider_instruction_file "$p")"
@@ -225,8 +221,8 @@ R=$WORK/gitignore-nl; repo "$R"; printf 'node_modules' > "$R/.gitignore"
 (cd "$R" && gsd-bootstrap-repo --agent codex) >/dev/null 2>&1
 assert 'a .gitignore with no final newline keeps its last line' 'grep -qx node_modules "$R/.gitignore" && grep -qx .gsd-install.status "$R/.gitignore"'
 mkdir -p "$WORK/skills/claude/gsdw-flow"; echo mine > "$WORK/skills/claude/gsdw-flow/user.txt"
-GSD_BIN_DIR=$WORK/bin GSD_CLAUDE_SKILL_DIR=$WORK/skills/claude GSD_CODEX_SKILL_DIR=$WORK/skills/codex GSD_GEMINI_SKILL_DIR=$WORK/skills/gemini "$PKG/install.sh" --all-agents >/dev/null
-for p in claude codex gemini; do assert "$p skills installed" "[ -e '$WORK/skills/$p/gsdw-flow/SKILL.md' ]"; done
+GSD_BIN_DIR=$WORK/bin GSD_CLAUDE_SKILL_DIR=$WORK/skills/claude GSD_CODEX_SKILL_DIR=$WORK/skills/codex "$PKG/install.sh" --all-agents >/dev/null
+for p in claude codex; do assert "$p skills installed" "[ -e '$WORK/skills/$p/gsdw-flow/SKILL.md' ]"; done
 assert 'real skill directory preserved as backup' "[ -f '$WORK/skills/claude/gsdw-flow.bak/user.txt' ]"
 GSD_BIN_DIR=$WORK/bin GSD_CLAUDE_SKILL_DIR=$WORK/skills/claude "$PKG/install.sh" --agent claude >/dev/null
 assert 'repeated skill install stays usable' "[ -e '$WORK/skills/claude/gsdw-flow/SKILL.md' ]"
@@ -237,14 +233,13 @@ assert 'unrelated existing symlink preserved as backup' "[ -L '$WORK/skills-link
 echo 'install.sh user-level hook (/gsd-new-project only after gsd-init)'
 UH=$WORK/uh; mkdir -p "$UH/claude"
 printf '{"model":"opus","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo mine"}]}]}}\n' > "$UH/claude/settings.json"
-uinstall() { GSD_BIN_DIR=$UH/bin GSD_CLAUDE_SKILL_DIR=$UH/claude/skills GSD_GEMINI_SKILL_DIR=$UH/gemini/skills GSD_CODEX_SKILL_DIR=$UH/codex/skills "$PKG/install.sh" "$@" >/dev/null; }
+uinstall() { GSD_BIN_DIR=$UH/bin GSD_CLAUDE_SKILL_DIR=$UH/claude/skills GSD_CODEX_SKILL_DIR=$UH/codex/skills "$PKG/install.sh" "$@" >/dev/null; }
 ours() { jq '[.hooks[]?[]?.hooks[]? | select(.command | test("gsd-worktree-guard.*--global"))] | length' "$1"; }
 uinstall --all-agents
 assert 'claude settings get the Skill + UserPromptExpansion hooks' '[ "$(ours "$UH/claude/settings.json")" = 2 ]'
 assert '…next to the user'"'"'s own hook and keys' 'jq -e ".model == \"opus\" and any(.hooks.PreToolUse[]; .matcher == \"Bash\")" "$UH/claude/settings.json" >/dev/null'
 # the matcher is a regex: a bare word "gsd" is an exact match and never fires for /gsd-new-project
 assert 'typed slash commands are covered (matcher gsd.*)' 'jq -e "any(.hooks.UserPromptExpansion[]; .matcher == \"gsd.*\")" "$UH/claude/settings.json" >/dev/null'
-assert 'gemini settings get the activate_skill hook' 'jq -e "[.hooks.BeforeTool[] | select(.matcher == \"activate_skill\")] | length == 1" "$UH/gemini/settings.json" >/dev/null'
 assert 'codex gets no settings file' '[ ! -e "$UH/codex/settings.json" ]'
 uinstall --reuse-install-config
 assert 'reinstall does not duplicate it' '[ "$(ours "$UH/claude/settings.json")" = 2 ]'
@@ -255,7 +250,7 @@ assert 'the installed command blocks /gsd-new-project in a bare repo' '[ "$rc" =
 rc=$(printf '{}' | env -u CLAUDE_PROJECT_DIR sh -c "$(printf '%s' "$cmd" | sed "s|$UH/bin|$UH/gone|g")" 2>/dev/null; echo $?)
 assert 'a removed toolkit fails open (exit 0)' '[ "$rc" = 0 ]'
 uinstall --reuse-install-config --no-user-hook
-assert '--no-user-hook removes it' '[ "$(ours "$UH/claude/settings.json")" = 0 ] && [ "$(ours "$UH/gemini/settings.json")" = 0 ]'
+assert '--no-user-hook removes it' '[ "$(ours "$UH/claude/settings.json")" = 0 ]'
 assert '…keeping the user'"'"'s own hook' 'jq -e "any(.hooks.PreToolUse[]; .matcher == \"Bash\")" "$UH/claude/settings.json" >/dev/null'
 assert '…and the opt-out is remembered' 'grep -q "^user_hook	off" "$UH/bin/.gsd-install-manifest"'
 uinstall --reuse-install-config
@@ -274,25 +269,83 @@ printf 'not json' > "$UH/claude/settings.json"
 GSD_BIN_DIR=$UH/bin2 GSD_CLAUDE_SKILL_DIR=$UH/claude/skills "$PKG/install.sh" --agent claude >/dev/null
 assert 'broken settings JSON → left unchanged' '[ "$(cat "$UH/claude/settings.json")" = "not json" ]'
 
+
+echo 'Gemini: refused, and an older setup is cleaned up'
+R=$WORK/gone; repo "$R"; mkdir -p "$R/.planning"; printf '### Phase 7: Test\n' > "$R/.planning/ROADMAP.md"
+gsd_provider_resolve "$R" gemini "" 2> "$WORK/gone.err"; rc=$?
+assert 'gemini as a provider → refused with the reason' '[ "$rc" -eq 64 ] && grep -q "no longer supported" "$WORK/gone.err"'
+GSD_AGENT=gemini gsd_provider_resolve "$R" "" "" 2>/dev/null; rc=$?
+assert 'GSD_AGENT=gemini → refused, not run as a custom command' '[ "$rc" -eq 64 ]'
+out=$(gsd-start -p 7 --repo "$R" --agent gemini --no-launch 2>&1)
+assert 'gsd-start --agent gemini → refused with the reason' '[[ "$out" == *"no longer supported"* ]] && [ "$(git -C "$R" worktree list --porcelain | grep -c "^worktree ")" -eq 1 ]'
+(cd "$R" && gsd-init --new --agent gemini --no-launch --no-commit) >/dev/null 2>&1; rc=$?
+assert 'gsd-init --agent gemini → refused, nothing written' '[ "$rc" -ne 0 ] && [ ! -e "$R/.gsd.conf" ]'
+(cd "$R" && gsd-bootstrap-repo --agent gemini) >/dev/null 2>&1; rc=$?
+assert 'bootstrap --agent gemini → refused' '[ "$rc" -ne 0 ] && [ ! -e "$R/.gsd.conf" ]'
+GSD_BIN_DIR=$WORK/gone-bin "$PKG/install.sh" --agent gemini >/dev/null 2>&1; rc=$?
+assert 'install.sh --agent gemini → refused' '[ "$rc" -ne 0 ] && [ ! -e "$WORK/gone-bin" ]'
+printf 'review_provider = gemini\n' > "$R/.gsd.conf"; out=$(gsd-flow-next 7 --repo "$R" 2>&1)
+assert 'review_provider = gemini → refused with the reason' '[[ "$out" == *"no longer supported"* ]]'; rm -f "$R/.gsd.conf"
+# what an older release set up: gemini in providers, a key, GEMINI.md's block
+# (next to the user's own text), the hook (next to the user's own setting)
+old_gemini() {  # $1=repo $2=user text in GEMINI.md ('' = none) $3=user key in .gemini/settings.json ('' = none)
+  repo "$1"; (cd "$1" && gsd-bootstrap-repo --agent claude) >/dev/null
+  mkdir -p "$1/.planning"; printf '### Phase 7: Test\n' > "$1/.planning/ROADMAP.md"
+  perl -pi -e 's/^providers = claude$/providers = claude,gemini/' "$1/.gsd.conf"; printf 'gemini_command = gem-x\n' >> "$1/.gsd.conf"
+  { [ -z "$2" ] || printf '%s\n\n' "$2"; printf '<!-- gsd-worktrees:provider:start -->\n## GSD worktrees (gemini adapter)\nold\n<!-- gsd-worktrees:provider:end -->\n'; } > "$1/GEMINI.md"
+  mkdir -p "$1/.gemini"
+  printf '{%s"hooks":{"BeforeTool":[{"matcher":"activate_skill|run_shell_command","hooks":[{"type":"command","command":"scripts/hooks/gsd-worktree-guard.sh"}]}]}}\n' "${3:+\"$3\":1,}" > "$1/.gemini/settings.json"
+  git -C "$1" add -A; git -C "$1" -c user.name=t -c user.email=t@t commit -qm old
+}
+R=$WORK/old-gemini; old_gemini "$R" 'my gemini notes' theme
+out=$(gsd-doctor --repo "$R" --json 2>/dev/null || true)
+assert 'doctor: T061 names every leftover' 'printf "%s" "$out" | jq -e '\''any(.findings[]; .code == "T061" and (.message | contains("providers") and contains("gemini_*-keys") and contains("GEMINI.md") and contains(".gemini/settings.json")) and .fix == "gsd-init --no-launch")'\'' >/dev/null'
+assert '…and no T050 / T054 for the same thing' '! printf "%s" "$out" | jq -e '\''any(.findings[]; .code == "T050" or .code == "T054")'\'' >/dev/null'
+out=$(gsd-start -p 7 --repo "$R" --no-launch 2>&1); rc=$?
+assert 'gsd-start in that repo → refused, says gsd-init --no-launch' '[ "$rc" -ne 0 ] && [[ "$out" == *"gsd-init --no-launch"* ]]'
+out=$(cd "$R" && gsd-init --no-launch --no-commit 2>&1); rc=$?
+assert 'gsd-init cleans it up' '[ "$rc" -eq 0 ] && grep -q "^providers = claude$" "$R/.gsd.conf" && ! grep -qE "gemini_|,gemini" "$R/.gsd.conf"'
+assert '…GEMINI.md keeps the user text, loses our block' 'grep -q "my gemini notes" "$R/GEMINI.md" && ! grep -q "gsd-worktrees" "$R/GEMINI.md"'
+assert '….gemini/settings.json keeps the user key, loses our hook' 'jq -e ".theme == 1 and (has(\"hooks\") | not)" "$R/.gemini/settings.json" >/dev/null'
+out=$(gsd-doctor --repo "$R" --json 2>/dev/null || true)
+assert '…then doctor: no T061' '! printf "%s" "$out" | jq -e '\''any(.findings[]; .code == "T061")'\'' >/dev/null'
+R=$WORK/old-gemini-only; old_gemini "$R" '' ''
+(cd "$R" && gsd-init --no-launch --no-commit) >/dev/null 2>&1
+assert 'only our block and hook → GEMINI.md and .gemini/ are gone' '[ ! -e "$R/GEMINI.md" ] && [ ! -e "$R/.gemini" ]'
+R=$WORK/old-gemini-commit; old_gemini "$R" '' ''
+(cd "$R" && gsd-bootstrap-repo --commit) >/dev/null 2>&1
+assert 'bootstrap --commit commits the clean-up' '[ -z "$(git -C "$R" status --porcelain)" ] && ! git -C "$R" ls-files --error-unmatch GEMINI.md >/dev/null 2>&1'
+# install.sh: an install that set Gemini up (its manifest says so) loses our
+# skills and user hook there; the user's own skill and hook stay
+GI=$WORK/gi; mkdir -p "$GI/bin" "$GI/gemini/skills/gsdw-flow" "$GI/gemini/skills/mine"
+printf 'x\n<!-- gsd-worktrees-skill 0.4.12 -->\n' > "$GI/gemini/skills/gsdw-flow/SKILL.md"; printf 'mine\n' > "$GI/gemini/skills/mine/SKILL.md"
+ln -s "$PKG/skills/gsdw-tracker" "$GI/gemini/skills/gsdw-tracker"
+printf '{"hooks":{"BeforeTool":[{"matcher":"activate_skill","hooks":[{"type":"command","command":"[ ! -x x ] || exec x/gsd-worktree-guard --global"}]},{"matcher":"x","hooks":[{"type":"command","command":"echo mine"}]}]}}\n' > "$GI/gemini/settings.json"
+printf 'providers\tclaude,gemini\nclaude_skills\t%s\ngemini_skills\t%s\n' "$GI/claude/skills" "$GI/gemini/skills" > "$GI/bin/.gsd-install-manifest"
+GSD_BIN_DIR=$GI/bin GSD_CLAUDE_SKILL_DIR=$GI/claude/skills "$PKG/install.sh" --reuse-install-config > "$WORK/gi.out" 2>&1; rc=$?
+assert 'reinstall over an old gemini install works' '[ "$rc" -eq 0 ] && grep -q "^providers	claude$" "$GI/bin/.gsd-install-manifest"'
+assert '…our gemini skills are removed, the user'"'"'s stays' '[ ! -e "$GI/gemini/skills/gsdw-flow" ] && [ ! -L "$GI/gemini/skills/gsdw-tracker" ] && [ -f "$GI/gemini/skills/mine/SKILL.md" ]'
+assert '…our gemini user hook is removed, the user'"'"'s stays' '! grep -q gsd-worktree-guard "$GI/gemini/settings.json" && grep -q "echo mine" "$GI/gemini/settings.json"'
+
 echo 'provider-neutral guard and doctor'
 printf 'codex_model = model-test\n' >> "$WORK/codex/.gsd.conf"
 out=$(gsd-doctor --repo "$WORK/codex" --json 2>/dev/null || true)
 assert 'doctor JSON reports resolved model' 'printf "%s" "$out" | jq -e '\''.session_model == "model-test"'\'' >/dev/null'
-printf 'gemini_model = --invalid\n' >> "$WORK/gemini/.gsd.conf"
-out=$(gsd-doctor --repo "$WORK/gemini" --json 2>/dev/null || true)
+R=$WORK/bad-model; repo "$R"; (cd "$R" && gsd-bootstrap-repo --agent codex) >/dev/null; printf 'codex_model = --invalid\n' >> "$R/.gsd.conf"
+out=$(gsd-doctor --repo "$R" --json 2>/dev/null || true)
 assert 'doctor reports invalid model configuration' 'printf "%s" "$out" | jq -e '\''any(.findings[]; .code == "T059")'\'' >/dev/null'
-for p in claude codex gemini; do
+for p in claude codex; do
   R=$WORK/guard-$p; repo "$R"; git -C "$R" checkout -q -b phase-7-test; mkdir -p "$R/.planning/phases/07-test"; printf 'providers = %s\nflow = strict\ninstall = none\n' "$p" > "$R/.gsd.conf"
   "$PKG/bin/gsd-worktree-guard" --command gsd-plan-phase --phase 7 --repo "$R" >/dev/null 2>&1; assert "$p strict flow blocks missing discuss" '[ $? -eq 2 ]'
   : > "$R/.planning/phases/07-test/07-CONTEXT.md"; "$PKG/bin/gsd-worktree-guard" --command gsd-plan-phase --phase 7 --repo "$R" >/dev/null 2>&1; assert "$p strict flow permits completed discuss" '[ $? -eq 0 ]'
   git -C "$R" checkout -q develop; "$PKG/bin/gsd-worktree-guard" --command gsd-plan-phase --phase 7 --repo "$R" >/dev/null 2>&1; assert "$p base branch remains blocked" '[ $? -eq 2 ]'
 done
-for p in claude codex gemini; do out=$(gsd-doctor --repo "$WORK/$p" --json 2>/dev/null || true); assert "$p doctor JSON provider" "printf '%s' \"\$out\" | grep -q '\"name\":\"$p\"'"; assert "$p doctor reports command guard" "printf '%s' \"\$out\" | grep -q '\"command_guard\":true'"; assert "$p doctor has no false duplicate-block finding" "! printf '%s' \"\$out\" | grep -q '\"code\":\"T055\"'"; done
-out=$(gsd-doctor --repo "$WORK/multi" --json 2>/dev/null || true); assert 'doctor reports all configured providers' "printf '%s' \"\$out\" | grep -q '\"configured\":\[\"claude\",\"codex\",\"gemini\"\]'"
+for p in claude codex; do out=$(gsd-doctor --repo "$WORK/$p" --json 2>/dev/null || true); assert "$p doctor JSON provider" "printf '%s' \"\$out\" | grep -q '\"name\":\"$p\"'"; assert "$p doctor reports command guard" "printf '%s' \"\$out\" | grep -q '\"command_guard\":true'"; assert "$p doctor has no false duplicate-block finding" "! printf '%s' \"\$out\" | grep -q '\"code\":\"T055\"'"; done
+out=$(gsd-doctor --repo "$WORK/multi" --json 2>/dev/null || true); assert 'doctor reports all configured providers' "printf '%s' \"\$out\" | grep -q '\"configured\":\[\"claude\",\"codex\"\]'"
 assert 'Codex reports unsupported native hook' "printf '%s' \"\$(gsd-doctor --repo '$WORK/codex' --json 2>/dev/null || true)\" | grep -q '\"native_hook\":\"unsupported\"'"
-mv "$WORK/gemini/.gemini/settings.json" "$WORK/gemini/.gemini/settings.saved"; out=$(gsd-doctor --repo "$WORK/gemini" --json 2>/dev/null || true); assert 'doctor reports absent supported native hook' "printf '%s' \"\$out\" | grep -q '\"native_hook\":\"absent\"'"
+mv "$WORK/claude/.claude/settings.json" "$WORK/claude/.claude/settings.saved"; out=$(gsd-doctor --repo "$WORK/claude" --json 2>/dev/null || true); assert 'doctor reports absent supported native hook' "printf '%s' \"\$out\" | grep -q '\"native_hook\":\"absent\"'"
 printf 'providers = invalid\n' > "$WORK/codex/.gsd.conf"; out=$(gsd-doctor --repo "$WORK/codex" --json 2>/dev/null || true); assert 'doctor JSON reports invalid provider finding' "printf '%s' \"\$out\" | grep -q '\"code\":\"T050\"'"
-printf 'provider = claude\nproviders = codex,gemini\n' > "$WORK/codex/.gsd.conf"; out=$(gsd-doctor --repo "$WORK/codex" --json 2>/dev/null || true); assert 'doctor reports contradictory legacy provider' "printf '%s' \"\$out\" | grep -q '\"code\":\"T056\"'"
+printf 'provider = claude\nproviders = codex,claude\n' > "$WORK/codex/.gsd.conf"; out=$(gsd-doctor --repo "$WORK/codex" --json 2>/dev/null || true); assert 'doctor reports contradictory legacy provider' "printf '%s' \"\$out\" | grep -q '\"code\":\"T056\"'"
 printf 'providers = codex\n' > "$WORK/codex/.gsd.conf"; cp "$WORK/claude/CLAUDE.md" "$WORK/codex/CLAUDE.md"; out=$(gsd-doctor --repo "$WORK/codex" --json 2>/dev/null || true); assert 'doctor JSON reports stale provider artifact' "printf '%s' \"\$out\" | grep -q '\"code\":\"T054\"'"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"; [ "$FAIL" -eq 0 ]

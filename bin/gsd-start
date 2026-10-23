@@ -112,7 +112,7 @@ OPTIONS
                   (default: slugified phase description)
   --repo <path>   main checkout of the target repo
                   (default: derived from the current directory)
-  --provider <p>  claude, codex, gemini, or custom (config default otherwise)
+  --provider <p>  claude, codex, or custom (config default otherwise)
   --model <id>    session model override; 'default' uses the CLI's own default
   --agent-command <path> executable override (add --no-launch to print)
   --agent <value> compatibility alias: known provider or custom executable
@@ -166,11 +166,8 @@ EXAMPLES
   gsd-start -n "reporting exports" --no-launch
       Same, but print the command to run later instead.
 
-  gsd-start -n "reporting exports" --agent gemini
-      Compatibility form: select Gemini and launch it.
-
-  gsd-start -n "reporting exports" --agent gemini --no-launch
-      Print Gemini's verified `--prompt-interactive` form without opening it.
+  gsd-start -n "reporting exports" --agent codex
+      Compatibility form: select Codex and launch it.
 
   gsd-start -n "hotfix parsing" --repo ~/projects/acme/webshop
       Start a phase in another repo without cd-ing into it first.
@@ -234,10 +231,10 @@ while [ $# -gt 0 ]; do
     --ticket) [ $# -ge 2 ] || die "--ticket needs a ticket id"; TICKET="$2"; shift 2 ;;
     --cu)    [ $# -ge 2 ] || die "--cu needs a value (ClickUp task id)"; TICKET="$2"; TICKET_CU=1; shift 2 ;;
     --no-ticket) NO_TICKET=1; shift ;;
-    --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, gemini, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
+    --provider) [ $# -ge 2 ] || die "--provider needs claude, codex, or custom"; PROVIDER_CLI="$2"; shift 2 ;;
     --model) [ $# -ge 2 ] && [ -n "$2" ] || die "--model needs a model ID or default"; MODEL_CLI="$2"; shift 2 ;;
     --agent-command) [ $# -ge 2 ] || die "--agent-command needs one executable path/name"; AGENT_COMMAND_CLI="$2"; LAUNCH_ASKED=1; shift 2 ;;
-    --agent) [ $# -ge 2 ] || die "--agent needs a provider or executable"; if gsd_provider_known "$2"; then PROVIDER_CLI="$2"; else PROVIDER_CLI=custom; AGENT_COMMAND_CLI="$2"; fi; LAUNCH_ASKED=1; shift 2 ;;
+    --agent) [ $# -ge 2 ] || die "--agent needs a provider or executable"; if gsd_provider_known "$2" || gsd_provider_gone "$2"; then PROVIDER_CLI="$2"; else PROVIDER_CLI=custom; AGENT_COMMAND_CLI="$2"; fi; LAUNCH_ASKED=1; shift 2 ;;
     --flow)       START_MODE_CLI=flow; shift ;;
     --no-flow)    START_MODE_CLI=discuss; shift ;;
     --launch)    LAUNCH_ASKED=1; shift ;;

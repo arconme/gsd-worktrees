@@ -307,7 +307,7 @@ has "--yes alone is refused" "only goes with --fix" "$OUT"
 
 section "GSD hooks that run a missing file (T008)"
 HK="$WORK/hk"; mkdir -p "$HK/bin" "$R/.claude"
-export GSD_CLAUDE_SETTINGS="$HK/claude.json" GSD_GEMINI_SETTINGS="$HK/gemini.json" GSD_CODEX_HOOKS="$HK/codex.json"
+export GSD_CLAUDE_SETTINGS="$HK/claude.json" GSD_CODEX_HOOKS="$HK/codex.json"
 touch "$HK/bin/node" "$HK/gsd-context-monitor.js"
 hook() {  # $1=event $2=command → one settings object
   printf '{"hooks":{"%s":[{"matcher":"Bash","hooks":[{"type":"command","command":%s}]}]}}\n' "$1" "$(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"
@@ -364,7 +364,7 @@ has "gsd-list warns at a terminal" "⚠ 1 GSD hook(s) in $GSD_CLAUDE_SETTINGS ru
 PATH="$BASEPATH" gsd-list --repo "$R" > "$OUT" 2>&1
 hasnt "…and stays quiet when piped" '⚠' "$OUT"
 rm -f "$GSD_CLAUDE_SETTINGS"
-unset GSD_CLAUDE_SETTINGS GSD_GEMINI_SETTINGS GSD_CODEX_HOOKS
+unset GSD_CLAUDE_SETTINGS GSD_CODEX_HOOKS
 
 section "install.sh --reuse-install-config keeps recorded agents"
 export GSD_BIN_DIR="$WORK/ibin" GSD_CODEX_SKILL_DIR="$WORK/codex-skills"

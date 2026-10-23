@@ -35,7 +35,7 @@ chmod +x "$WORK/stub-bin/gsd_run"
 export GSD_CLI="$WORK/stub-bin/gsd_run"
 # …and reads the user's agent settings for broken GSD hooks (T008): point it
 # at files that don't exist, so the machine running the tests can't fail them.
-export GSD_CLAUDE_SETTINGS="$WORK/none" GSD_GEMINI_SETTINGS="$WORK/none" GSD_CODEX_HOOKS="$WORK/none"
+export GSD_CLAUDE_SETTINGS="$WORK/none" GSD_CODEX_HOOKS="$WORK/none"
 
 ok()   { PASS=$((PASS + 1)); printf '  ✔ %s\n' "$1"; }
 bad()  { FAIL=$((FAIL + 1)); printf '  ✘ %s\n' "$1"; [ $# -gt 1 ] && printf '      %s\n' "$2"; }

@@ -54,7 +54,7 @@
 # predates them skip the two pre-spec steps; a phase whose UI-REVIEW.md is
 # already on the base branch skips the three checks of the rendered pages.
 #
-# review_provider = claude|codex|gemini|custom selects the independent reviewer.
+# review_provider = claude|codex|custom selects the independent reviewer.
 # The external gsd-review skill performs delegation, not this shell command.
 # Missing capabilities require a separate review session, never a skipped gate.
 # A REVIEWS.md whose reviewer failed (Codex usage limit) does not count; with
@@ -89,7 +89,8 @@ while [ $# -gt 0 ]; do
 done
 REPO="${REPO:-$PWD}"
 REVIEW_PROVIDER=$(gsd_conf_get "$REPO" review_provider); REVIEW_PROVIDER=${REVIEW_PROVIDER:-codex}
-gsd_provider_known "$REVIEW_PROVIDER" || { echo "invalid review_provider '$REVIEW_PROVIDER'; use claude, codex, gemini, or custom" >&2; exit 64; }
+! gsd_provider_gone "$REVIEW_PROVIDER" || { echo "review_provider = gemini: $GSD_GEMINI_GONE; set review_provider to claude, codex, or custom in .gsd.conf" >&2; exit 64; }
+gsd_provider_known "$REVIEW_PROVIDER" || { echo "invalid review_provider '$REVIEW_PROVIDER'; use claude, codex, or custom" >&2; exit 64; }
 if [ -z "$N" ]; then
   br=$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
   case "$br" in phase-*) N=$(printf '%s' "$br" | sed -E 's/^phase-([0-9]+(\.[0-9]+)?).*/\1/') ;; esac

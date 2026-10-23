@@ -30,7 +30,7 @@ printf 'review_provider = invalid;echo\n' > "$R/.gsd.conf"
 reject gsd-flow-next 7 --repo "$R"
 grep -q 'invalid review_provider' "$WORK/rejected"; ok 'invalid reviewer is rejected'
 rm "$PD/07-REVIEWS.md"
-for p in claude codex gemini custom; do
+for p in claude codex custom; do
   printf 'review_provider = %s\n' "$p" > "$R/.gsd.conf"
   gsd-flow-next 7 --repo "$R" --no-ui > "$WORK/flow"
   grep -q '^step=review$' "$WORK/flow"
