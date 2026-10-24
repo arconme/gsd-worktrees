@@ -4,6 +4,15 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## Unreleased
+
+- **Cheaper phase sessions.** A `/gsdw-flow` phase ran in one chat that grew
+  to ~366k tokens before Claude compacted it, and every turn re-sent all of
+  it (100–180M input tokens per phase). `gsd-start` and `gsd-init` now launch
+  Claude and Codex so they compact at 200k tokens (`compact_at` in
+  `.gsd.conf`; `compact_at = default` keeps the CLI's own setting). Applies
+  to sessions opened after the update; a running session keeps its setting.
+
 ## 0.5.0
 
 Breaking:

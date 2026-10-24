@@ -93,7 +93,7 @@ assert 'shell metacharacters remain a literal model argument' '[ "$actual" = "$e
 R=$WORK/init-model-invalid; repo "$R"; (cd "$R" && gsd-init --provider codex --model '--bad' --no-launch --no-commit) >/dev/null 2>&1
 assert 'invalid init model fails before bootstrap writes' '[ $? -ne 0 ] && [ ! -e "$R/.gsd.conf" ]'
 R=$WORK/init-model; repo "$R"; out=$(cd "$R" && gsd-init --new --provider codex --model model-test --no-launch --no-commit 2>&1)
-assert 'init prints selected session model' '[[ "$out" == *"codex --model model-test"* ]]'
+assert 'init prints selected session model' '[[ "$out" == *"codex -c model_auto_compact_token_limit=200000 --model model-test"* ]]'
 R=$WORK/start-mode; repo "$R"; mkdir -p "$R/.planning"; printf '# Roadmap\n\n### Phase 7: Test phase\n' > "$R/.planning/ROADMAP.md"; printf 'base = develop\nwtdir = start-worktrees\ninstall = none\nproviders = claude\n' > "$R/.gsd.conf"; git -C "$R" add .; git -C "$R" -c user.name=t -c user.email=t@t commit -qm planning
 out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-launch 2>&1); assert 'gsd-start defaults to the flow' "printf '%s' \"\$out\" | grep -q 'fake-provider Drive.*GSD.*phase.*7'"; assert 'gsd-start suppresses stale worker next steps' "! printf '%s' \"\$out\" | grep -q 'Open an agent session there'"
 printf 'start_mode = discuss\n' >> "$R/.gsd.conf"; out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-launch 2>&1); assert 'gsd-start honors start_mode = discuss' "printf '%s' \"\$out\" | grep -q 'fake-provider Discuss.*GSD.*phase.*7'"
@@ -103,7 +103,29 @@ out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider
 
 echo 'bootstrap adapters and idempotence'
 out=$(gsd-start -p 7 --repo "$R" --provider codex --model model-test --no-launch 2>&1)
-assert 'start prints selected session model' '[[ "$out" == *"codex --model model-test"* ]]'
+assert 'start prints selected session model' '[[ "$out" == *"codex -c model_auto_compact_token_limit=200000 --model model-test"* ]]'
+
+echo 'compact point (compact_at)'
+out=$(gsd-start -p 7 --repo "$R" --provider claude --no-launch 2>&1)
+assert 'claude session compacts at 200000 by default' '[[ "$out" == *"env CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 claude"* ]]'
+out=$(CLAUDE_CODE_AUTO_COMPACT_WINDOW=300000 gsd-start -p 7 --repo "$R" --provider claude --no-launch 2>&1)
+assert 'a compact window the user exported wins' '[[ "$out" != *"AUTO_COMPACT"* ]]'
+out=$(GSD_COMPACT_AT=300000 gsd-start -p 7 --repo "$R" --provider codex --no-launch 2>&1)
+assert 'GSD_COMPACT_AT overrides the default' '[[ "$out" == *"model_auto_compact_token_limit=300000"* ]]'
+printf 'compact_at = 250000\n' >> "$R/.gsd.conf"
+out=$(gsd-start -p 7 --repo "$R" --provider claude --no-launch 2>&1)
+assert 'compact_at in .gsd.conf is used' '[[ "$out" == *"CLAUDE_CODE_AUTO_COMPACT_WINDOW=250000"* ]]'
+out=$(GSD_COMPACT_AT=default gsd-start -p 7 --repo "$R" --provider codex --no-launch 2>&1)
+assert 'default leaves the CLI setting' '[[ "$out" != *"compact"* ]]'
+out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-launch 2>&1)
+assert 'custom provider gets no compact flag' '[[ "$out" != *"compact"* ]]'
+gsd_compact_resolve "$R"; assert 'resolve reads compact_at' '[ "$GSD_COMPACT_RESOLVED" = 250000 ]'
+GSD_COMPACT_AT=50 gsd_compact_resolve "$R" >/dev/null 2>&1; assert 'compact_at below 100000 rejected' '[ $? -eq 64 ]'
+GSD_COMPACT_AT=1e6 gsd_compact_resolve "$R" >/dev/null 2>&1; assert 'compact_at not a number rejected' '[ $? -eq 64 ]'
+GSD_COMPACT_AT=0150000 gsd_compact_resolve "$R"; assert 'a zero-padded value is read as decimal' '[ "$GSD_COMPACT_RESOLVED" = 150000 ]'
+out=$(GSD_COMPACT_AT=99 gsd-start -p 7 --repo "$R" --provider claude --no-launch 2>&1); rc=$?
+assert 'gsd-start refuses a bad compact_at' '[ $rc -eq 64 ] && [[ "$out" == *"invalid compact_at"* ]]'
+sed -i.bak '/^compact_at/d' "$R/.gsd.conf"; rm -f "$R/.gsd.conf.bak"
 
 echo 'flow launch guard for every provider'
 WT=$(git -C "$R" worktree list --porcelain | sed -n 's/^worktree //p' | tail -1)

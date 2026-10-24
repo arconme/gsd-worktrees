@@ -304,6 +304,7 @@ BASE=$(gsd_base "$MAIN")
 gsd_provider_resolve "$MAIN" "$PROVIDER_CLI" "$AGENT_COMMAND_CLI" || exit $?
 gsd_model_resolve "$MAIN" "$GSD_PROVIDER_RESOLVED" "$MODEL_CLI" || exit $?
 gsd_start_mode_resolve "$MAIN" "$START_MODE_CLI" || exit $?
+gsd_compact_resolve "$MAIN" || exit $?
 
 # ── --ticket: normalize the id and tag the phase title/slug with tk-<id> ─────
 # The ROADMAP title is what gsd-finish and /gsdw-flow read the id back from.
@@ -603,7 +604,7 @@ fi
 # ── open the session ─────────────────────────────────────────────────────────
 # The adapter builds an argv array; no shell template expansion is used.
 PROMPT=$(gsd_provider_prompt "$GSD_PROVIDER_RESOLVED" "$GSD_START_MODE_RESOLVED" "$N")
-gsd_provider_argv "$GSD_PROVIDER_RESOLVED" "$GSD_AGENT_COMMAND_RESOLVED" "$PROMPT" "$GSD_MODEL_RESOLVED"
+gsd_provider_argv "$GSD_PROVIDER_RESOLVED" "$GSD_AGENT_COMMAND_RESOLVED" "$PROMPT" "$GSD_MODEL_RESOLVED" "$GSD_COMPACT_RESOLVED"
 NEXT=$(gsd_provider_render "$DEST" "${GSD_LAUNCH_ARGV[@]}")
 if [ "$LAUNCH" = 1 ] && [ -t 0 ] && [ -t 1 ] && command -v "$GSD_AGENT_COMMAND_RESOLVED" >/dev/null 2>&1; then
   echo ""

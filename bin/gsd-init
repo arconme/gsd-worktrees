@@ -297,8 +297,9 @@ if [ -z "$MODE" ]; then
 fi
 gsd_provider_resolve "$DEST" "$PROVIDER_CLI" "$AGENT_COMMAND_CLI" || exit $?
 gsd_model_resolve "$DEST" "$GSD_PROVIDER_RESOLVED" "$MODEL_CLI" || exit $?
+gsd_compact_resolve "$DEST" || exit $?
 CMD=$(gsd_provider_prompt "$GSD_PROVIDER_RESOLVED" "$MODE")
-gsd_provider_argv "$GSD_PROVIDER_RESOLVED" "$GSD_AGENT_COMMAND_RESOLVED" "$CMD" "$GSD_MODEL_RESOLVED"
+gsd_provider_argv "$GSD_PROVIDER_RESOLVED" "$GSD_AGENT_COMMAND_RESOLVED" "$CMD" "$GSD_MODEL_RESOLVED" "$GSD_COMPACT_RESOLVED"
 NEXT=$(gsd_provider_render "$DEST" "${GSD_LAUNCH_ARGV[@]}")
 
 # ── step 3: the planning session (the plan itself is a conversation) ─────────

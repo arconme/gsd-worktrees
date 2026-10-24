@@ -365,6 +365,27 @@ gsd_start_mode_resolve() { # repo, optional CLI override
   esac
 }
 
+# A session compacts its conversation once it holds this many tokens. The CLIs
+# wait until their own window is nearly full (Claude: ~366k seen), and every
+# turn before that re-sends the whole chat; a phase's artifacts carry its state,
+# so compacting earlier loses little. 200k, not lower: discuss and the UI
+# approvals (talk not yet in a file) ran at 110-145k, so they stay whole.
+# `default` leaves the CLI's own setting.
+GSD_COMPACT_AT_DEFAULT=200000
+gsd_compact_resolve() { # repo → GSD_COMPACT_RESOLVED (empty = CLI default)
+  local v
+  v=${GSD_COMPACT_AT:-$(gsd_conf_get "$1" compact_at)}
+  v=${v:-$GSD_COMPACT_AT_DEFAULT}
+  GSD_COMPACT_RESOLVED=""
+  [ "$v" != default ] || return 0
+  if ! printf '%s' "$v" | grep -qE '^[0-9]+$' || [ "$((10#$v))" -lt 100000 ] || [ "$((10#$v))" -gt 1000000 ]; then
+    printf "invalid compact_at '%s' (expected tokens 100000-1000000, or default)\n" "$v" >&2
+    return 64
+  fi
+  # shellcheck disable=SC2034 # consumed by the caller
+  GSD_COMPACT_RESOLVED=$((10#$v))
+}
+
 gsd_provider_prompt() { # provider, kind, phase-or-empty
   local p=$1 kind=$2 n=${3:-}
   case "$kind" in
@@ -387,10 +408,16 @@ gsd_provider_prompt() { # provider, kind, phase-or-empty
   esac
 }
 
-gsd_provider_argv() { # provider, executable, prompt, optional model
-  local p=$1 c=$2 prompt=$3 model=${4:-}
+gsd_provider_argv() { # provider, executable, prompt, optional model, optional compact_at tokens
+  local p=$1 c=$2 prompt=$3 model=${4:-} compact=${5:-}
   gsd_model_validate "$p" "$model" || return
   GSD_LAUNCH_ARGV=("$c")
+  # Claude reads the compact point only from its environment; a value the user
+  # already exported wins. Codex takes it as a config override.
+  if [ -n "$compact" ] && [ "$p" = claude ] && [ -z "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}" ]; then
+    GSD_LAUNCH_ARGV=(env "CLAUDE_CODE_AUTO_COMPACT_WINDOW=$compact" "$c")
+  fi
+  [ -z "$compact" ] || [ "$p" != codex ] || GSD_LAUNCH_ARGV+=(-c "model_auto_compact_token_limit=$compact")
   case "$p" in
     claude|codex)
       if [ -n "$model" ] && [ "$model" != default ]; then GSD_LAUNCH_ARGV+=(--model "$model"); fi ;;

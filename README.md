@@ -52,7 +52,14 @@ flow = strict
 review_provider = codex
 start_mode = flow
 tracker = clickup
+compact_at = 200000
 ```
+
+`compact_at` (default `200000`) is when a launched Claude or Codex session
+compacts its conversation, in tokens. Without it the CLI waits until its window
+is nearly full, and every turn before that re-sends the whole chat. Set
+`compact_at = default` to keep the CLI's own setting; `GSD_COMPACT_AT`
+overrides the key, and a `CLAUDE_CODE_AUTO_COMPACT_WINDOW` you export wins.
 
 The provider-specific `*_model` keys are optional. `gsd-init --model MODEL_ID`
 and `gsd-start --model MODEL_ID` override the model for that launched session;
@@ -183,7 +190,7 @@ GSD. `./install.sh` links it; `gsd-sync` keeps it current.
 All logic lives in this package. `gsd-bootstrap-repo` installs into a repo only:
 
 - **`.gsd.conf`** (committed) — `providers`, provider commands/models, `review_provider`,
-  `start_mode`, `base`, `wtdir`, `install`, `premerge`, `test`, `flow`, `tracker`
+  `start_mode`, `compact_at`, `base`, `wtdir`, `install`, `premerge`, `test`, `flow`, `tracker`
   (+ `tracker_command`, `tracker_profile`, `tracker_status_start` / `_finish`); keys are optional,
   falling back to auto-detection (develop/main, `<repo>-worktrees`, lockfile).
   `flow = strict` turns on the guard's phase-flow rule (below) and gsd-doctor's
