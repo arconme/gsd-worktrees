@@ -16,6 +16,13 @@ becomes its release notes.
   time. `gsd-start` (new and reused worktrees) and `gsd-init` now add it,
   keeping the file's other keys; `gsd-doctor` reports it missing (T034) and
   `--fix` adds it.
+- **A phase reopened with a plain `claude` compacts at 200k too.** Only the
+  session `gsd-start` launched got `compact_at`; one opened later in the
+  worktree with `claude` waited until ~366k. `gsd-start` now also saves it in
+  the worktree's `.claude/settings.local.json` (`env`), keeping the file's
+  other keys. An exported `CLAUDE_CODE_AUTO_COMPACT_WINDOW` or
+  `compact_at = default` removes it. Existing worktrees get it on their next
+  `gsd-start -p <N>`.
 
 ## 0.5.1
 

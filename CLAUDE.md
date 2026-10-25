@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An extension to GSD, written as a bash toolkit (plus four Python modules, two Perl scripts, and one Node script for the browser check). It does three things:
+An extension to GSD, written as a bash toolkit (plus five Python modules, two Perl scripts, and one Node script for the browser check). It does three things:
 
 1. **Adds worktree support to GSD.** Each phase runs in its own `phase-<N>-<slug>` git worktree, so phases can run in parallel.
 2. **Wraps repeated GSD steps in simple commands.** `gsd-start`, `gsd-list`, `gsd-finish`, `gsd-doctor`, and the others replace multi-step manual sequences (for example: claim phase → push → create worktree → open session).
@@ -62,6 +62,7 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 - **`lib/provider.sh`** — the provider adapters. No workflow logic. Resolves provider, executable, model and start mode (precedence tables in `docs/providers.md`); renders argv safely (never `eval`); owns the marked-block helpers for generated instruction files.
 - **`lib/gsd_hook_payload.py`** — the guard's fallback when jq is missing: turns Claude's hook JSON into the guard's NUL-delimited input (plugin form `gsd-core:gsd-x` → `gsd-x`, `gsdw-flow` → `gsd-flow`).
 - **`lib/gsd_codex_limit.py`** — for `gsd-codex-wait`: parses Codex's usage-limit message ("try again at Oct 11th, 2026 1:22 AM" = local time, minutes only) and finds the newest limited run in `$CODEX_HOME/sessions/**.jsonl`. Reads files only; nothing here may call Codex.
+- **`lib/gsd_claude_env.py`** — sets or removes one `env` variable in a Claude settings file, keeping every other key; `gsd_compact_settings` (`lib/provider.sh`) uses it so a phase worktree's `.claude/settings.local.json` carries `compact_at` for a plain `claude`.
 - **`lib/gsd_hook_paths.py`** — for doctor T008 and the `gsd-start`/`gsd-list` warning (`gsd_stale_hooks` in `lib/provider.sh`): lists GSD hooks (a word names a `gsd-*` program) in each agent's user settings (`gsd_provider_user_hook_file`) and the repo's, whose absolute paths are gone. Other hooks are never reported. Doctor only names the fix (re-run GSD's installer, or the toolkit's); it never edits these files.
 - **`lib/gsd_planning.py`** — `reconcile` (one file, structural only, run mid-merge by the driver) and `repair` (both files + recompute counters from `.planning/phases/*/*-PLAN.md`/`*-SUMMARY.md`; `--check` for CI).
 - **`lib/roadmap-rows.pl`** — run by `gsd-start` after each claim: adds the checklist + Progress rows gsd-core (`gsd_run`) omits, so the new phase passes `roadmap-audit.pl`.

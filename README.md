@@ -60,6 +60,9 @@ compacts its conversation, in tokens. Without it the CLI waits until its window
 is nearly full, and every turn before that re-sends the whole chat. Set
 `compact_at = default` to keep the CLI's own setting; `GSD_COMPACT_AT`
 overrides the key, and a `CLAUDE_CODE_AUTO_COMPACT_WINDOW` you export wins.
+`gsd-start` also saves the value in the phase worktree's
+`.claude/settings.local.json`, so a plain `claude` opened there later
+compacts at the same point.
 
 The provider-specific `*_model` keys are optional. `gsd-init --model MODEL_ID`
 and `gsd-start --model MODEL_ID` override the model for that launched session;

@@ -386,6 +386,31 @@ gsd_compact_resolve() { # repo → GSD_COMPACT_RESOLVED (empty = CLI default)
   GSD_COMPACT_RESOLVED=$((10#$v))
 }
 
+# A phase worktree carries the compact point in Claude's local settings
+# (.claude/settings.local.json "env"), so a session opened there later with a
+# plain `claude` gets it too, not only the one gsd-start launches. That file
+# beats an exported variable, so a window the user exported (or `default`)
+# removes ours. Only when the repo uses Claude; best-effort, never fatal.
+gsd_compact_settings() { # repo, worktree, tokens (empty = remove ours)
+  local repo=$1 wt=$2 n=${3:-} f=.claude/settings.local.json providers py
+  providers=$(gsd_conf_get "$repo" providers)
+  providers=${providers:-$(gsd_conf_get "$repo" provider)}
+  case ",${providers:-claude}," in *,claude,*) ;; *) return 0 ;; esac
+  [ -z "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}" ] || n=""
+  [ -n "$n" ] || [ -f "$wt/$f" ] || return 0
+  # Like gsd_baseref: a tracked, or not ignored, file would show up as
+  # uncommitted work and stop gsd-finish (gsd-wt-new adds it to the exclude).
+  if git -C "$wt" ls-files --error-unmatch -- "$f" >/dev/null 2>&1 \
+     || ! git -C "$wt" check-ignore -q -- "$f" 2>/dev/null; then
+    echo "• $f is tracked or not gitignored — compact point not saved there (a plain 'claude' keeps the CLI's own)"
+    return 0
+  fi
+  py=$(gsd_python 2>/dev/null) || { echo "• no python 3.7+ — compact point not saved in $f"; return 0; }
+  if [ -n "$n" ]; then "$py" "$GSD_PKG/lib/gsd_claude_env.py" "$wt/$f" CLAUDE_CODE_AUTO_COMPACT_WINDOW "$n"
+  else "$py" "$GSD_PKG/lib/gsd_claude_env.py" "$wt/$f" CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  fi || echo "• could not update $f (not a JSON object?) — compact point not saved there"
+}
+
 gsd_provider_prompt() { # provider, kind, phase-or-empty
   local p=$1 kind=$2 n=${3:-}
   case "$kind" in

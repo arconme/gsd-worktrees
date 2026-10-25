@@ -563,6 +563,7 @@ if [ -z "$DEST" ] || [ ! -d "$DEST" ]; then
   DEST=$(git -C "$MAIN" worktree list --porcelain | awk -v b="$BRANCH" '/^worktree /{w=substr($0,10)} $0=="branch refs/heads/"b{print w; exit}')
 fi
 [ -n "$DEST" ] && [ -d "$DEST" ] || die "could not locate the new worktree for phase $N"
+gsd_compact_settings "$MAIN" "$DEST" "$GSD_COMPACT_RESOLVED"
 
 "$GSD_PKG/bin/gsd-worktree-guard" --command "gsd-${GSD_START_MODE_RESOLVED/discuss/discuss-phase}" --phase "$N" --repo "$DEST" || exit $?
 if [ "$GSD_START_MODE_RESOLVED" = flow ]; then

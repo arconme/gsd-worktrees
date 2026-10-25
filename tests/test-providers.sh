@@ -127,6 +127,34 @@ out=$(GSD_COMPACT_AT=99 gsd-start -p 7 --repo "$R" --provider claude --no-launch
 assert 'gsd-start refuses a bad compact_at' '[ $rc -eq 64 ] && [[ "$out" == *"invalid compact_at"* ]]'
 sed -i.bak '/^compact_at/d' "$R/.gsd.conf"; rm -f "$R/.gsd.conf.bak"
 
+echo 'compact point saved in the worktree (a plain claude there gets it)'
+WT=$(git -C "$R" worktree list --porcelain | sed -n 's/^worktree //p' | grep '/phase-7-' | head -1)
+SET="$WT/.claude/settings.local.json"
+win(){ python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("env",{}).get("CLAUDE_CODE_AUTO_COMPACT_WINDOW",""))' "$SET" 2>/dev/null; }
+gsd-start -p 7 --repo "$R" --provider claude --no-launch >/dev/null 2>&1
+assert 'gsd-start writes the compact point into the worktree settings' '[ "$(win)" = 200000 ]'
+assert 'the settings file is ignored, so gsd-finish can still remove the worktree' '[ -z "$(git -C "$WT" status --porcelain -- .claude)" ]'
+printf '{\n  "permissions": {"allow": ["Bash(ls)"]},\n  "env": {"FOO": "1"}\n}\n' > "$SET"
+GSD_COMPACT_AT=250000 gsd-start -p 7 --repo "$R" --provider claude --no-launch >/dev/null 2>&1
+assert 'a new value replaces the old one' '[ "$(win)" = 250000 ]'
+assert 'other settings in the file are kept' 'grep -q "Bash(ls)" "$SET" && grep -q "\"FOO\"" "$SET"'
+CLAUDE_CODE_AUTO_COMPACT_WINDOW=300000 gsd-start -p 7 --repo "$R" --provider claude --no-launch >/dev/null 2>&1
+assert 'a window the user exported removes ours (the file would beat it)' '[ -z "$(win)" ] && grep -q "\"FOO\"" "$SET"'
+gsd-start -p 7 --repo "$R" --provider claude --no-launch >/dev/null 2>&1
+GSD_COMPACT_AT=default gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-launch >/dev/null 2>&1
+assert 'compact_at = default removes it' '[ -z "$(win)" ]'
+printf 'not json' > "$SET"
+out=$(gsd-start -p 7 --repo "$R" --provider claude --no-launch 2>&1); rc=$?
+assert 'a broken settings file is left alone and does not stop gsd-start' '[ $rc -eq 0 ] && [ "$(cat "$SET")" = "not json" ] && [[ "$out" == *"could not update"* ]]'
+rm -f "$SET"
+sed -i.bak 's/^providers = claude$/providers = codex/' "$R/.gsd.conf"; rm -f "$R/.gsd.conf.bak"
+gsd-start -p 7 --repo "$R" --provider codex --no-launch >/dev/null 2>&1
+assert 'a repo without Claude gets no compact point in the Claude settings' '[ -z "$(win)" ]'
+sed -i.bak 's/^providers = codex$/providers = claude/' "$R/.gsd.conf"; rm -f "$R/.gsd.conf.bak"
+U=$WORK/unignored; repo "$U"; git -C "$U" config core.excludesFile /dev/null   # not the machine's global ignore
+out=$(GSD_PKG=$PKG gsd_compact_settings "$U" "$U" 200000)
+assert 'a file git would show as new work is not written' '[ ! -e "$U/.claude/settings.local.json" ] && [[ "$out" == *"not gitignored"* ]]'
+
 echo 'flow launch guard for every provider'
 WT=$(git -C "$R" worktree list --porcelain | sed -n 's/^worktree //p' | tail -1)
 mkdir -p "$WT/.planning/phases/07-test"
