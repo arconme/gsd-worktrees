@@ -48,6 +48,7 @@ art shop "initial code"; git -C shop remote add origin "$S/origin.git"; git -C s
 (cd shop && gsd-init --providers claude,codex --provider claude --no-launch) > init.log 2>&1
 check "gsd-init succeeds" '[ $? = 0 ]'
 check "2 instruction entrypoints" '[ -f shop/CLAUDE.md ] && [ -f shop/AGENTS.md ] && [ ! -e shop/GEMINI.md ]'
+check "main checkout: worktree.baseRef = head" 'grep -q "\"baseRef\": \"head\"" shop/.claude/settings.local.json'
 check "claude hook, codex none" 'grep -q gsd-worktree-guard shop/.claude/settings.json && grep -q "codex native guard hook: unsupported" init.log'
 printf 'flow = strict\ntest = test -f README.md && test -f Makefile\n' >> shop/.gsd.conf
 
@@ -125,6 +126,12 @@ WT_CART=$(git -C shop worktree list --porcelain | awk -v b="refs/heads/phase-$CA
 [ -n "$WT_CART" ] || WT_CART=$(ls -d "$S"/shop-worktrees/phase-"$CART_N"-* 2>/dev/null | head -1)
 check "cart worktree exists" '[ -d "$WT_CART" ]'
 check "codex launch line printed for login" 'grep -q "&& codex " start-b.log'
+# gsd-core's own check, as /gsd-execute-phase runs it: a phase branch is ahead
+# of origin/HEAD, so without worktree.baseRef = "head" every wave runs one plan
+# at a time. An empty CLAUDE_CONFIG_DIR: this machine's settings do not count.
+GSD_RUN=$(GSD_PKG="$PKG"; . "$PKG/lib/common.sh"; gsd_cli)
+(cd "$WT_CART" && CLAUDE_CONFIG_DIR="$S/no-claude" "$GSD_RUN" query worktree.base-check --mode harness-worktree) > basecheck.log 2>&1
+check "fresh worktree: gsd-core base-check does not degrade" 'grep -q "\"shouldDegrade\": false" basecheck.log' "$(cat basecheck.log)"
 
 step "4. gsd-list"
 (cd shop && COLUMNS=100 gsd-list) > list.log 2>&1

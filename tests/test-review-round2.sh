@@ -81,6 +81,21 @@ wait $a; ra=$?; wait $b; rb=$?
 check "both runs succeed" '[ "$ra" = 0 ] && [ "$rb" = 0 ]' || cat "$WORK/a" "$WORK/b"
 check "exactly one phase-1 branch" '[ "$(git -C "$R" for-each-ref "refs/heads/phase-1-*" | wc -l | tr -d " ")" = 1 ]'
 check "lock released afterwards" '[ ! -d "$R/.git/gsd-cmd.lock" ]'
+# The lock alone, raced 20 times: with the mkdir command of uutils (Ubuntu
+# 26.04) both callers got in about one time in three.
+L="$WORK/r05l"; mkdir -p "$L/.git"; over=0
+for i in $(seq 1 20); do
+  : > "$L/log"
+  pids=""
+  for k in 1 2; do
+    GSD_PKG="$PKG" bash -c '. "$GSD_PKG/lib/common.sh"; gsd_acquire_lock "$1" >/dev/null
+      echo in >> "$1/log"; sleep 0.05; echo out >> "$1/log"' _ "$L" & pids="$pids $!"
+  done
+  # shellcheck disable=SC2086 # two PIDs, split on purpose
+  wait $pids
+  [ "$(sed -n 2p "$L/log")" = out ] || over=$((over + 1))
+done
+check "two racing lock holders never overlap (20 rounds)" '[ "$over" = 0 ]'
 
 section "R06 — planning-repair --check: no roadmap is not damage"
 R="$WORK/r06"; mkdir -p "$R/.planning"; git -C "$R" init -qb main

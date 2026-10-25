@@ -4,6 +4,19 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.5.2
+
+- **The checkout lock works on Ubuntu 26.04.** Its `mkdir` (uutils) can tell
+  two racing gsd commands both that they made the lock folder, so both ran at
+  once. The lock now makes it with Perl's `mkdir`, the plain system call.
+- **A wave's plans run in parallel again.** gsd-core runs them in parallel
+  only with `worktree.baseRef = "head"`, read from the phase worktree's
+  `.claude/settings.local.json`. Nothing ever set it, so `/gsd-execute-phase`
+  saw the phase branch ahead of `origin/HEAD` and ran every plan one at a
+  time. `gsd-start` (new and reused worktrees) and `gsd-init` now add it,
+  keeping the file's other keys; `gsd-doctor` reports it missing (T034) and
+  `--fix` adds it.
+
 ## 0.5.1
 
 - **Cheaper phase sessions.** A `/gsdw-flow` phase ran in one chat that grew

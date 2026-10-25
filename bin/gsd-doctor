@@ -28,7 +28,9 @@
 #                  undoable: gsd-init --no-launch --no-commit (T010–T014,
 #                  T016, T052, T058, T061), gsd-planning-repair (T020, stale counters),
 #                  git branch --track <base> (T015), chmod +x the pre-merge
-#                  script (T019), remove a dead lock (T030). Never commits,
+#                  script (T019), remove a dead lock (T030), add
+#                  worktree.baseRef = "head" to .claude/settings.local.json
+#                  (T034; other keys kept). Never commits,
 #                  pushes, checks out, deletes branches or edits ROADMAP.md;
 #                  everything else stays a listed command.
 #   --yes          with --fix: don't ask (for scripts)
@@ -861,6 +863,39 @@ while IFS= read -r line; do
   esac
 done < <(git -C "$MAIN" worktree list --porcelain 2>/dev/null)
 
+# T034 — worktree.baseRef = "head" (gsd_baseref): without it /gsd-execute-phase
+# runs a wave's plans one at a time in every phase worktree. The main checkout
+# and each phase worktree read their own .claude/settings.local.json. Other
+# worktrees are skipped: Claude's per-plan agent-* copies (.claude/worktrees/)
+# never run the check, and each new one would be a false alarm.
+BASEREF_FIX=""
+if [ "$IS_GSD_REPO" = 1 ]; then
+  baseref_bad=""; baseref_odd=0
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) wt="${line#worktree }"; [ "$wt" = "$MAIN" ] || continue ;;
+      "branch refs/heads/phase-"*) [ "$wt" != "$MAIN" ] || continue ;;
+      *) continue ;;
+    esac
+    [ -d "$wt" ] || continue
+    [ "$wt" = "$MAIN" ] && label="main checkout" || label=$(basename "$wt")
+    st=$(gsd_baseref check "$wt")
+    case "$st" in
+      missing) baseref_bad="$baseref_bad $label"; BASEREF_FIX="${BASEREF_FIX:+$BASEREF_FIX$'\n'}$wt" ;;
+      invalid) baseref_odd=1; fail "$wt/.claude/settings.local.json is not plain JSON — cannot check worktree.baseRef" \
+                    "fix the JSON in that file, then gsd-doctor --fix" "T034" ;;
+      other:*) baseref_odd=1; note "worktree.baseRef = \"${st#other:}\" in $label — /gsd-execute-phase runs a wave's plans one at a time unless it is \"head\"" ;;
+    esac
+  done < <(git -C "$MAIN" worktree list --porcelain 2>/dev/null)
+  if [ -n "$baseref_bad" ]; then
+    safe baseref
+    fail "worktree.baseRef is not set (in:$baseref_bad) — /gsd-execute-phase runs a wave's plans one at a time there" \
+         "gsd-doctor --fix   (adds worktree.baseRef = \"head\" to .claude/settings.local.json; other keys kept)" "T034"
+  elif [ "$baseref_odd" = 0 ] && [ "$(gsd_baseref check "$MAIN")" != nopython ]; then
+    pass "worktree.baseRef = \"head\" (a wave's plans can run in parallel)"
+  fi
+fi
+
 [ "$gone" -gt 0 ] \
   && fail "$gone worktree(s) recorded but missing on disk" "git worktree prune" "W027" \
   || pass "no stale worktree records"
@@ -919,6 +954,7 @@ safe_label() {
     chmod)  echo "chmod +x ${PM_ABS#"$MAIN"/}" ;;
     init)   echo "gsd-init --no-launch --no-commit  (shims, merge rules, driver, hook, instructions)" ;;
     repair) echo "gsd-planning-repair               (.planning/ROADMAP.md + STATE.md)" ;;
+    baseref) echo "worktree.baseRef = \"head\"         (.claude/settings.local.json, other keys kept)" ;;
   esac
 }
 run_safe() {
@@ -930,6 +966,10 @@ run_safe() {
     chmod)  chmod +x "$PM_ABS" ;;
     init)   (cd "$MAIN" && "$GSD_PKG/bin/gsd-init" --no-launch --no-commit) ;;
     repair) "$GSD_PKG/bin/gsd-planning-repair" --repo "$MAIN" ;;
+    baseref)  # each dir T034 found; gsd-init above may have done the main one
+      printf '%s\n' "$BASEREF_FIX" | while IFS= read -r wt; do
+        if [ -n "$wt" ]; then gsd_baseref_ensure "$wt"; fi
+      done ;;
   esac
 }
 if [ "$FIX" = 1 ]; then
@@ -937,7 +977,7 @@ if [ "$FIX" = 1 ]; then
     [ "$FINDINGS" -eq 0 ] || echo "--fix: none of these findings has a safe automatic fix — run the commands below."
   else
     ordered=""
-    for a in unlock track chmod init repair; do case $'\n'"$SAFE"$'\n' in *$'\n'"$a"$'\n'*) ordered="$ordered $a" ;; esac; done
+    for a in unlock track chmod init repair baseref; do case $'\n'"$SAFE"$'\n' in *$'\n'"$a"$'\n'*) ordered="$ordered $a" ;; esac; done
     printf '\033[1m--fix will run (in %s):\033[0m\n' "$MAIN"
     for a in $ordered; do printf '  %s\n' "$(safe_label "$a")"; done
     answer=n

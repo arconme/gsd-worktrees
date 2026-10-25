@@ -264,6 +264,89 @@ gsd_python() {  # → the interpreter for lib/gsd_planning.py; nonzero when none
   return 1
 }
 
+# gsd-core's worktree.baseRef = "head": /gsd-execute-phase runs a wave's plans
+# in parallel only when it (or Claude Code) forks their worktrees from HEAD.
+# Without it, base-check compares HEAD with origin/HEAD — always different on
+# a phase branch — and runs every plan one by one. gsd-core takes the first
+# baseRef it finds in <cwd>/.claude/settings.local.json, <cwd>/.claude/
+# settings.json, then ~/.claude/settings.json (CLAUDE_CONFIG_DIR), where <cwd>
+# is the PHASE worktree (it has its own .planning/), so each worktree needs it.
+# We write the gitignored local file, as `gsd-tools worktree set-baseref` does.
+gsd_baseref() {  # check|ensure <dir> → head | missing | set | other:<value> | invalid | tracked | unignored | nopython
+  # check reports what gsd-core would see; ensure adds the key to the local
+  # file when no layer sets it (set), keeping every other key. A different
+  # value in any layer is the user's choice: never changed.
+  local py st
+  py=$(gsd_python) || { echo nopython; return 0; }
+  st=$(gsd__baseref_py "$py" check "$2")
+  [ "$1" = ensure ] && [ "$st" = missing ] || { echo "$st"; return 0; }
+  # Writing a tracked, or not ignored, file would show up as uncommitted work
+  # and stop gsd-finish.
+  if git -C "$2" ls-files --error-unmatch -- .claude/settings.local.json >/dev/null 2>&1; then
+    echo tracked; return 0
+  fi
+  git -C "$2" check-ignore -q -- .claude/settings.local.json 2>/dev/null || { echo unignored; return 0; }
+  gsd__baseref_py "$py" ensure "$2"
+}
+gsd__baseref_py() {  # <python> check|ensure <dir>
+  "$1" - "$2" "$3/.claude/settings.local.json" "$3/.claude/settings.json" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" <<'PY' 2>/dev/null || echo invalid
+import json, os, shutil, sys, tempfile
+mode, local = sys.argv[1], os.path.realpath(sys.argv[2])
+
+def read(path):  # → (settings dict or None, parsed?)
+    if not os.path.exists(path):
+        return None, True
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None, False
+    return (data, True) if isinstance(data, dict) else (None, False)
+
+data, ok = read(local)
+for path in sys.argv[2:]:
+    s = data if path == sys.argv[2] else read(path)[0]
+    wt = s.get("worktree") if s else None
+    ref = wt.get("baseRef") if isinstance(wt, dict) else None
+    if isinstance(ref, str):
+        print("head" if ref == "head" else "other:" + ref); sys.exit(0)
+if not ok or (data is not None and "worktree" in data and not isinstance(data["worktree"], dict)):
+    print("invalid"); sys.exit(0)
+if mode != "ensure":
+    print("missing"); sys.exit(0)
+data = data if data is not None else {}
+data.setdefault("worktree", {})["baseRef"] = "head"
+d = os.path.dirname(local)
+os.makedirs(d, exist_ok=True)
+fd, tmp = tempfile.mkstemp(dir=d, prefix=".settings.local.")
+with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    json.dump(data, fh, indent=2, ensure_ascii=False)
+    fh.write("\n")
+if os.path.exists(local):
+    shutil.copymode(local, tmp)
+else:
+    os.chmod(tmp, 0o644)
+os.replace(tmp, local)
+print("set")
+PY
+}
+
+gsd_baseref_ensure() {  # <dir> [label] → one line saying what happened; never fails
+  local st label=${2:-$1}
+  st=$(gsd_baseref ensure "$1")
+  case "$st" in
+    set)      echo "✔ ${label}/.claude/settings.local.json: worktree.baseRef = \"head\" (plans in a wave can run in parallel)" ;;
+    head)     ;;
+    other:*)  echo "• ${label}/.claude/settings.local.json keeps worktree.baseRef = \"${st#other:}\" (yours; \"head\" lets a wave's plans run in parallel)" ;;
+    tracked)  echo "⚠ ${label}/.claude/settings.local.json is tracked by git — not changed; add worktree.baseRef = \"head\" yourself so a wave's plans run in parallel" ;;
+    unignored) echo "⚠ .claude/settings.local.json is not gitignored in ${label} — not written; run gsd-init, then add worktree.baseRef = \"head\" so a wave's plans run in parallel" ;;
+    nopython) echo "⚠ no python 3.7+ — could not set worktree.baseRef = \"head\" in ${label}/.claude/settings.local.json" ;;
+    *)        echo "⚠ ${label}/.claude/settings.local.json is not plain JSON — not changed; add worktree.baseRef = \"head\" yourself so a wave's plans run in parallel" ;;
+  esac
+  return 0
+}
+
 gsd__add_missing() { GSD_PLANNING_MISSING="${GSD_PLANNING_MISSING:+$GSD_PLANNING_MISSING }$1"; }
 
 gsd_planning_hook() {  # $1=repo root → GSD_HOOK_PATH, GSD_HOOK_LABEL, GSD_HOOK_VERSIONED
@@ -382,6 +465,12 @@ gsd-planning-repair || true
 
 gsd_release_lock() { rm -rf "${GSD_LOCKDIR:-}" 2>/dev/null || true; }
 
+gsd__mkdir_excl() {  # $1=dir → true only for the one caller that made it
+  # Not the mkdir command: uutils' (Ubuntu 26.04) can tell two racing callers
+  # both that they made it. Perl's mkdir is the plain system call.
+  perl -e 'mkdir $ARGV[0] or exit 1' "$1" 2>/dev/null
+}
+
 gsd_acquire_lock() {  # $1=MAIN checkout — serialize gsd commands on this checkout
   # Two gsd commands on the SAME machine share the main checkout (index, HEAD,
   # ROADMAP); this lock serializes them. Sets GSD_LOCKDIR and installs a
@@ -392,7 +481,7 @@ gsd_acquire_lock() {  # $1=MAIN checkout — serialize gsd commands on this chec
   [ "${GSD_LOCK_HELD:-}" = 1 ] && return 0
   GSD_LOCKDIR="$1/.git/gsd-cmd.lock"
   local waited=0 lockpid
-  until mkdir "$GSD_LOCKDIR" 2>/dev/null; do
+  until gsd__mkdir_excl "$GSD_LOCKDIR"; do
     # Reclaim a stale lock left by a crashed run (owner PID gone). mv first so
     # only one waiter wins the reclaim.
     lockpid=$(cat "$GSD_LOCKDIR/pid" 2>/dev/null || true)

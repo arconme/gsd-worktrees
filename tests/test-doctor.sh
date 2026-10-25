@@ -3,7 +3,7 @@
 # T006), stale skills (T007), .gsd.conf typos and bad values (T017, T018), a
 # missing base branch (T015), the pre-merge gate (T019), duplicate phase
 # headings (T025), failed worktree installs (T032), a ClickUp tracker with no
-# token (T073), and the reinstall command it names. Also install.sh
+# token (T073), worktree.baseRef (T034), and the reinstall command it names. Also install.sh
 # --reuse-install-config keeping recorded agents when --agent adds one.
 # Everything runs in throwaway repos; HOME is a temp dir.
 set -uo pipefail
@@ -331,6 +331,40 @@ PATH="$BASEPATH" gsd-doctor --fix --json --repo "$F" > "$OUT" 2>&1
 has "--fix and --json don't mix" "don't mix" "$OUT"
 PATH="$BASEPATH" gsd-doctor --yes --repo "$F" > "$OUT" 2>&1
 has "--yes alone is refused" "only goes with --fix" "$OUT"
+
+section "worktree.baseRef (T034)"
+B="$WORK/baseref"; mkrepo "$B"; printf '.claude/settings.local.json\n' > "$B/.gitignore"
+git -C "$B" add -A && git -C "$B" commit -qm ignore
+BW="$WORK/baseref-worktrees/phase-1-one"; git -C "$B" worktree add -q "$BW" -b phase-1-one
+mkdir -p "$B/.claude"; printf '{"permissions":{"allow":["Bash(ls)"]}}\n' > "$B/.claude/settings.local.json"
+git -C "$B" worktree add -q "$B/.claude/worktrees/agent-a1" -b worktree-agent-a1   # Claude's per-plan copy
+baseref() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("worktree",{}).get("baseRef"))' "$1/.claude/settings.local.json" 2>/dev/null; }
+json "$B"
+has "not set in the main checkout or a worktree → T034" '"T034"' "$OUT"
+doc "$B"
+has "…naming both" "not set (in: main checkout phase-1-one)" "$OUT"
+has "…and the safe fix" "gsd-doctor --fix" "$OUT"
+hasnt "…not Claude's agent-* copies" "agent-a1" "$OUT"
+PATH="$BASEPATH" gsd-doctor --fix --yes --repo "$B" > "$OUT" 2>&1
+is "--fix sets it in the main checkout" "$(baseref "$B")" head
+is "…keeping the other keys" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["permissions"]["allow"][0])' "$B/.claude/settings.local.json")" "Bash(ls)"
+is "…and in the phase worktree" "$(baseref "$BW")" head
+is "…which stays clean" "$(git -C "$BW" status --porcelain)" ""
+is "…and an agent-* copy is left alone" "$([ -e "$B/.claude/worktrees/agent-a1/.claude/settings.local.json" ] && echo written || echo untouched)" untouched
+json "$B"
+hasnt "…and T034 is gone" '"T034"' "$OUT"
+printf '{"worktree":{"baseRef":"origin"}}\n' > "$BW/.claude/settings.local.json"
+json "$B"
+hasnt "another value is the user's choice: no finding" '"T034"' "$OUT"
+has "…only a note" 'baseRef = \\"origin\\" in phase-1-one' "$OUT"
+printf '{ "worktree": ' > "$BW/.claude/settings.local.json"
+json "$B"
+has "a file that is not JSON → T034" '"T034"' "$OUT"
+rm "$BW/.claude/settings.local.json"
+mkdir -p "$HOME/.claude"; printf '{"worktree":{"baseRef":"head"}}\n' > "$HOME/.claude/settings.json"
+json "$B"
+hasnt "set in ~/.claude/settings.json → no finding (gsd-core reads it too)" '"T034"' "$OUT"
+rm "$HOME/.claude/settings.json"
 
 section "GSD hooks that run a missing file (T008)"
 HK="$WORK/hk"; mkdir -p "$HK/bin" "$R/.claude"

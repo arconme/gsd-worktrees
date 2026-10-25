@@ -109,6 +109,8 @@ if [ -n "$EXISTING" ]; then
   fi
   if [ -n "$WT" ]; then
     echo "• branch '$NAME' already has a worktree — reusing it."
+    # A worktree made before the toolkit set it (or by hand) lacks it.
+    gsd_baseref_ensure "$WT"
     echo ""
     echo "✅ worktree ready: $WT   (phase $N)"
     exit 0
@@ -129,9 +131,9 @@ else
 fi
 
 echo "▶ copying gitignored local config…"
-# .claude/settings.local.json carries the user's permission allowlist and
-# gsd-core's worktree.baseRef; without it every worktree re-prompts for
-# everything. Only gitignored files are copied — gsd-bootstrap-repo ignores it.
+# .claude/settings.local.json carries the user's permission allowlist; without
+# it every worktree re-prompts for everything. (worktree.baseRef is added below
+# when the copy does not have it.) Only gitignored files are copied — gsd-bootstrap-repo ignores it.
 # `git ls-files --others --ignored` does not recurse into a directory that is
 # itself ignored: it collapses the whole tree to one 'path/' entry, which the
 # pathspec still matches when a file inside it does. Nested agent checkouts
@@ -146,18 +148,20 @@ done < <( cd "$MAIN" && git ls-files --others --ignored --exclude-standard \
             -- ':(glob)**/.env.local' '.env.local' '.mcp.json' \
                '.claude/settings.local.json' 2>/dev/null )
 
-# The status/log files must never read as uncommitted work (that would stop
-# the finish). Bootstrap ignores them in .gitignore; the repo-local exclude
+# The status/log files and the local settings must never read as uncommitted
+# work (that would stop the finish). Bootstrap ignores them in .gitignore; the repo-local exclude
 # list covers a repo whose .gitignore lost the lines.
 excl=$(git -C "$MAIN" rev-parse --git-path info/exclude 2>/dev/null || true)
 case "$excl" in ''|/*) ;; *) excl="$MAIN/$excl" ;; esac
 if [ -n "$excl" ] && mkdir -p "$(dirname "$excl")" 2>/dev/null; then
-  for pat in .gsd-install.status .gsd-install.log; do
+  for pat in .gsd-install.status .gsd-install.log .claude/settings.local.json; do
     grep -qxF "$pat" "$excl" 2>/dev/null && continue
     [ ! -s "$excl" ] || [ -z "$(tail -c1 "$excl")" ] || printf '\n' >> "$excl"
     printf '%s\n' "$pat" >> "$excl"
   done
 fi
+
+gsd_baseref_ensure "$DEST"
 
 case "$INSTALL_MODE" in
   background)

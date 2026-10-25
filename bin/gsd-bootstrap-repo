@@ -131,6 +131,7 @@ for pat in .gsd-install.status .gsd-install.log .claude/settings.local.json; do
   [ ! -s "$DEST/.gitignore" ] || [ -z "$(tail -c1 "$DEST/.gitignore")" ] || printf '\n' >> "$DEST/.gitignore"
   echo "$pat" >> "$DEST/.gitignore"
 done
+gsd_baseref_ensure "$DEST" .
 gsd_planning_apply "$DEST"
 CANON=$DEST/.gsd/INSTRUCTIONS.md
 if [ -f "$CANON" ] && grep -qx '<!-- gsd-worktrees:canonical -->' "$CANON"; then

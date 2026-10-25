@@ -320,6 +320,39 @@ printf '\n### Phase 2: other\n' >> "$WORK/attach-other/.planning/ROADMAP.md"; co
 (cd "$R" && gsd-start -p 2 --no-launch) > "$WORK/out" 2>&1
 is  "gsd-start -p sees a phase claimed elsewhere" "$?" 0
 
+section "worktree.baseRef = head — a wave's plans can run in parallel"
+# gsd-core's base-check reads it from the PHASE worktree's .claude/ (or the
+# user's ~/.claude) — an empty HOME, so this machine's settings do not count.
+bh() { env -u CLAUDE_CONFIG_DIR HOME="$WORK/brhome" "$@"; }
+baseref() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("worktree",{}).get("baseRef"))' "$1/.claude/settings.local.json" 2>/dev/null; }
+R="$WORK/baseref"; project "$R"
+printf '.claude/settings.local.json\n' > "$R/.gitignore"; commit "$R" ignore; git -C "$R" push -q
+mkdir -p "$R/.claude"; printf '{"permissions":{"allow":["Bash(ls)"]}}\n' > "$R/.claude/settings.local.json"
+(cd "$R" && bh gsd-start -n "cart" --no-launch) > "$WORK/out" 2>&1
+wt=$(git -C "$R" worktree list --porcelain | sed -n 's/^worktree \(.*phase-2-.*\)/\1/p')
+is  "gsd-start: the new worktree has worktree.baseRef = head" "$(baseref "$wt")" head
+is  "…keeping the copied permissions" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["permissions"]["allow"][0])' "$wt/.claude/settings.local.json")" "Bash(ls)"
+is  "…the main checkout's copy is untouched" "$(baseref "$R")" None
+is  "…and the worktree stays clean" "$(git -C "$wt" status --porcelain)" ""
+rm "$wt/.claude/settings.local.json"
+(cd "$R" && bh gsd-start -p 2 --no-launch) > "$WORK/out" 2>&1
+is  "gsd-start -p adds it to a reused worktree without it" "$(baseref "$wt")" head
+printf '{"worktree":{"baseRef":"origin"}}\n' > "$wt/.claude/settings.local.json"
+(cd "$R" && bh gsd-start -p 2 --no-launch) > "$WORK/out" 2>&1
+is  "another value is the user's: kept" "$(baseref "$wt")" origin
+has "…and said" 'keeps worktree.baseRef = "origin"' "$WORK/out"
+R="$WORK/baseref-noignore"; project "$R"
+(cd "$R" && bh gsd-wt-new --phase 1) > "$WORK/out" 2>&1
+wt="$WORK/baseref-noignore-worktrees/phase-1-catalog"
+is  "no .gitignore line: still set (the repo's exclude list covers it)" "$(baseref "$wt")" head
+is  "…and the worktree stays clean" "$(git -C "$wt" status --porcelain)" ""
+R="$WORK/baseref-tracked"; project "$R"
+mkdir -p "$R/.claude"; printf '{}\n' > "$R/.claude/settings.local.json"; git -C "$R" add -f .claude/settings.local.json; commit "$R" tracked; git -C "$R" push -q
+(cd "$R" && bh gsd-wt-new --phase 1) > "$WORK/out" 2>&1
+wt="$WORK/baseref-tracked-worktrees/phase-1-catalog"
+is  "a TRACKED settings.local.json is not changed" "$(git -C "$wt" status --porcelain)" ""
+has "…and said" "is tracked by git" "$WORK/out"
+
 section "lint — bash 3.2 traps"
 # macOS bash 3.2 in a UTF-8 locale reads "$VAR…" as a variable named VAR plus
 # the first byte of "…" → "unbound variable" under set -u. Worse, with the lock's
