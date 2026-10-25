@@ -80,7 +80,11 @@ oldifs=$IFS; IFS=,; for p in $COMMAND_PROVIDERS; do
 done; IFS=$oldifs
 # Keep the old generic executable bound to its original provider on migration.
 # Explicit overrides win; existing provider-specific keys already have priority.
+# A legacy agent_command that ran Gemini goes with it: never bind it to the
+# provider that took Gemini's place.
 OLD_COMMAND=$(gsd_conf_get "$DEST" agent_command)
+RAW_OLD_DEFAULT=$(gsd_conf_get "$DEST" providers); RAW_OLD_DEFAULT=${RAW_OLD_DEFAULT:-$(gsd_conf_get "$DEST" provider)}; RAW_OLD_DEFAULT=$(printf '%s' "$RAW_OLD_DEFAULT" | tr -d '[:space:]')
+[ "${RAW_OLD_DEFAULT%%,*}" != gemini ] || OLD_COMMAND=""
 if [ -n "$OLD_COMMAND" ] && [ -z "$(provider_command "$OLD_DEFAULT")" ] && [ -z "$(gsd_conf_get "$DEST" "${OLD_DEFAULT}_command")" ]; then
   gsd_provider_validate "$OLD_DEFAULT" "$OLD_COMMAND" || exit $?
   set_provider_command "$OLD_DEFAULT" "$OLD_COMMAND"
@@ -181,11 +185,12 @@ done
 IFS=$oldifs
 # What an older release wrote for Gemini: the marked block in GEMINI.md (the
 # file goes too when nothing else is left) and our hook in .gemini/settings.json.
-# Text and settings of the user's own stay.
+# Text and settings of the user's own stay. A GEMINI.md that is a link (to
+# AGENTS.md, say) is left alone: the block it shows is that file's.
 GEMINI_FILES=()
 drop_gemini() {
   local f=$DEST/GEMINI.md s=$DEST/.gemini/settings.json empty py
-  if [ -n "$(gsd_owned_block_get "$f" provider)" ] && gsd_owned_markers_valid "$f" provider; then
+  if [ ! -L "$f" ] && [ -n "$(gsd_owned_block_get "$f" provider)" ] && gsd_owned_markers_valid "$f" provider; then
     empty=$(mktemp); gsd_replace_owned_block "$f" provider "$empty"; rm -f "$empty"
     perl -0777 -pi -e 's/\n+\z/\n/' "$f"
     if ! grep -q '[^[:space:]]' "$f"; then rm -f "$f"; echo '✔ GEMINI.md removed (only the gsd-worktrees block was in it; Gemini is no longer supported)'
@@ -194,7 +199,9 @@ drop_gemini() {
   fi
   [ -f "$s" ] && grep -q 'gsd-worktree-guard' "$s" || return 0
   py=$(gsd_python) || { echo "⚠ ${s#"$DEST"/} still has the gsd-worktrees hook (no Python to edit it)"; return 0; }
-  "$py" - "$s" <<'JSON' || return 0
+  # Any hook naming the guard is ours (doctor's T061 finds it by that name),
+  # however its path was written and under whichever event.
+  "$py" - "$s" <<'JSON' || { echo "⚠ ${s#"$DEST"/} still names gsd-worktree-guard — remove that hook by hand"; return 0; }
 import json, os, sys
 path = sys.argv[1]
 try:
@@ -203,22 +210,25 @@ except ValueError:
     sys.exit(1)
 if not isinstance(data, dict) or not isinstance(data.get("hooks"), dict):
     sys.exit(1)
-ours = lambda h: isinstance(h, dict) and h.get("command") == "scripts/hooks/gsd-worktree-guard.sh"
-groups = data["hooks"].get("BeforeTool")
-if not isinstance(groups, list):
+ours = lambda h: isinstance(h, dict) and "gsd-worktree-guard" in str(h.get("command", ""))
+found = False
+for event, groups in list(data["hooks"].items()):
+    if not isinstance(groups, list):
+        continue
+    kept = []
+    for g in groups:
+        if isinstance(g, dict) and isinstance(g.get("hooks"), list):
+            rest = [h for h in g["hooks"] if not ours(h)]
+            if len(rest) < len(g["hooks"]):
+                found = True
+                if not rest:
+                    continue
+            g["hooks"] = rest
+        kept.append(g)
+    if kept: data["hooks"][event] = kept
+    else: del data["hooks"][event]
+if not found:
     sys.exit(1)
-if not any(isinstance(g, dict) and isinstance(g.get("hooks"), list) and any(ours(h) for h in g["hooks"]) for g in groups):
-    sys.exit(1)
-kept = []
-for g in groups:
-    if isinstance(g, dict) and isinstance(g.get("hooks"), list):
-        rest = [h for h in g["hooks"] if not ours(h)]
-        if g["hooks"] and not rest:
-            continue
-        g["hooks"] = rest
-    kept.append(g)
-if kept: data["hooks"]["BeforeTool"] = kept
-else: del data["hooks"]["BeforeTool"]
 if not data["hooks"]: del data["hooks"]
 if data:
     with open(path, "w") as f:
@@ -238,7 +248,10 @@ echo '✔ self-check (shims parse)'
 if [ "$COMMIT" = 1 ]; then
   if [ -n "$DIRTY_BEFORE" ]; then echo '⚠ target repo had existing changes — skipped --commit'; else
     files=(.gsd.conf .gsd/INSTRUCTIONS.md scripts .gitignore .gitattributes); oldifs=$IFS; IFS=,; for p in $SELECTED; do files+=("$(gsd_provider_instruction_file "$p")"); [ "$p" != claude ] || files+=(.claude/settings.json); done; IFS=$oldifs
-    files+=(${GEMINI_FILES[@]+"${GEMINI_FILES[@]}"})
+    # a removed Gemini file is staged only if git tracked it (else git add dies)
+    for f in ${GEMINI_FILES[@]+"${GEMINI_FILES[@]}"}; do
+      [ -e "$DEST/$f" ] || git -C "$DEST" ls-files --error-unmatch -- "$f" >/dev/null 2>&1 && files+=("$f")
+    done
     git -C "$DEST" add -- "${files[@]}"; gsd_planning_hook "$DEST"; [ "${GSD_HOOK_VERSIONED:-0}" = 1 ] && [ -f "$GSD_HOOK_PATH" ] && git -C "$DEST" add -- "$GSD_HOOK_PATH"; git -C "$DEST" diff --cached --quiet || git -C "$DEST" commit -q -m 'chore: add gsd-worktrees workflow'; echo '✔ bootstrap changes committed'
   fi
 fi

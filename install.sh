@@ -81,8 +81,9 @@ if [ "$REUSE" = 1 ] && [ -f "$MANIFEST" ]; then
       providers) oldifs=$IFS; IFS=,; for p in $value; do [ "$p" = gemini ] || add_provider "$p"; done; IFS=$oldifs ;;
       claude_skills) GSD_CLAUDE_SKILL_DIR=${GSD_CLAUDE_SKILL_DIR:-$value} ;;
       # Codex's old default (~/.codex/skills, recorded by releases before
-      # 0.5.0) is not a choice: those skills move to its own ~/.agents/skills
-      codex_skills) [ "$value" = "$(absolute_path "${CODEX_HOME:-$HOME/.codex}/skills")" ] || GSD_CODEX_SKILL_DIR=${GSD_CODEX_SKILL_DIR:-$value} ;;
+      # 0.5.0; they ignored CODEX_HOME) is not a choice: those skills move to
+      # its own ~/.agents/skills
+      codex_skills) case "$value" in "$(absolute_path "$HOME/.codex/skills")"|"$(absolute_path "${CODEX_HOME:-$HOME/.codex}/skills")") ;; *) GSD_CODEX_SKILL_DIR=${GSD_CODEX_SKILL_DIR:-$value} ;; esac ;;
       gemini_skills) ;;   # read above, for the clean-up
       user_hook) USER_HOOK=${USER_HOOK:-$value} ;;
       *) echo "invalid install manifest key: $key" >&2; exit 1 ;;
@@ -262,8 +263,9 @@ install_skills() {
   # Codex reads skills from ~/.agents/skills; ~/.codex/skills is its old place.
   # Ours there would load twice (or stale): move them out.
   if [ "$provider" = codex ] && [ -z "${GSD_CODEX_SKILL_DIR:-}" ]; then
-    old=${CODEX_HOME:-$HOME/.codex}/skills
-    [ ! -d "$old" ] || [ "$old" = "$SKILL_DIR" ] || retire_skills "$old" codex all
+    for old in "$HOME/.codex/skills" ${CODEX_HOME:+"$CODEX_HOME/skills"}; do
+      [ ! -d "$old" ] || [ "$old" = "$SKILL_DIR" ] || retire_skills "$old" codex all
+    done
   fi
 }
 # A skill this toolkit placed earlier but no longer ships (renamed or

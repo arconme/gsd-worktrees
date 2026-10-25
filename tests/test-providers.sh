@@ -337,6 +337,35 @@ assert 'only our block and hook → GEMINI.md and .gemini/ are gone' '[ ! -e "$R
 R=$WORK/old-gemini-commit; old_gemini "$R" '' ''
 (cd "$R" && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t gsd-bootstrap-repo --commit) >/dev/null 2>&1
 assert 'bootstrap --commit commits the clean-up' '[ -z "$(git -C "$R" status --porcelain)" ] && ! git -C "$R" ls-files --error-unmatch GEMINI.md >/dev/null 2>&1'
+# GEMINI.md as a link to AGENTS.md shows the Codex block: never cleaned, never T061
+R=$WORK/gemini-link; repo "$R"; (cd "$R" && gsd-bootstrap-repo --agent claude --agent codex) >/dev/null; ln -s AGENTS.md "$R/GEMINI.md"
+(cd "$R" && gsd-bootstrap-repo --agent claude --agent codex) >/dev/null 2>&1
+assert 'GEMINI.md → AGENTS.md link: AGENTS.md keeps the codex block, the link stays' 'grep -q "gsd-worktrees:provider:start" "$R/AGENTS.md" && [ -L "$R/GEMINI.md" ]'
+out=$(gsd-doctor --repo "$R" --json 2>/dev/null || true)
+assert '…and doctor: no T061' '! printf "%s" "$out" | jq -e '\''any(.findings[]; .code == "T061")'\'' >/dev/null'
+# legacy provider = gemini with agent_command: that command ran Gemini, so it
+# must not become claude_command
+R=$WORK/gemini-agent-command; repo "$R"; printf 'provider = gemini\nagent_command = %s\n' "$(command -v true)" > "$R/.gsd.conf"
+(cd "$R" && gsd-bootstrap-repo) >/dev/null 2>&1
+assert 'provider = gemini + agent_command → providers = claude, no claude_command' 'grep -q "^providers = claude$" "$R/.gsd.conf" && ! grep -qE "^(claude_command|agent_command)" "$R/.gsd.conf"'
+# a user's own Gemini setting that only mentions the guard is not ours
+R=$WORK/gemini-mention; repo "$R"; (cd "$R" && gsd-bootstrap-repo --agent claude) >/dev/null; mkdir -p "$R/.gemini"
+printf '{"note":"see gsd-worktree-guard docs"}\n' > "$R/.gemini/settings.json"
+out=$(gsd-doctor --repo "$R" --json 2>/dev/null || true)
+assert 'a setting that only mentions gsd-worktree-guard → no T061' '! printf "%s" "$out" | jq -e '\''any(.findings[]; .code == "T061")'\'' >/dev/null'
+# our GEMINI.md, never tracked: --commit stages only what git knew
+R=$WORK/gemini-untracked; repo "$R"; (cd "$R" && gsd-bootstrap-repo --agent claude) >/dev/null
+git -C "$R" add -A; git -C "$R" -c user.name=t -c user.email=t@t commit -qm boot
+printf '<!-- gsd-worktrees:provider:start -->\nold\n<!-- gsd-worktrees:provider:end -->\n' > "$R/GEMINI.md"; echo GEMINI.md >> "$R/.git/info/exclude"
+out=$(cd "$R" && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t gsd-bootstrap-repo --agent claude --commit 2>&1); rc=$?
+assert 'untracked GEMINI.md + --commit → removed, no git add error' '[ "$rc" -eq 0 ] && [ ! -e "$R/GEMINI.md" ] && [[ "$out" != *"pathspec"* ]]'
+# our hook under another path spelling: still ours (doctor finds it by name)
+R=$WORK/gemini-hook-path; repo "$R"; (cd "$R" && gsd-bootstrap-repo --agent claude) >/dev/null; mkdir -p "$R/.gemini"
+printf '{"theme":1,"hooks":{"BeforeTool":[{"hooks":[{"type":"command","command":"./scripts/hooks/gsd-worktree-guard.sh"}]}]}}\n' > "$R/.gemini/settings.json"
+(cd "$R" && gsd-bootstrap-repo --agent claude) >/dev/null 2>&1
+assert '"./scripts/hooks/gsd-worktree-guard.sh" hook → removed, user key kept' 'jq -e ".theme == 1 and (has(\"hooks\") | not)" "$R/.gemini/settings.json" >/dev/null'
+out=$(gsd-doctor --repo "$R" --json 2>/dev/null || true)
+assert '…and doctor: no T061' '! printf "%s" "$out" | jq -e '\''any(.findings[]; .code == "T061")'\'' >/dev/null'
 # install.sh: an install that set Gemini up (its manifest says so) loses our
 # skills and user hook there; the user's own skill and hook stay
 GI=$WORK/gi; mkdir -p "$GI/bin" "$GI/gemini/skills/gsdw-flow" "$GI/gemini/skills/mine"

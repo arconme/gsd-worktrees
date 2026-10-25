@@ -357,8 +357,9 @@ fi
 gemini_left=""
 case ",$RAW_PROVIDERS,$RAW_LEGACY_PROVIDER," in *,gemini,*) gemini_left="$gemini_left providers" ;; esac
 [ -z "$(gsd_conf_get "$MAIN" gemini_command)$(gsd_conf_get "$MAIN" gemini_model)" ] || gemini_left="$gemini_left gemini_*-keys"
-[ -z "$(gsd_owned_block_get "$MAIN/GEMINI.md" provider)" ] || gemini_left="$gemini_left GEMINI.md"
-! grep -qs 'gsd-worktree-guard' "$MAIN/.gemini/settings.json" || gemini_left="$gemini_left .gemini/settings.json"
+[ -L "$MAIN/GEMINI.md" ] || [ -z "$(gsd_owned_block_get "$MAIN/GEMINI.md" provider)" ] || gemini_left="$gemini_left GEMINI.md"   # a link shows another file's block
+# a hook command naming the guard: what bootstrap's clean-up removes
+! grep -qsE '"command"[[:space:]]*:[[:space:]]*"[^"]*gsd-worktree-guard' "$MAIN/.gemini/settings.json" || gemini_left="$gemini_left .gemini/settings.json"
 [ -z "$gemini_left" ] || fail "Gemini setup from an older gsd-worktrees:$gemini_left — $GSD_GEMINI_GONE" "gsd-init --no-launch" "T061"
 
 if [ "$MODEL_VALID" = 0 ]; then

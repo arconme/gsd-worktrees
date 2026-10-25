@@ -4,7 +4,7 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
-## Unreleased
+## 0.5.1
 
 - **Cheaper phase sessions.** A `/gsdw-flow` phase ran in one chat that grew
   to ~366k tokens before Claude compacted it, and every turn re-sent all of
@@ -12,6 +12,17 @@ becomes its release notes.
   Claude and Codex so they compact at 200k tokens (`compact_at` in
   `.gsd.conf`; `compact_at = default` keeps the CLI's own setting). Applies
   to sessions opened after the update; a running session keeps its setting.
+- **Fixes to the 0.5.0 Gemini clean-up** (from a Claude and a Codex review):
+  - A `GEMINI.md` that is a link (to `AGENTS.md`, say) is left alone. Before,
+    `gsd-init --no-launch` removed the Codex block through the link.
+  - A legacy `provider = gemini` with `agent_command` no longer turns that
+    command into `claude_command`.
+  - An old Gemini hook is removed however its path was written; doctor's T061
+    now looks only for a hook command, not any mention of the guard.
+  - `gsd-bootstrap-repo --commit` no longer fails on a removed `GEMINI.md`
+    that git never tracked.
+- `install.sh`: an old install's `~/.codex/skills` moves to `~/.agents/skills`
+  also when `CODEX_HOME` is set.
 
 ## 0.5.0
 

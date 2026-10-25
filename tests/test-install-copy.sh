@@ -85,6 +85,14 @@ env -u GSD_CODEX_SKILL_DIR -u CODEX_HOME HOME="$CH" GSD_BIN_DIR="$CB" GSD_COPY_D
   "$PKG/install.sh" --copy --reuse-install-config --no-user-hook >/dev/null
 [ ! -e "$CH/.codex/skills/gsd-worktrees" ]
 grep -q "^codex_skills	$(cd "$CH/.agents/skills" && pwd -P)\$" "$CB/.gsd-install-manifest"
+# …also with CODEX_HOME set now: the old default ignored it
+CB="$WORK/codex-bin3"; mkdir -p "$CB" "$CH/.codex/skills/gsd-worktrees" "$WORK/other-codex"
+printf 'old\n' > "$CH/.codex/skills/gsd-worktrees/SKILL.md"; printf '0.4.12\n' > "$CH/.codex/skills/gsd-worktrees/.gsd-worktrees-skill"
+printf 'providers\tcodex\ncodex_skills\t%s\n' "$(cd "$CH/.codex/skills" && pwd -P)" > "$CB/.gsd-install-manifest"
+env -u GSD_CODEX_SKILL_DIR HOME="$CH" CODEX_HOME="$WORK/other-codex" GSD_BIN_DIR="$CB" GSD_COPY_DIR="$WORK/codex-runtime3" \
+  "$PKG/install.sh" --copy --reuse-install-config --no-user-hook >/dev/null
+[ ! -e "$CH/.codex/skills/gsd-worktrees" ]
+grep -q "^codex_skills	$(cd "$CH/.agents/skills" && pwd -P)\$" "$CB/.gsd-install-manifest"
 
 # Move the source away without touching it: exercise a command from an isolated
 # copy of the package, then remove only that temporary fixture.

@@ -207,10 +207,9 @@ gsd_flow_finish_gate() {  # $1=MAIN $2=phase branch $3=its worktree → 1 = refu
 # nothing (the old get-shit-done-cc package ships a different gsd-tools), so
 # a candidate counts only when runtime-identity says it is gsd-core. An npx
 # install puts nothing on PATH: look in each agent's config dir too.
-# GSD_CLI overrides (tests). Cached: each probe starts node.
+# GSD_CLI overrides (tests). Each probe starts node; every command calls this once.
 GSD_CORE_INSTALL="npx @opengsd/gsd-core@latest"
 gsd_cli() {  # → gsd-core's gsd_run; nonzero when none
-  if [ -n "${GSD_CLI_RESOLVED:-}" ]; then printf '%s\n' "$GSD_CLI_RESOLVED"; return 0; fi
   local c id
   for c in "${GSD_CLI:-}" "$(command -v gsd_run 2>/dev/null || true)" \
            "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/gsd-core/bin/gsd_run" \
@@ -219,7 +218,6 @@ gsd_cli() {  # → gsd-core's gsd_run; nonzero when none
     # captured, not piped to grep -q: under pipefail an early-closed pipe fails it
     id=$("$c" runtime-identity --raw 2>/dev/null) || continue
     case "$id" in *'"packageName":"@opengsd/gsd-core"'*|*'"packageName": "@opengsd/gsd-core"'*) ;; *) continue ;; esac
-    GSD_CLI_RESOLVED=$c
     printf '%s\n' "$c"; return 0
   done
   return 1
