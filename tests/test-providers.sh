@@ -93,7 +93,7 @@ assert 'shell metacharacters remain a literal model argument' '[ "$actual" = "$e
 R=$WORK/init-model-invalid; repo "$R"; (cd "$R" && gsd-init --provider codex --model '--bad' --no-launch --no-commit) >/dev/null 2>&1
 assert 'invalid init model fails before bootstrap writes' '[ $? -ne 0 ] && [ ! -e "$R/.gsd.conf" ]'
 R=$WORK/init-model; repo "$R"; out=$(cd "$R" && gsd-init --new --provider codex --model model-test --no-launch --no-commit 2>&1)
-assert 'init prints selected session model' '[[ "$out" == *"codex -c model_auto_compact_token_limit=200000 --model model-test"* ]]'
+assert 'init prints selected session model' '[[ "$out" == *"codex -c model_auto_compact_token_limit=300000 --model model-test"* ]]'
 R=$WORK/start-mode; repo "$R"; mkdir -p "$R/.planning"; printf '# Roadmap\n\n### Phase 7: Test phase\n' > "$R/.planning/ROADMAP.md"; printf 'base = develop\nwtdir = start-worktrees\ninstall = none\nproviders = claude\n' > "$R/.gsd.conf"; git -C "$R" add .; git -C "$R" -c user.name=t -c user.email=t@t commit -qm planning
 out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-launch 2>&1); assert 'gsd-start defaults to the flow' "printf '%s' \"\$out\" | grep -q 'fake-provider Drive.*GSD.*phase.*7'"; assert 'gsd-start suppresses stale worker next steps' "! printf '%s' \"\$out\" | grep -q 'Open an agent session there'"
 printf 'start_mode = discuss\n' >> "$R/.gsd.conf"; out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider --no-launch 2>&1); assert 'gsd-start honors start_mode = discuss' "printf '%s' \"\$out\" | grep -q 'fake-provider Discuss.*GSD.*phase.*7'"
@@ -103,11 +103,11 @@ out=$(gsd-start -p 7 --repo "$R" --provider custom --agent-command fake-provider
 
 echo 'bootstrap adapters and idempotence'
 out=$(gsd-start -p 7 --repo "$R" --provider codex --model model-test --no-launch 2>&1)
-assert 'start prints selected session model' '[[ "$out" == *"codex -c model_auto_compact_token_limit=200000 --model model-test"* ]]'
+assert 'start prints selected session model' '[[ "$out" == *"codex -c model_auto_compact_token_limit=300000 --model model-test"* ]]'
 
 echo 'compact point (compact_at)'
 out=$(gsd-start -p 7 --repo "$R" --provider claude --no-launch 2>&1)
-assert 'claude session compacts at 200000 by default' '[[ "$out" == *"env CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 claude"* ]]'
+assert 'claude session compacts at 300000 by default' '[[ "$out" == *"env CLAUDE_CODE_AUTO_COMPACT_WINDOW=300000 claude"* ]]'
 out=$(CLAUDE_CODE_AUTO_COMPACT_WINDOW=300000 gsd-start -p 7 --repo "$R" --provider claude --no-launch 2>&1)
 assert 'a compact window the user exported wins' '[[ "$out" != *"AUTO_COMPACT"* ]]'
 out=$(GSD_COMPACT_AT=300000 gsd-start -p 7 --repo "$R" --provider codex --no-launch 2>&1)
@@ -132,7 +132,7 @@ WT=$(git -C "$R" worktree list --porcelain | sed -n 's/^worktree //p' | grep '/p
 SET="$WT/.claude/settings.local.json"
 win(){ python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("env",{}).get("CLAUDE_CODE_AUTO_COMPACT_WINDOW",""))' "$SET" 2>/dev/null; }
 gsd-start -p 7 --repo "$R" --provider claude --no-launch >/dev/null 2>&1
-assert 'gsd-start writes the compact point into the worktree settings' '[ "$(win)" = 200000 ]'
+assert 'gsd-start writes the compact point into the worktree settings' '[ "$(win)" = 300000 ]'
 assert 'the settings file is ignored, so gsd-finish can still remove the worktree' '[ -z "$(git -C "$WT" status --porcelain -- .claude)" ]'
 printf '{\n  "permissions": {"allow": ["Bash(ls)"]},\n  "env": {"FOO": "1"}\n}\n' > "$SET"
 GSD_COMPACT_AT=250000 gsd-start -p 7 --repo "$R" --provider claude --no-launch >/dev/null 2>&1

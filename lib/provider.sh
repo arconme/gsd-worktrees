@@ -368,10 +368,12 @@ gsd_start_mode_resolve() { # repo, optional CLI override
 # A session compacts its conversation once it holds this many tokens. The CLIs
 # wait until their own window is nearly full (Claude: ~366k seen), and every
 # turn before that re-sends the whole chat; a phase's artifacts carry its state,
-# so compacting earlier loses little. 200k, not lower: discuss and the UI
-# approvals (talk not yet in a file) ran at 110-145k, so they stay whole.
+# so compacting earlier loses little. 300k, not lower: discuss and the UI
+# approvals (talk not yet in a file) ran at 110-145k, and /gsd-plan-phase
+# reached 140k before its planner returned (it reads a 47k-token workflow), so
+# a 200k window warned "context critical" mid-plan. They stay whole.
 # `default` leaves the CLI's own setting.
-GSD_COMPACT_AT_DEFAULT=200000
+GSD_COMPACT_AT_DEFAULT=300000
 gsd_compact_resolve() { # repo → GSD_COMPACT_RESOLVED (empty = CLI default)
   local v
   v=${GSD_COMPACT_AT:-$(gsd_conf_get "$1" compact_at)}

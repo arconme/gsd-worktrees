@@ -32,7 +32,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Ticket link (`--ticket <id|url>`, old `--cu`): `tk-<id>` at the end of title/slug, duplicate-ticket guard, ticket → "in progress" when a tracker is set. With a tracker set a new claim needs a ticket (`--no-ticket` to skip); `gsd-init` asks for the tracker (`--tracker`) | `gsd-start`, `gsd-tracker` |
 | Opens the session in the worktree by default (in a terminal); `--no-launch` prints the command instead, as does a run with no terminal | `gsd-start` |
 | `--flow` / `--no-flow` / `start_mode`: resume the full flow (default), or open discuss-phase only | `gsd-start`, `lib/provider.sh` |
-| `compact_at` (default 200000 tokens): launched Claude/Codex sessions compact early instead of re-sending a near-full window every turn; the phase worktree's `.claude/settings.local.json` carries it for a plain `claude` | `gsd-start`, `gsd-init`, `lib/provider.sh` (`gsd_compact_resolve`, `gsd_compact_settings`), `lib/gsd_claude_env.py` |
+| `compact_at` (default 300000 tokens): launched Claude/Codex sessions compact early instead of re-sending a near-full window every turn; the phase worktree's `.claude/settings.local.json` carries it for a plain `claude` | `gsd-start`, `gsd-init`, `lib/provider.sh` (`gsd_compact_resolve`, `gsd_compact_settings`), `lib/gsd_claude_env.py` |
 | Guard check before a session is printed or launched | `gsd-start` |
 | Worktree creation off the base branch, `phase-<N>-<slug>`; reuse if it exists | `gsd-wt-new` |
 | Copies gitignored local config into the worktree (`.env.local`, `.mcp.json`, `.claude/settings.local.json`) | `gsd-wt-new` |

@@ -105,5 +105,12 @@ nothing. This is the safe way to answer "what is left on phase N".
   browser — Claude in Chrome, the in-app browser pane, or `open <url>` — it
   takes over the window they work in. Only if the user asks to watch: launch
   Playwright with `headless: false`, which opens a separate window.
+- A context warning is not a stop. gsd-core's context monitor injects
+  `CONTEXT WARNING` / `CONTEXT CRITICAL` and says to tell the user so they
+  can pause; in this loop, ignore it: the session compacts by itself
+  (`compact_at`), and `gsd-flow-next` rebuilds the state from the phase
+  folder. Keep going — never stop to suggest `/clear`, `/gsd-pause-work` or
+  re-running this skill. After a compact, run `gsd-flow-next <N>` and
+  continue from the step it names.
 - One phase per session. For the next phase the user opens a new worktree
   session via `gsd-start`.

@@ -52,10 +52,10 @@ flow = strict
 review_provider = codex
 start_mode = flow
 tracker = clickup
-compact_at = 200000
+compact_at = 300000
 ```
 
-`compact_at` (default `200000`) is when a launched Claude or Codex session
+`compact_at` (default `300000`) is when a launched Claude or Codex session
 compacts its conversation, in tokens. Without it the CLI waits until its window
 is nearly full, and every turn before that re-sends the whole chat. Set
 `compact_at = default` to keep the CLI's own setting; `GSD_COMPACT_AT`

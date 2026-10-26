@@ -4,6 +4,20 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## Unreleased
+
+- **Phase sessions compact at 300k, not 200k.** `/gsd-plan-phase` reads a
+  47k-token workflow and reached 140k before its planner returned, so a 200k
+  window showed 84% and gsd-core warned "context critical" mid-plan. Set
+  `compact_at = 200000` in `.gsd.conf` to keep the old point. Existing
+  worktrees get the new value on their next `gsd-start -p <N>`.
+- **`/gsdw-flow` no longer stops at gsd-core's context warning.** Its
+  context monitor fires at 65% of the compact point and says to tell the
+  user, so the flow stopped and asked for `/clear` and a rerun long before
+  the session would compact. The skill now ignores the warning and keeps
+  looping; after a compact it re-reads the step from `gsd-flow-next`. Run
+  `gsd-sync` (or `gsd-update`) to get the new skill.
+
 ## 0.5.2
 
 - **The checkout lock works on Ubuntu 26.04.** Its `mkdir` (uutils) can tell

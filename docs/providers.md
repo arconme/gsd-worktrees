@@ -98,7 +98,7 @@ paths without whitespace, not templates. Model IDs cannot contain whitespace.
 | Executable | `--agent-command`, `GSD_AGENT_COMMAND`, `GSD_<PROVIDER>_COMMAND`, `<provider>_command`, legacy `agent_command` for repo default only, built-in name |
 | Model | `--model`, `GSD_MODEL`, `GSD_<PROVIDER>_MODEL`, `<provider>_model`, CLI default |
 | Start behavior | `--flow` / `--no-flow`, `start_mode`, `flow` default |
-| Compact point | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` already exported (Claude), `GSD_COMPACT_AT`, `compact_at`, `200000` |
+| Compact point | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` already exported (Claude), `GSD_COMPACT_AT`, `compact_at`, `300000` |
 
 Initialization persists the integration set selected by `--providers`; without
 that flag, an explicit `--provider` selects a one-provider setup. Session overrides
@@ -111,7 +111,7 @@ on `gsd-start` do not rewrite the set. Refer to `gsd-init --help` for setup flag
 | `claude_model`, `codex_model` | Optional model ID; `default` omits the flag |
 | `review_provider` | Independent reviewer: `claude`, `codex` (default), or `custom` |
 | `start_mode` | `flow` (default) or `discuss` |
-| `compact_at` | Tokens at which a launched session compacts: 100000–1000000, default `200000`; `default` keeps the CLI's own. Claude gets `env CLAUDE_CODE_AUTO_COMPACT_WINDOW=<n>`, and `gsd-start` saves it in the worktree's `.claude/settings.local.json` `env` (a plain `claude` there gets it too; an exported window or `default` removes it); Codex `-c model_auto_compact_token_limit=<n>`, custom nothing |
+| `compact_at` | Tokens at which a launched session compacts: 100000–1000000, default `300000`; `default` keeps the CLI's own. Claude gets `env CLAUDE_CODE_AUTO_COMPACT_WINDOW=<n>`, and `gsd-start` saves it in the worktree's `.claude/settings.local.json` `env` (a plain `claude` there gets it too; an exported window or `default` removes it); Codex `-c model_auto_compact_token_limit=<n>`, custom nothing |
 | `base` | Base branch; detect develop, main, then current branch |
 | `wtdir` | Sibling worktree directory; default `<repo>-worktrees` |
 | `install` | Dependency install command; detect lockfile; `none` disables |
