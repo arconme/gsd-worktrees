@@ -3,12 +3,11 @@
 # gsd-sync — update the gsd-worktrees toolkit and verify repo shims.
 #
 # One command for the whole maintenance loop:
-#   1. self-update : pull the toolkit repo (rebase + autostash) and push any
-#                    local commits. Edits made through the ~/.local/bin
-#                    symlinks land in the repo working tree — gsd-sync reminds
-#                    you when they're still uncommitted.
-#   2. re-link     : re-run install.sh so commands added by the pull get their
-#                    ~/.local/bin symlinks.
+#   1. self-update : pull the toolkit checkout (rebase + autostash) and push
+#                    any local commits; it reminds you of uncommitted edits.
+#   2. old install : commands still linked into the checkout (the old
+#                    ./install.sh) are named, with the move to a release
+#                    (./install.sh now installs the release).
 #   3. shim check  : verify the scripts/gsd-*.sh shims of the repo you RAN
 #                    gsd-sync FROM match the package's shims/ (they're frozen
 #                    delegators — logic lives in the package). Drift means a
@@ -25,7 +24,7 @@
 #   -h, --help    show this help
 #
 # RELATED
-#   install.sh            what step 2 runs (symlink bin/ into ~/.local/bin)
+#   install.sh            installs the latest release (gsd-update updates it)
 #   gsd-init              re-run in a repo to refresh its config + shims
 #   gsd-doctor            read-only health check of a repo's GSD setup
 set -euo pipefail
@@ -79,7 +78,7 @@ echo ""
 # ── step 1: self-update ──────────────────────────────────────────────────────
 DIRTY=""
 if [ ! -e "$REPO/.git" ]; then
-  echo "• standalone copy — self-update and reinstall skipped (update with: gsd-update)"
+  echo "• standalone copy — self-update skipped (update with: gsd-update)"
 elif [ -n "$(git status --porcelain)" ]; then
   DIRTY=$(git status --porcelain)
   echo "• toolkit repo has uncommitted changes (commit them so they're versioned):"
@@ -114,13 +113,17 @@ else
   echo "• no 'origin' remote — self-update skipped"
 fi
 
-# ── step 2: re-link (picks up commands added by the pull) ────────────────────
-if [ ! -e "$REPO/.git" ]; then
-  :
-elif [ "$CHECK" = 1 ]; then
-  echo "▶ would re-run install.sh"
-else
-  GSD_BIN_DIR="$INSTALL_BIN" ./install.sh --reuse-install-config | sed 's/^/  /'
+# ── step 2: an old link install into this checkout ───────────────────────────
+# Commands linked into the checkout run whatever is in it right now. The
+# toolkit no longer installs that way; say how to move to a release.
+linked=""
+if [ -e "$REPO/.git" ] && [ -L "$INSTALL_BIN/gsd-sync" ]; then
+  linked=$(readlink "$INSTALL_BIN/gsd-sync")
+  linked=$(cd "$(dirname "$linked")/.." 2>/dev/null && pwd -P) || linked=""
+fi
+if [ -n "$linked" ] && [ "$linked" = "$(pwd -P)" ]; then
+  echo "▶ your commands in $INSTALL_BIN link into this checkout (the old install):"
+  echo "  every repo runs its current files. Move to the release:  $REPO/install.sh --reuse-install-config"
 fi
 echo ""
 

@@ -1,28 +1,28 @@
-# Standalone copy installation
+# How a package is installed (lib/install.sh)
 
-Most users want a release install instead: `get.sh` / `gsd-update`, see
-[releases.md](releases.md). It uses this same `--copy` mode, one folder per
-release.
+You install with `install.sh` (or update with `gsd-update`), see
+[releases.md](releases.md). It downloads a release and runs that release's
+`lib/install.sh`. This page is about that second step. Nobody runs it by
+hand; the tests run it straight on a checkout. It only copies: the old
+link install (commands linked into a checkout) is gone.
 
 Installation requires Python 3.7+ (`python3` or `python`), checked before writing
 destinations. Bash, Git and Perl are also required by the toolkit.
 
-Run `./install.sh --copy` when the source checkout will be removed. The installer
-copies `bin/`, `lib/`, `shims/`, `skills/`, and `install.sh` into a dedicated
-runtime directory. Commands in `GSD_BIN_DIR` are symlinks to that copied runtime,
+The installer copies `bin/`, `lib/`, `shims/`, `skills/`, `install.sh` and
+`VERSION` into a dedicated runtime directory. Commands in `GSD_BIN_DIR` are symlinks to that copied runtime,
 so they continue to work after the checkout is removed. The selected agent's
 skills are also copied into its skill directory.
 
 By default, `GSD_BIN_DIR` is `~/.local/bin` and the runtime directory is
-`~/.local/share/gsd-worktrees`. Set `GSD_COPY_DIR` to choose another runtime
-directory. Both paths are resolved to absolute paths before installation.
+`~/.local/share/gsd-worktrees` (`install.sh` sets it to
+`…/releases/X.Y.Z`). `GSD_COPY_DIR` chooses another runtime directory. Both paths are resolved to absolute paths before installation.
 
-To update a standalone installation, run `install.sh --copy` from a newer
-checkout with the same `GSD_BIN_DIR` and `GSD_COPY_DIR` values. The installer
-preserves unrelated paths. If a package path has local changes, its old version
+Installing again into the same runtime directory preserves unrelated paths. If a package path has local changes, its old version
 is moved to `.bak`, `.bak.1`, and so on before replacement. An unchanged
 installation is idempotent. `gsd-sync` can still check project shims from a
-standalone copy; its Git self-update step is skipped.
+runtime; its Git self-update step is skipped. `install.sh --copy` runs this
+file too: releases before the split ran their downloaded package that way.
 
 Use `--reuse-install-config` when updating to reuse providers and skill roots
 recorded in `GSD_BIN_DIR/.gsd-install-manifest`; any `--agent` given with it is

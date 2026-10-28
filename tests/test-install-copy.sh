@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+export GSD_NO_CORE=1   # lib/install.sh must not run the real gsd-core installer (npx)
 
 PKG=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d)
@@ -12,7 +13,7 @@ SKILLS="$WORK/skills"
 
 install_copy() {
   GSD_BIN_DIR="$BIN" GSD_COPY_DIR="$COPY" GSD_CLAUDE_SKILL_DIR="$SKILLS" \
-    "$PKG/install.sh" --copy >/dev/null
+    "$PKG/lib/install.sh" >/dev/null
 }
 mkdir -p "$BIN" "$COPY/lib" "$COPY/unrelated-dir"
 printf 'local command\n' > "$BIN/gsd-list"
@@ -71,7 +72,7 @@ printf 'old\n' > "$CH/.codex/skills/gsd-flow/SKILL.md"; printf '0.4.4\n' > "$CH/
 ln -s "$PKG/skills/gsdw-tracker" "$CH/.codex/skills/gsdw-tracker"
 printf 'mine\n' > "$CH/.codex/skills/mine/SKILL.md"
 env -u GSD_CODEX_SKILL_DIR -u CODEX_HOME HOME="$CH" GSD_BIN_DIR="$WORK/codex-bin" GSD_COPY_DIR="$WORK/codex-runtime" \
-  "$PKG/install.sh" --copy --agent codex --no-user-hook >/dev/null
+  "$PKG/lib/install.sh" --agent codex --no-user-hook >/dev/null
 [ -f "$CH/.agents/skills/gsdw-flow/SKILL.md" ]
 [ ! -e "$CH/.codex/skills/gsd-flow" ]
 [ ! -L "$CH/.codex/skills/gsdw-tracker" ]
@@ -82,7 +83,7 @@ CB="$WORK/codex-bin2"; mkdir -p "$CB" "$CH/.codex/skills/gsd-worktrees"
 printf 'old\n' > "$CH/.codex/skills/gsd-worktrees/SKILL.md"; printf '0.4.12\n' > "$CH/.codex/skills/gsd-worktrees/.gsd-worktrees-skill"
 printf 'providers\tcodex\ncodex_skills\t%s\n' "$(cd "$CH/.codex/skills" && pwd -P)" > "$CB/.gsd-install-manifest"
 env -u GSD_CODEX_SKILL_DIR -u CODEX_HOME HOME="$CH" GSD_BIN_DIR="$CB" GSD_COPY_DIR="$WORK/codex-runtime2" \
-  "$PKG/install.sh" --copy --reuse-install-config --no-user-hook >/dev/null
+  "$PKG/lib/install.sh" --reuse-install-config --no-user-hook >/dev/null
 [ ! -e "$CH/.codex/skills/gsd-worktrees" ]
 grep -q "^codex_skills	$(cd "$CH/.agents/skills" && pwd -P)\$" "$CB/.gsd-install-manifest"
 # …also with CODEX_HOME set now: the old default ignored it
@@ -90,7 +91,7 @@ CB="$WORK/codex-bin3"; mkdir -p "$CB" "$CH/.codex/skills/gsd-worktrees" "$WORK/o
 printf 'old\n' > "$CH/.codex/skills/gsd-worktrees/SKILL.md"; printf '0.4.12\n' > "$CH/.codex/skills/gsd-worktrees/.gsd-worktrees-skill"
 printf 'providers\tcodex\ncodex_skills\t%s\n' "$(cd "$CH/.codex/skills" && pwd -P)" > "$CB/.gsd-install-manifest"
 env -u GSD_CODEX_SKILL_DIR HOME="$CH" CODEX_HOME="$WORK/other-codex" GSD_BIN_DIR="$CB" GSD_COPY_DIR="$WORK/codex-runtime3" \
-  "$PKG/install.sh" --copy --reuse-install-config --no-user-hook >/dev/null
+  "$PKG/lib/install.sh" --reuse-install-config --no-user-hook >/dev/null
 [ ! -e "$CH/.codex/skills/gsd-worktrees" ]
 grep -q "^codex_skills	$(cd "$CH/.agents/skills" && pwd -P)\$" "$CB/.gsd-install-manifest"
 
@@ -100,16 +101,15 @@ FIXTURE="$WORK/source"
 mkdir -p "$FIXTURE"
 cp -R "$PKG/bin" "$PKG/lib" "$PKG/shims" "$PKG/skills" "$FIXTURE/"
 cp "$PKG/install.sh" "$FIXTURE/install.sh"
-# Sync must reuse both provider choice and relocated skill directory. This
-# isolated source has no remote, so sync performs no network writes.
+# The old install linked the commands into a checkout: gsd-sync names the
+# move to a release. This isolated source has no remote, so sync performs no
+# network writes.
 git -C "$FIXTURE" init -qb main
-GSD_BIN_DIR="$WORK/sync-bin" GSD_CODEX_SKILL_DIR="$WORK/codex-skills" \
-  "$FIXTURE/install.sh" --agent codex >/dev/null
-GSD_CLAUDE_SKILL_DIR="$WORK/must-not-install-claude" \
-  "$WORK/sync-bin/gsd-sync" >/dev/null
-[ -L "$WORK/codex-skills/gsdw-flow" ]
-[ ! -e "$WORK/must-not-install-claude" ]
-grep -q $'providers\tcodex' "$WORK/sync-bin/.gsd-install-manifest"
+mkdir -p "$WORK/sync-bin"; ln -s "$FIXTURE/bin/gsd-sync" "$WORK/sync-bin/gsd-sync"
+"$WORK/sync-bin/gsd-sync" > "$WORK/sync-output"
+grep -q 'link into this checkout' "$WORK/sync-output"
+grep -q "Move to the release:  $FIXTURE/install.sh --reuse-install-config" "$WORK/sync-output"
+[ ! -e "$WORK/sync-bin/.gsd-install-manifest" ]   # it installs nothing
 git -C "$FIXTURE" remote add origin "$WORK/missing-origin"
 GIT_TRACE="$WORK/sync-trace" "$WORK/sync-bin/gsd-sync" --check >/dev/null
 if grep -Eq 'git (fetch|pull|push)' "$WORK/sync-trace"; then
@@ -118,20 +118,19 @@ fi
 printf '#!/bin/sh\nexit 0\n' > "$FIXTURE/bin/gsd-obsolete"
 chmod +x "$FIXTURE/bin/gsd-obsolete"
 GSD_BIN_DIR="$WORK/upgrade-bin" GSD_COPY_DIR="$WORK/upgrade-runtime" \
-  GSD_CODEX_SKILL_DIR="$WORK/upgrade-skills" "$FIXTURE/install.sh" --copy --agent codex >/dev/null
+  GSD_CODEX_SKILL_DIR="$WORK/upgrade-skills" "$FIXTURE/lib/install.sh" --agent codex >/dev/null
 rm "$FIXTURE/bin/gsd-obsolete"
 ln -s "$WORK/unrelated-missing" "$WORK/upgrade-bin/unrelated"
 GSD_BIN_DIR="$WORK/upgrade-bin" GSD_COPY_DIR="$WORK/upgrade-runtime" \
-  "$FIXTURE/install.sh" --copy --reuse-install-config >/dev/null
+  "$FIXTURE/lib/install.sh" --reuse-install-config >/dev/null
 [ ! -L "$WORK/upgrade-bin/gsd-obsolete" ]
 [ ! -e "$WORK/upgrade-runtime/bin/gsd-obsolete" ]
 [ -f "$WORK/upgrade-runtime/bin/gsd-obsolete.bak" ]
 [ -L "$WORK/upgrade-bin/unrelated" ]
-GSD_BIN_DIR="$WORK/isolated-bin" GSD_CLAUDE_SKILL_DIR="$WORK/isolated-skills" \
-  "$FIXTURE/install.sh" >/dev/null
-[ -L "$WORK/isolated-skills/gsdw-flow" ]
+# an old link install's skill (a link into a checkout) is replaced by a copy
+mkdir -p "$WORK/isolated-skills"; ln -s "$FIXTURE/skills/gsdw-flow" "$WORK/isolated-skills/gsdw-flow"
 GSD_BIN_DIR="$WORK/isolated-bin" GSD_COPY_DIR="$WORK/isolated-runtime" \
-  GSD_CLAUDE_SKILL_DIR="$WORK/isolated-skills" "$FIXTURE/install.sh" --copy >/dev/null
+  GSD_CLAUDE_SKILL_DIR="$WORK/isolated-skills" "$FIXTURE/lib/install.sh" >/dev/null
 [ -d "$WORK/isolated-skills/gsdw-flow" ]
 [ ! -L "$WORK/isolated-skills/gsdw-flow" ]
 rm -rf "$FIXTURE"
@@ -140,35 +139,109 @@ grep -q 'standalone copy' "$WORK/sync-output"
 "$WORK/isolated-bin/gsd-planning-repair" --help >/dev/null
 
 if GSD_BIN_DIR="$PKG/bin" GSD_COPY_DIR="$WORK/unsafe" \
-  GSD_CLAUDE_SKILL_DIR="$WORK/unused" "$PKG/install.sh" --copy > "$WORK/unsafe-output" 2>&1; then
+  GSD_CLAUDE_SKILL_DIR="$WORK/unused" "$PKG/lib/install.sh" > "$WORK/unsafe-output" 2>&1; then
   echo 'overlapping source destination was accepted' >&2; exit 1
 fi
-grep -q 'unsafe --copy destination' "$WORK/unsafe-output"
+grep -q 'unsafe destination' "$WORK/unsafe-output"
 mkdir -p "$WORK/other-runtime"
 printf 'keep\n' > "$WORK/other-runtime/marker"
 ln -s "$WORK/other-runtime" "$WORK/runtime-link"
 if GSD_BIN_DIR="$WORK/link-bin" GSD_COPY_DIR="$WORK/runtime-link" \
-  GSD_CLAUDE_SKILL_DIR="$WORK/unused" "$PKG/install.sh" --copy > "$WORK/link-output" 2>&1; then
+  GSD_CLAUDE_SKILL_DIR="$WORK/unused" "$PKG/lib/install.sh" > "$WORK/link-output" 2>&1; then
   echo 'symlink runtime root was accepted' >&2; exit 1
 fi
 [ "$(cat "$WORK/other-runtime/marker")" = keep ]
 [ ! -e "$WORK/other-runtime/bin" ]
 if GSD_BIN_DIR="$WORK/link-bin" GSD_COPY_DIR="$WORK/runtime-link/" \
-  GSD_CLAUDE_SKILL_DIR="$WORK/unused" "$PKG/install.sh" --copy > "$WORK/link-output" 2>&1; then
+  GSD_CLAUDE_SKILL_DIR="$WORK/unused" "$PKG/lib/install.sh" > "$WORK/link-output" 2>&1; then
   echo 'trailing slash symlink runtime root was accepted' >&2; exit 1
 fi
 [ ! -e "$WORK/other-runtime/bin" ]
 if GSD_BIN_DIR="$WORK/unsafe-skill-bin" GSD_CODEX_SKILL_DIR="$PKG/skills" \
-  "$PKG/install.sh" --agent codex > "$WORK/skill-output" 2>&1; then
+  "$PKG/lib/install.sh" --agent codex > "$WORK/skill-output" 2>&1; then
   echo 'source-overlapping skill root was accepted' >&2; exit 1
 fi
 [ ! -e "$WORK/unsafe-skill-bin" ]
 mkdir "$WORK/no-python"
 for tool in bash dirname; do ln -s "$(command -v "$tool")" "$WORK/no-python/$tool"; done
 if PATH="$WORK/no-python" GSD_BIN_DIR="$WORK/no-python-bin" \
-  "$PKG/install.sh" --copy > "$WORK/python-output" 2>&1; then
+  "$PKG/lib/install.sh" > "$WORK/python-output" 2>&1; then
   echo 'missing Python accepted' >&2; exit 1
 fi
 grep -q 'requires Python 3.7+' "$WORK/python-output"
 [ ! -e "$WORK/no-python-bin" ]
+
+# gsd-core: lib/install.sh adds it for each chosen agent that has none, through
+# npx (a stub here: it records its args and stdin, and writes what the real
+# installer leaves in the agent's dir).
+CORE="$WORK/core"; mkdir -p "$CORE/stub"
+cat > "$CORE/stub/npx" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$CORE_LOG"
+cat >> "$CORE_STDIN"
+[ -z "${CORE_FAIL:-}" ] || { echo 'npm error 404'; exit 1; }
+d=$HOME/.claude
+case " $* " in *" --codex "*) d=${CODEX_HOME:-$HOME/.codex} ;; esac
+all="$*"; case " $all " in *" --config-dir "*) d=${all##*--config-dir }; d=${d%% *} ;; esac
+mkdir -p "$d/gsd-core/bin"; printf '1.19.0\n' > "$d/gsd-core/VERSION"
+printf '#!/bin/sh\n' > "$d/gsd-core/bin/gsd_run"; chmod +x "$d/gsd-core/bin/gsd_run"
+SH
+chmod +x "$CORE/stub/npx"
+core_install() {  # $1=name, then lib/install.sh args; HOME is $CORE/<name>
+  local name=$1; shift
+  mkdir -p "$CORE/$name"
+  printf 'rest of install.sh\n' | env -u GSD_NO_CORE -u CLAUDE_CONFIG_DIR -u CODEX_HOME -u GSD_CODEX_SKILL_DIR \
+    HOME="$CORE/$name" PATH="$CORE/stub:$PATH" CORE_LOG="$CORE/$name.log" CORE_STDIN="$CORE/$name.stdin" \
+    GSD_BIN_DIR="$CORE/$name/bin" GSD_CLAUDE_SKILL_DIR="$CORE/$name/claude-skills" \
+    ${CORE_ENV[@]+"${CORE_ENV[@]}"} "$PKG/lib/install.sh" "$@" > "$CORE/$name.out" 2>&1
+}
+CORE_ENV=()
+core_install fresh --agent claude
+grep -qx -- '-y --package=@opengsd/gsd-core@latest -- gsd-core --claude --global --profile=full' "$CORE/fresh.log"
+[ ! -s "$CORE/fresh.stdin" ]   # the installer never reads install.sh's stdin
+[ -x "$CORE/fresh/.claude/gsd-core/bin/gsd_run" ]
+grep -q '✔ claude gsd-core 1.19.0' "$CORE/fresh.out"
+[ -f "$CORE/fresh/claude-skills/gsdw-flow/SKILL.md" ]   # our skills are installed first
+core_install fresh --agent claude   # it is there now: left alone
+[ "$(wc -l < "$CORE/fresh.log")" -eq 1 ]
+grep -q '• claude already has gsd-core 1.19.0' "$CORE/fresh.out"
+core_install skip --agent claude --no-core
+[ ! -e "$CORE/skip.log" ]
+core_install skip --agent claude --reuse-install-config   # an update never installs it
+[ ! -e "$CORE/skip.log" ]
+CORE_ENV=(GSD_NO_CORE=1); core_install skip --agent claude; CORE_ENV=()
+[ ! -e "$CORE/skip.log" ]
+mkdir -p "$CORE/old/.claude/get-shit-done"
+core_install old --agent claude
+[ ! -e "$CORE/old.log" ]
+grep -q 'has the old GSD (get-shit-done-cc)' "$CORE/old.out"
+CORE_ENV=(CODEX_HOME="$CORE/moved/codex-home" GSD_CODEX_SKILL_DIR="$CORE/moved/codex-skills")
+core_install moved --agent codex; CORE_ENV=()
+grep -qx -- "-y --package=@opengsd/gsd-core@latest -- gsd-core --codex --global --profile=full --config-dir $CORE/moved/codex-home" "$CORE/moved.log"
+[ -x "$CORE/moved/codex-home/gsd-core/bin/gsd_run" ]
+CORE_ENV=(CORE_FAIL=1); core_install failed --agent claude; CORE_ENV=()   # still exit 0
+grep -q '⚠ gsd-core install for claude failed' "$CORE/failed.out"
+grep -q 'run:  npx @opengsd/gsd-core@latest --claude --global --profile=full$' "$CORE/failed.out"
+grep -q '^Done' "$CORE/failed.out"
+mkdir "$CORE/nonode"
+for tool in bash dirname python3 mkdir readlink ln rm mv cp cmp find sed grep cat head mktemp basename tr; do
+  ln -s "$(command -v "$tool")" "$CORE/nonode/$tool"
+done
+mkdir -p "$CORE/nonpx"
+env -u GSD_NO_CORE -u CLAUDE_CONFIG_DIR HOME="$CORE/nonpx" PATH="$CORE/nonode" \
+  GSD_BIN_DIR="$CORE/nonpx/bin" GSD_CLAUDE_SKILL_DIR="$CORE/nonpx/claude-skills" \
+  "$PKG/lib/install.sh" --agent claude > "$CORE/nonpx.out" 2>&1
+grep -q '⚠ gsd-core not installed for claude: no npx' "$CORE/nonpx.out"
+# install.sh --copy (what older releases' get.sh run on the release they
+# downloaded) is this package's lib/install.sh; without a package it refuses
+GSD_BIN_DIR="$WORK/compat-bin" GSD_COPY_DIR="$WORK/compat-runtime" GSD_CLAUDE_SKILL_DIR="$WORK/compat-skills" \
+  "$PKG/install.sh" --copy --agent claude >/dev/null
+[ "$(readlink "$WORK/compat-bin/gsd-list")" = "$WORK/compat-runtime/bin/gsd-list" ]
+[ -f "$WORK/compat-runtime/install.sh" ] && [ -f "$WORK/compat-runtime/lib/install.sh" ]
+cp "$PKG/install.sh" "$WORK/lone-install.sh"
+if bash "$WORK/lone-install.sh" --copy > "$WORK/lone.out" 2>&1; then echo 'install.sh --copy outside a package was accepted' >&2; exit 1; fi
+grep -q 'installs an unpacked package' "$WORK/lone.out"
+# install.sh refuses a bad agent before it downloads or makes anything
+if GSD_BIN_DIR="$WORK/gem-bin" bash "$PKG/install.sh" --agent gemini > "$WORK/gem.out" 2>&1; then echo 'gemini accepted' >&2; exit 1; fi
+grep -q 'no longer supported' "$WORK/gem.out"; [ ! -e "$WORK/gem-bin" ]
 echo 'copy installation: passed'

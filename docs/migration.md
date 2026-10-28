@@ -10,7 +10,7 @@ fallback. Gemini is gone too: gsd-core dropped it. Do these steps in order.
    `cp ~/.claude/settings.json ~/.claude/settings.json.bak`
    (and `$CODEX_HOME/hooks.json`, default `~/.codex/hooks.json`, if you use
    Codex).
-2. Update gsd-worktrees first: `gsd-update` (`gsd-sync` for a git checkout).
+2. Update gsd-worktrees first: `gsd-update` (commands linked into a git checkout: `./install.sh --reuse-install-config` there).
    It renames our skills to `gsdw-*` before gsd-core's installer can delete
    the old `gsd-*` ones. It also removes an old Gemini install.
 3. Dry run gsd-core and read what it says:

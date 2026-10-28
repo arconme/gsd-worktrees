@@ -5,27 +5,42 @@
 Install the latest release (no git checkout needed):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/get.sh | bash
-curl -fsSL …/get.sh | bash -s -- --agent claude --agent codex    # choose agents
-curl -fsSL …/get.sh | bash -s -- --version 0.2.0                  # a given release
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/install.sh | bash
+curl -fsSL …/install.sh | bash -s -- --agent claude --agent codex    # choose agents
+curl -fsSL …/install.sh | bash -s -- --version 0.2.0                  # a given release
 ```
 
-Pinned (a given installer version, read before running):
+Read it before running:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/v0.2.0/get.sh -o get.sh
-less get.sh && bash get.sh --version 0.2.0
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/install.sh -o install.sh
+less install.sh && bash install.sh
 ```
 
-`get.sh`:
+`./install.sh` in a git checkout does the same: it installs the release, not
+the checkout's files. So repos on a machine where you work on the toolkit
+still run a release.
+
+`install.sh`:
 
 1. asks GitHub for the latest release (or takes `--version`);
 2. downloads `gsd-worktrees-X.Y.Z.tar.gz` and `SHA256SUMS` from that release,
    and refuses to install when the checksum does not match;
-3. runs the package's `install.sh --copy` into
+3. runs the package's `lib/install.sh` (an older release: its `install.sh --copy`) into
    `~/.local/share/gsd-worktrees/releases/X.Y.Z/`, linking the commands in
    `~/.local/bin` and copying the skills into each agent's skill folder;
 4. keeps the release you had before, removes older ones.
+
+`lib/install.sh` then installs GSD itself (gsd-core) for each chosen agent that
+has none: `npx -y --package=@opengsd/gsd-core@latest -- gsd-core --<agent>
+--global --profile=full` (`--config-dir` added when `CLAUDE_CONFIG_DIR` /
+`CODEX_HOME` moves the agent's dir). It runs after our skills, which are
+`gsdw-*`, so gsd-core's installer keeps them. It is skipped when the agent
+already has gsd-core (updating it is your call), when the old GSD is there
+(see [migration.md](migration.md)), on an update (`--reuse-install-config`,
+which `gsd-update` uses), and with `--no-core`. A failed or
+impossible install (no `npx`) prints the command and never fails the
+toolkit install.
 
 Env: `GSD_BIN_DIR`, `GSD_RELEASES_DIR`, the `GSD_CLAUDE_SKILL_DIR` / `GSD_CODEX_SKILL_DIR` variables,
 and `GSD_UPDATE_REPO=owner/name` (a fork).
@@ -55,8 +70,10 @@ gsd-update                    # install the latest (keeps your agent choice)
 gsd-update --version 0.2.0    # a given release — also how you go back
 ```
 
-A git-checkout install (`./install.sh` from a clone) is updated with
-`gsd-sync` (a `git pull`); `gsd-update` says so.
+A git checkout is not an install: pull it with `gsd-sync` (or `git pull`);
+`gsd-update` run from it says so. Commands still linked into a checkout (how
+older versions of `./install.sh` installed) move to a release with
+`./install.sh --reuse-install-config`; `gsd-sync` tells you when you have them.
 
 Projects keep only `.gsd.conf`, the frozen shims and instruction blocks. After
 an update, `gsd-doctor` in a project tells you if its shims need

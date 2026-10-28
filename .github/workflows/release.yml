@@ -2,7 +2,7 @@ name: release
 
 # Push a tag vX.Y.Z (tools/release.sh does it) → run the full test suite →
 # publish a GitHub release with gsd-worktrees-X.Y.Z.tar.gz + SHA256SUMS.
-# get.sh and gsd-update download exactly these two files.
+# install.sh and gsd-update download exactly these two files.
 on:
   push:
     tags: ['v*.*.*']

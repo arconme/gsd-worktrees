@@ -165,14 +165,14 @@ fail() {  # $1=what is wrong  $2=the command that fixes it (short — no `cd`)  
 }
 section() { [ "$QUIET" = 1 ] || printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-# How to (re)install THIS toolkit: a git checkout re-runs its install.sh; a
-# release runtime re-runs its own get.sh for the same version.
+# How to (re)install THIS toolkit: install.sh installs a release (from a
+# checkout the latest; a release runtime its own version again).
 if [ -e "$GSD_PKG/.git" ]; then
   REINSTALL="$GSD_PKG/install.sh --reuse-install-config"
-elif [ -f "$GSD_PKG/get.sh" ]; then
-  REINSTALL="bash $GSD_PKG/get.sh --version $(gsd_version) --reuse-install-config"
+elif [ -f "$GSD_PKG/install.sh" ]; then
+  REINSTALL="bash $GSD_PKG/install.sh --version $(gsd_version) --reuse-install-config"
 else
-  REINSTALL="curl -fsSL https://raw.githubusercontent.com/$(gsd_update_repo)/main/get.sh | bash -s --"
+  REINSTALL="curl -fsSL https://raw.githubusercontent.com/$(gsd_update_repo)/main/install.sh | bash -s --"
 fi
 
 RAW_PROVIDERS=$(gsd_conf_get "$MAIN" providers)

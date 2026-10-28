@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-update.sh — releases: get.sh installs a release, gsd-update moves
+# test-update.sh — releases: install.sh installs a release, gsd-update moves
 # between releases, checksums are enforced, old releases are pruned, and the
 # "newer release" notice / doctor note. CI-safe: GitHub is a curl stub serving
 # fake releases built from this checkout.
@@ -7,6 +7,7 @@ set -uo pipefail
 PKG=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d); WORK=$(cd "$WORK" && pwd -P); trap 'rm -rf "$WORK"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+export GSD_NO_CORE=1   # install.sh must not run the real gsd-core installer (npx)
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export XDG_CACHE_HOME="$WORK/cache" GSD_UPDATE_REPO=acme/gsd-worktrees
 export GSD_BIN_DIR="$WORK/bin" GSD_CLAUDE_SKILL_DIR="$WORK/skills"
@@ -32,7 +33,7 @@ REL="$WORK/releases-served"
 release() {  # $1=version [$2=bad] — build a release tarball + SHA256SUMS from this checkout
   local v=$1 d="$WORK/build/gsd-worktrees-$1"
   mkdir -p "$d" "$REL/v$v"
-  cp -R "$PKG/bin" "$PKG/lib" "$PKG/shims" "$PKG/skills" "$PKG/install.sh" "$PKG/get.sh" "$d/"
+  cp -R "$PKG/bin" "$PKG/lib" "$PKG/shims" "$PKG/skills" "$PKG/install.sh" "$d/"
   printf '%s\n' "$v" > "$d/VERSION"
   tar -czf "$REL/v$v/gsd-worktrees-$v.tar.gz" -C "$WORK/build" "gsd-worktrees-$v"
   if [ "${2:-}" = bad ]; then echo "0000  gsd-worktrees-$v.tar.gz" > "$REL/v$v/SHA256SUMS"
@@ -64,12 +65,12 @@ export WORK REL PATH="$WORK/stub:$PATH"
 BIN="$WORK/bin"; RUN="$WORK/share/gsd-worktrees/releases"
 points() { readlink "$BIN/$1" | sed -E "s#^$RUN/([^/]+)/.*#\1#"; }
 
-section "get.sh — fresh install of a release"
-bash "$PKG/get.sh" --version 9.9.8 --agent claude > "$WORK/out" 2>&1
+section "install.sh — fresh install of a release"
+bash "$PKG/install.sh" --version 9.9.8 --agent claude > "$WORK/out" 2>&1
 is  "installs"                          "$?" 0
 is  "commands link into releases/9.9.8" "$(points gsd-list)" 9.9.8
 is  "the runtime says 9.9.8"            "$(cat "$RUN/9.9.8/VERSION")" 9.9.8
-if [ -f "$RUN/9.9.8/get.sh" ]; then ok "the runtime carries get.sh (for gsd-update)"; else bad "the runtime carries get.sh (for gsd-update)"; fi
+if [ -f "$RUN/9.9.8/install.sh" ]; then ok "the runtime carries install.sh (for gsd-update)"; else bad "the runtime carries install.sh (for gsd-update)"; fi
 if grep -q '^<!-- gsd-worktrees-skill ' "$WORK/skills/gsdw-flow/SKILL.md"; then ok "the skill copy is marked as the toolkit's"; else bad "the skill copy is marked as the toolkit's"; fi
 if [ -z "$(find "$WORK/skills/gsdw-flow" -type f ! -name SKILL.md)" ]; then ok "…in SKILL.md: no other file (gsd-core's installer stops on one)"; else bad "…in SKILL.md: no other file (gsd-core's installer stops on one)"; fi
 "$BIN/gsd-list" --help >/dev/null 2>&1; is "an installed command runs" "$?" 0
@@ -98,9 +99,9 @@ if "$BIN/gsd-update" --version 9.9.6 > "$WORK/out" 2>&1; then bad "a checksum mi
 has "…saying so"                        "checksum mismatch" "$WORK/out"
 is  "…commands unchanged"               "$(points gsd-list)" 9.9.7
 if "$BIN/gsd-update" --version 1.2.3 > "$WORK/out" 2>&1; then bad "a missing release is refused"; else ok "a missing release is refused"; fi
-if bash "$PKG/get.sh" --version latest > "$WORK/out" 2>&1; then bad "a non-version is refused"; else ok "a non-version is refused"; fi
+if bash "$PKG/install.sh" --version latest > "$WORK/out" 2>&1; then bad "a non-version is refused"; else ok "a non-version is refused"; fi
 "$PKG/bin/gsd-update" > "$WORK/out" 2>&1
-has "a git checkout is sent to gsd-sync" "git checkout — update it with: gsd-sync" "$WORK/out"
+has "a git checkout updates nothing, and names install.sh" "not a release — pull it with: gsd-sync; install the release with: $PKG/install.sh" "$WORK/out"
 
 section "the newer-release notice"
 rm -rf "$XDG_CACHE_HOME"

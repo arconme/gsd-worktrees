@@ -9,7 +9,7 @@
 #    "## X.Y.Z" section (write it first — it becomes the release notes).
 # 2. Writes VERSION, commits "release vX.Y.Z", adds the annotated tag vX.Y.Z.
 # 3. With --push: pushes main and the tag. GitHub Actions (release.yml) then
-#    runs every test suite and publishes the release; get.sh / gsd-update
+#    runs every test suite and publishes the release; install.sh / gsd-update
 #    pick it up from there. Without --push it prints the push command.
 set -euo pipefail
 die() { printf 'release: %s\n' "$*" >&2; exit 1; }

@@ -7,8 +7,9 @@ and optional native hooks.
 
 GSD itself (now [`@opengsd/gsd-core`](https://www.npmjs.com/package/@opengsd/gsd-core))
 provides the planning skills (`/gsd-phase`, `/gsd-discuss-phase`,
-`/gsd-plan-phase`, `/gsd-execute-phase`, …) and the `gsd_run` CLI. Install it
-with `npx @opengsd/gsd-core@latest --claude --global` (or `--codex`). Coming
+`/gsd-plan-phase`, `/gsd-execute-phase`, …) and the `gsd_run` CLI. Our install
+adds it for you (with `npx`, so it needs Node.js) for each agent that has none;
+by hand: `npx @opengsd/gsd-core@latest --claude --global --profile=full` (or `--codex`). Coming
 from the old `get-shit-done-cc`? See [docs/migration.md](docs/migration.md). This repo
 provides everything around them: one-command feature start/finish, per-phase
 git worktrees, claim races resolved automatically, a checkout lock, per-worktree
@@ -132,7 +133,7 @@ are marked and repeated bootstrap updates only those blocks. See
 | `gsd-finish` | Merges the phase back to base, pushes, deletes worktree + branch. `--pr` pushes and opens a GitHub PR instead (branch protection) | Phase is done. No argument needed from inside the worktree |
 | `gsd-doctor` | Health check that names the command fixing each finding. `--json` for CI; `--fix` runs the safe fixes after asking | Something feels off. Writes nothing unless you pass `--fix` |
 | `gsd-update` | Installs a newer release (release installs) | When a command says a newer release is out |
-| `gsd-sync` | Updates a git-checkout toolkit, re-links commands, checks this repo's shims | Occasionally, or after a toolkit change |
+| `gsd-sync` | Pulls the toolkit's git checkout, checks this repo's shims | Occasionally, or after a toolkit change |
 
 **Rarely:**
 
@@ -171,7 +172,7 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 | `gsd-bootstrap-repo` | Fit a repo with shared workflow files and explicitly selected provider adapters. Marked blocks preserve unrelated instructions. |
 | `gsd-tracker` | Tickets, one layer for every tracker: `start` / `finish` / `comment` / `status` / `snapshot` / `create` / `update` / `tasks` / `extract` / `check`, plus a tracker's own commands (ClickUp: `lists` / `members` / `api`). Tracker from `tracker =` in `.gsd.conf`: `none` (default), `clickup`, or `custom` (your script). The `gsdw-tracker` skill teaches agents to use it. See [docs/trackers.md](docs/trackers.md). `gsd-clickup` is the same, fixed to ClickUp. |
 | `gsd-update` | Update a release install: `--check`, the latest, or `--version X.Y.Z`. Checksum-verified; keeps the previous release. |
-| `gsd-sync` | Toolkit maintenance in one command: pull + push this repo, re-link `bin/`, and verify the shims of the repo you run it from are current. `--check` for a dry run. |
+| `gsd-sync` | Toolkit maintenance in one command: pull + push this repo, and verify the shims of the repo you run it from are current. `--check` for a dry run. |
 | `gsd-wt-new` / `gsd-wt-finish` | The worktree workers behind `gsd-start`/`gsd-finish` (create with config-copy + background install; merge back locked and conflict-safe). Callable standalone. |
 | `gsd-planning-repair` | Reconcile `.planning/ROADMAP.md` + `STATE.md` after a union merge and recompute their progress counters from the roadmap and the plan files on disk. `--check` is the CI guard (exit 1 on union-merge damage); `--commit` lands the repair. Run automatically by `gsd-finish` and the `post-merge` hook. |
 | `gsd-planning-merge` | The git merge driver behind `merge=gsd-planning`: union both sides, then collapse every single-value line back to one value so the contradiction never lands. Registered per clone by `gsd-bootstrap-repo`, re-asserted by `gsd-finish`. |
@@ -186,7 +187,7 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 these commands are and the order to use them in — `gsd-list` before claiming,
 `-p <N>` to attach, `-n` only for genuinely new work. Only its description line
 sits in context permanently; the body loads when a session is actually about
-GSD. `./install.sh` links it; `gsd-sync` keeps it current.
+GSD. `install.sh` copies it; `gsd-update` keeps it current.
 
 ## Per-repo footprint
 
@@ -234,21 +235,25 @@ command-level guards do not require it.
 **Use it (a release):**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/install.sh | bash
 # pick the agents that get the skills (default: claude):
-curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/get.sh | bash -s -- --agent claude --agent codex
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/install.sh | bash -s -- --agent claude --agent codex
 ```
 
-Careful? Pin the installer to a release tag instead of `main`, and read it first:
+Careful? Download the installer, read it, then run it:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/v0.2.0/get.sh -o get.sh
-less get.sh && bash get.sh --version 0.2.0
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/install.sh -o install.sh
+less install.sh && bash install.sh
 ```
 
 This downloads the latest GitHub release, checks its SHA256, and installs it to
 `~/.local/share/gsd-worktrees/releases/<version>/` with the commands linked in
-`~/.local/bin`. `--version X.Y.Z` installs a given release.
+`~/.local/bin`. `--version X.Y.Z` installs a given release. It also installs
+gsd-core (`--profile=full`) for each chosen agent that has none; an agent that
+has it is left alone, and so is the old GSD (see the migration guide).
+`--no-core` skips this. Without Node.js (`npx`) it prints the command to run
+later.
 
 **Windows: use WSL2.** The toolkit is bash and expects a Unix system
 (symlinks, `~/.local/bin`, `perl`, Unix process checks). Plain Windows,
@@ -259,13 +264,13 @@ CI tests on every push:
 wsl --install                     # in PowerShell (admin), once; installs Ubuntu, then reboot
 # then, in the Ubuntu terminal:
 sudo apt update && sudo apt install -y git curl perl python3 jq
-curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/install.sh | bash
 ```
 
 - Keep your projects on the Linux side (`~/projects`), not under `/mnt/c/…`:
   it is much faster there, and file permissions and line endings behave.
-- Install and run the agents (Claude Code, Codex) and gsd-core
-  (`npx @opengsd/gsd-core@latest --claude --global`) inside WSL too, so they see the same PATH.
+- Install and run the agents (Claude Code, Codex) and Node.js (for gsd-core)
+  inside WSL too, so they see the same PATH.
 - If `gsd-*` is not found after install, open a new terminal (Ubuntu adds
   `~/.local/bin` to PATH at login once it exists).
 - VS Code: the "WSL" extension opens the Linux-side folders directly.
@@ -291,11 +296,12 @@ cd gsd-worktrees
 ./install.sh --agent claude      # or --agent codex / --all-agents
 ```
 
-Symlink mode means `git pull` updates the live commands, and edits to the live
-commands land here ready to commit. Use `./install.sh --copy` for a standalone
-runtime containing commands and their required libraries; command symlinks
-point into that copy. See [copy installation](docs/copy-install.md) for
-`GSD_COPY_DIR`, backup behavior, and updates.
+`./install.sh` here does what the curl line does: it installs the latest
+**release**, not this checkout's files. So your other repos run a release
+while you edit here, and your edits reach them only once you cut a release
+and run `gsd-update`. To try an edit, run it from the checkout
+(`./bin/gsd-list …`) or run the tests. The installing itself is done by the
+release's `lib/install.sh`; you never run that by hand.
 Commands default to `GSD_BIN_DIR` or `~/.local/bin`. Skill roots can be isolated
 or relocated with `GSD_CLAUDE_SKILL_DIR` and `GSD_CODEX_SKILL_DIR`. Existing unrelated files are backed up; command links
 and skills the toolkit placed earlier are replaced in place.
@@ -307,13 +313,15 @@ not set up — run `gsd-init` instead. In other repos it checks nothing else;
 in a set-up repo it also applies the toolkit's guard to slash commands you type.
 `./install.sh --no-user-hook` leaves it out and removes it.
 
-**Staying up to date (checkout):** run `gsd-sync` — it pulls this repo, pushes your local
-commits, re-links any new commands, and verifies the reference repo's shims
-are current. `gsd-sync --check` previews without changing anything.
-It uses last-fetched remote refs; it does not fetch. Installation records the
-selected providers and skill destinations in `GSD_BIN_DIR/.gsd-install-manifest`
-(data, never sourced as shell). Sync reuses that selection instead of defaulting
-to Claude. Repeat all desired `--agent` flags when changing the installation set.
+**The checkout and `gsd-sync`:** run `gsd-sync` — it pulls this repo, pushes your local
+commits, and verifies the reference repo's shims are current. `gsd-sync --check`
+previews without changing anything. It uses last-fetched remote refs; it does
+not fetch. Commands still linked into the checkout (how older versions of
+`./install.sh` installed) are named, with the move to a release.
+Installation records the selected providers and skill destinations in
+`GSD_BIN_DIR/.gsd-install-manifest` (data, never sourced as shell);
+`gsd-update` reuses that selection instead of defaulting to Claude. Repeat
+all desired `--agent` flags when changing the installation set.
 
 ## The loop per feature
 
@@ -428,7 +436,7 @@ bash tests/test-review-fixes.sh
 tests/test-list.sh
 tests/test-review-round2.sh
 tests/test-commands.sh
-tests/test-update.sh     # releases: get.sh install, gsd-update, checksums, pruning, the update notice
+tests/test-update.sh     # releases: install.sh, gsd-update, checksums, pruning, the update notice
 tests/test-ui.sh         # UI gates: gsd-ui design/layout/shots/check/look/approve (stubs + local server), finish gate, doctor, --no-ui
 tests/test-ui-browser.sh # the real page checker in a browser (needs GSD_PLAYWRIGHT_ROOT=<folder with playwright>; skips without)
 tests/test-doctor.sh     # doctor checks: missing tools, stale skills, .gsd.conf typos, base branch, pre-merge gate, …

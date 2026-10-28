@@ -11,8 +11,8 @@
 # kept (install manifest). The release you had before stays on disk, so
 # going back is `gsd-update --version <old>`.
 #
-# A git-checkout install (./install.sh without --copy, for working on the
-# toolkit itself) updates with gsd-sync instead — gsd-update says so.
+# Run from a git checkout, it updates nothing: the checkout is pulled with
+# git (or gsd-sync), and ./install.sh installs the release.
 #
 # Other commands (gsd-start, gsd-list) print one line when a newer release is
 # out, at most one GitHub call a day; gsd-doctor reports it too.
@@ -54,7 +54,7 @@ echo "installed : $CUR  ($GSD_PKG)"
 echo "latest    : ${LATEST:-unknown (GitHub not reachable)}  ($(gsd_update_repo))"
 
 if [ -e "$GSD_PKG/.git" ]; then
-  echo "• this install is a git checkout — update it with: gsd-sync"
+  echo "• this is a git checkout, not a release — pull it with: gsd-sync; install the release with: $GSD_PKG/install.sh"
   exit 0
 fi
 [ "$CHECK" = 0 ] || {
@@ -67,11 +67,11 @@ if [ -z "$WANT" ]; then
   gsd_version_gt "$LATEST" "$CUR" || { echo "✔ up to date"; exit 0; }
   WANT=$LATEST
 fi
-[ -f "$GSD_PKG/get.sh" ] || die "$GSD_PKG has no get.sh — reinstall once with the curl line in the README"
+[ -f "$GSD_PKG/install.sh" ] || die "$GSD_PKG has no install.sh — reinstall once with the curl line in the README"
 
 # Keep this install's places: its bin dir, and (for a release runtime) its
 # releases dir. Anything else (an old --copy runtime) moves to the default.
 REL_DIR=""
 [ "$(basename "$(dirname "$GSD_PKG")")" != releases ] || REL_DIR=$(dirname "$GSD_PKG")
 GSD_BIN_DIR="$INSTALL_BIN" GSD_RELEASES_DIR="${REL_DIR:-${GSD_RELEASES_DIR:-}}" \
-  bash "$GSD_PKG/get.sh" --version "$WANT" --reuse-install-config
+  bash "$GSD_PKG/install.sh" --version "$WANT" --reuse-install-config

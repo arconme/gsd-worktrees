@@ -4,7 +4,7 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
-## Unreleased
+## 0.6.0
 
 - **`gsd-tracker login`: a ClickUp token for one repo in one step.** It asks
   for the token (hidden), tests it, saves it to
@@ -13,6 +13,22 @@ becomes its release notes.
   name. A token ClickUp refuses is never saved. When the token was typed, it
   offers to commit `.gsd.conf` (that file only, never pushed). `gsd-doctor`
   T073 now names it.
+
+- **One installer: `install.sh`.** `get.sh` is gone; the curl line is now
+  `curl -fsSL https://raw.githubusercontent.com/arconme/gsd-worktrees/main/install.sh | bash`.
+  `./install.sh` in a git checkout installs the release too, never the
+  checkout's own files, so your repos run a release while you work on the
+  toolkit. The old link install (commands linked into a checkout, live with
+  every edit) is gone. What you do: if your commands link into a checkout
+  (`gsd-sync` tells you), run `./install.sh --reuse-install-config` there
+  once. Installed releases update as before with `gsd-update`. The copying
+  step moved to `lib/install.sh`, which only the downloaded release runs.
+- **Install also installs gsd-core.** `install.sh` now adds GSD itself
+  (`@opengsd/gsd-core`, full skill profile) for each agent that has none, so
+  a new machine needs one command. An agent that already has gsd-core is
+  left alone, `gsd-update` never runs it, and `--no-core` skips it. Needs
+  Node.js (`npx`); without it the install finishes and prints the gsd-core
+  command to run.
 
 - **Phase sessions compact at 300k, not 200k.** `/gsd-plan-phase` reads a
   47k-token workflow and reached 140k before its planner returned, so a 200k
