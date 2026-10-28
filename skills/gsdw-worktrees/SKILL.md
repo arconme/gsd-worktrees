@@ -90,7 +90,7 @@ user says no ticket covers the work.
 | `gsd-init` | Repo with no GSD → ready for `gsd-start`. Use `--providers claude,codex` for a provider set and `--provider codex` to choose the planning session. In a terminal it opens that session (`/gsd-new-project` / `/gsd-ingest-docs`); from your shell (no terminal) it prints the command — have the user run it, or run the printed skill in this session. |
 | `gsd-bootstrap-repo` | Just the file installation `gsd-init` wraps. Idempotent. |
 | `gsd-planning-repair` | Reconcile `ROADMAP.md` + `STATE.md` after a union merge, recompute counters. `--check` = CI guard, `--commit` = land the repair. Runs automatically from `gsd-finish` and the `post-merge` hook. |
-| `gsd-update` | Install the newest toolkit release (keeps the chosen agents). `--check` only compares versions. |
+| `gsd-update` | Install the newest toolkit release (keeps the chosen agents), then the latest gsd-core. `--check` only compares versions; `--no-core` skips gsd-core. |
 
 Every command self-documents: `gsd-start --help`, `gsd-finish --help`, ….
 Prefer them over chaining the manual steps — they carry parallel-session race

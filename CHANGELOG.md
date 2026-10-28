@@ -6,6 +6,17 @@ becomes its release notes.
 
 ## 0.6.1
 
+- **`gsd-update` updates gsd-core too.** After the toolkit, it brings GSD
+  itself to npm's latest for each agent you installed (full skill profile);
+  an agent without it gets it. `gsd-update --check` shows both versions;
+  `--no-core` leaves gsd-core alone. The update notice and `gsd-doctor` now
+  say `gsd-update` for a newer gsd-core too.
+- **No more old-GSD special cases.** The toolkit no longer looks for the old
+  `get-shit-done-cc` (`gsd-sdk`): install no longer skips gsd-core when it
+  finds it, and doctor, `gsd-start` and the update notice no longer name it.
+  Without gsd-core you get the plain "gsd-core not found" with the install
+  command.
+
 - **`gsd-tracker login` runs in the main checkout only.** In a phase
   worktree it refuses before asking for the token, and names the main
   checkout: it edits and commits that checkout's `.gsd.conf`, not the folder

@@ -89,13 +89,13 @@ fails "-n and -p together are refused"  bash -c 'cd "$1" && gsd-start -n x -p 1 
 fails "-p of a phase not in the roadmap" bash -c 'cd "$1" && gsd-start -p 9 --no-launch' _ "$R"
 has   "…and says so"                    "phase 9 not found" "$WORK/out"
 fails "re-claiming an existing title"   bash -c 'cd "$1" && gsd-start -n "Catalog" --no-launch' _ "$R"
-# only the old GSD (get-shit-done-cc's gsd-sdk) → refused, with the way to migrate.
+# no gsd-core (the old GSD's gsd-sdk does not count) → refused, with the install.
 # A bare PATH and an empty HOME, so no gsd-core of this machine is found.
 mkdir -p "$WORK/oldgsd" "$WORK/oldhome"
 printf '#!/bin/sh\necho 1.42.0\n' > "$WORK/oldgsd/gsd-sdk"; chmod +x "$WORK/oldgsd/gsd-sdk"
-fails "only the old GSD (gsd-sdk) → a claim is refused" env -u GSD_CLI -u CLAUDE_CONFIG_DIR -u CODEX_HOME \
+fails "no gsd-core, only the old gsd-sdk → a claim is refused" env -u GSD_CLI -u CLAUDE_CONFIG_DIR -u CODEX_HOME \
   HOME="$WORK/oldhome" PATH="$PKG/bin:$WORK/oldgsd:/usr/bin:/bin" bash -c 'cd "$1" && gsd-start -n "cart" --no-launch' _ "$R"
-has   "…and says to move to gsd-core"   "only the old GSD (get-shit-done-cc) is installed" "$WORK/out"
+has   "…and says gsd-core is missing"   "GSD (gsd-core) not found" "$WORK/out"
 has   "…with the install command"       "npx @opengsd/gsd-core@latest --claude --global" "$WORK/out"
 
 section "gsd-start — claim, attach, insert, flow mode"

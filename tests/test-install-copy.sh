@@ -195,16 +195,15 @@ core_install skip --agent claude --reuse-install-config   # an update never inst
 [ ! -e "$CORE/skip.log" ]
 CORE_ENV=(GSD_NO_CORE=1); core_install skip --agent claude; CORE_ENV=()
 [ ! -e "$CORE/skip.log" ]
-mkdir -p "$CORE/old/.claude/get-shit-done"
+mkdir -p "$CORE/old/.claude/get-shit-done"   # the old GSD: no special case, gsd-core is installed
 core_install old --agent claude
-[ ! -e "$CORE/old.log" ]
-grep -q 'has the old GSD (get-shit-done-cc)' "$CORE/old.out"
+[ -s "$CORE/old.log" ]
 CORE_ENV=(CODEX_HOME="$CORE/moved/codex-home" GSD_CODEX_SKILL_DIR="$CORE/moved/codex-skills")
 core_install moved --agent codex; CORE_ENV=()
 grep -qx -- "-y --package=@opengsd/gsd-core@latest -- gsd-core --codex --global --profile=full --config-dir $CORE/moved/codex-home" "$CORE/moved.log"
 [ -x "$CORE/moved/codex-home/gsd-core/bin/gsd_run" ]
 CORE_ENV=(CORE_FAIL=1); core_install failed --agent claude; CORE_ENV=()   # still exit 0
-grep -q '⚠ gsd-core install for claude failed' "$CORE/failed.out"
+grep -q '⚠ gsd-core for claude not installed' "$CORE/failed.out"
 grep -q 'run:  npx @opengsd/gsd-core@latest --claude --global --profile=full$' "$CORE/failed.out"
 grep -q '^Done' "$CORE/failed.out"
 mkdir "$CORE/nonode"

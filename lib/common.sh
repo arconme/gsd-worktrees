@@ -124,7 +124,7 @@ gsd_validation_problem() {  # $1=phase dir $2=<P> $3=checkout → why the test a
 }
 
 gsd_phase_dir() {  # $1=checkout $2=phase-<N>-* branch → GSD_PD (phase dir), GSD_P (its prefix), GSD_N; 1 = none
-  # Dirs come padded (07-, 02.1- from gsd-sdk) or not (7.1-); the artifact
+  # Dirs come padded (07-, 02.1- from gsd-core) or not (7.1-); the artifact
   # prefix is taken from the dir that exists.
   local ni nd c d
   GSD_PD=""; GSD_P=""
@@ -203,9 +203,9 @@ gsd_flow_finish_gate() {  # $1=MAIN $2=phase branch $3=its worktree → 1 = refu
   return 1
 }
 
-# GSD's command-line tool: gsd-core's gsd_run. The name gsd-tools proves
-# nothing (the old get-shit-done-cc package ships a different gsd-tools), so
-# a candidate counts only when runtime-identity says it is gsd-core. An npx
+# GSD's command-line tool: gsd-core's gsd_run. A name proves nothing (other
+# packages ship a gsd-tools too), so a candidate counts only when
+# runtime-identity says it is gsd-core. An npx
 # install puts nothing on PATH: look in each agent's config dir too.
 # GSD_CLI overrides (tests). Each probe starts node; every command calls this once.
 GSD_CORE_INSTALL="npx @opengsd/gsd-core@latest"
@@ -222,13 +222,8 @@ gsd_cli() {  # → gsd-core's gsd_run; nonzero when none
   done
   return 1
 }
-gsd_cli_missing() {  # → why there is no gsd_cli, and the fix (lines)
-  if command -v gsd-sdk >/dev/null 2>&1; then
-    printf '%s\n' "only the old GSD (get-shit-done-cc) is installed — gsd-worktrees now needs gsd-core" \
-      "  move to it (see docs/migration.md):  $GSD_CORE_INSTALL --claude --global"
-  else
-    printf '%s\n' "GSD (gsd-core) not found — install it:  $GSD_CORE_INSTALL --claude --global"
-  fi
+gsd_cli_missing() {  # → why there is no gsd_cli, and the fix
+  printf '%s\n' "GSD (gsd-core) not found — install it:  $GSD_CORE_INSTALL --claude --global --profile=full"
 }
 
 # A skill copy this toolkit installed (install.sh --copy) ends its SKILL.md

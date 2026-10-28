@@ -391,44 +391,16 @@ mv "$manifest_tmp" "$MANIFEST"
 
 # ── GSD itself (gsd-core) ────────────────────────────────────────────────────
 # The toolkit needs gsd-core: gsd-start claims phases with its gsd_run. An
-# install adds it for each chosen agent that has none, with the full skill
-# profile (the phase flow runs skills only it has). Runs after our skills:
-# they are gsdw-*, so gsd-core's installer (it deletes skills/gsd-*) keeps
-# them. An agent that has gsd-core is left alone (updating it is the user's
-# call), and so is the old GSD (a migration: docs/migration.md). An update
-# (--reuse-install-config), --no-core and GSD_NO_CORE=1 (tests) skip this.
-# Failing here never fails the install: it prints the command to run.
-install_core() {  # $1=provider
-  local p=$1 d moved cmd
-  case "$p" in
-    claude) d=${CLAUDE_CONFIG_DIR:-$HOME/.claude}; moved=${CLAUDE_CONFIG_DIR:-} ;;
-    codex) d=${CODEX_HOME:-$HOME/.codex}; moved=${CODEX_HOME:-} ;;
-    *) return 0 ;;
-  esac
-  # --config-dir only when the agent's dir is moved
-  local args=("--$p" --global --profile=full)
-  [ -z "$moved" ] || args+=(--config-dir "$d")
-  cmd="$GSD_CORE_INSTALL$(printf ' %s' "${args[@]}")"   # the caller's IFS is ","
-  if [ -x "$d/gsd-core/bin/gsd_run" ]; then
-    echo "• $p already has gsd-core $(head -1 "$d/gsd-core/VERSION" 2>/dev/null || true)"; return 0
-  fi
-  if command -v gsd-sdk >/dev/null 2>&1 || [ -d "$d/get-shit-done" ]; then
-    echo "⚠ $p has the old GSD (get-shit-done-cc); gsd-core not installed — move to it: docs/migration.md"; return 0
-  fi
-  if ! command -v npx >/dev/null 2>&1; then
-    echo "⚠ gsd-core not installed for $p: no npx (install Node.js), then run:  $cmd"; return 0
-  fi
-  echo "▶ installing gsd-core for ${p}…"
-  # stdin is not the installer's (under curl | bash it is the rest of install.sh)
-  if npx -y --package=@opengsd/gsd-core@latest -- gsd-core "${args[@]}" </dev/null 2>&1 | sed 's/^/  /' \
-     && [ -x "$d/gsd-core/bin/gsd_run" ]; then
-    echo "✔ $p gsd-core $(head -1 "$d/gsd-core/VERSION" 2>/dev/null || true) → $d"
-  else
-    echo "⚠ gsd-core install for $p failed (see above); run:  $cmd"
-  fi
-}
+# install adds it (lib/core.sh) for each chosen agent that has none. Runs
+# after our skills: they are gsdw-*, so gsd-core's installer (it deletes
+# skills/gsd-*) keeps them. An agent that has gsd-core is left alone here;
+# gsd-update brings it to the latest. An update (--reuse-install-config),
+# --no-core and GSD_NO_CORE=1 (tests) skip this. Failing here never fails
+# the install: it prints the command to run.
+# shellcheck source=lib/core.sh
+. "$REPO/lib/core.sh"
 if [ "$CORE" = on ] && [ "$REUSE" = 0 ] && [ -z "${GSD_NO_CORE:-}" ]; then
-  oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do install_core "$provider"; done; IFS=$oldifs
+  oldifs=$IFS; IFS=,; for provider in $PROVIDERS; do gsd_core_sync "$provider" install; done; IFS=$oldifs
 fi
 
 case ":$PATH:" in

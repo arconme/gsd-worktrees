@@ -132,7 +132,7 @@ are marked and repeated bootstrap updates only those blocks. See
 | `gsd-list` | Table of every phase: number, plans done, stage, worktree | "What's in flight?" Read-only, safe anywhere |
 | `gsd-finish` | Merges the phase back to base, pushes, deletes worktree + branch. `--pr` pushes and opens a GitHub PR instead (branch protection) | Phase is done. No argument needed from inside the worktree |
 | `gsd-doctor` | Health check that names the command fixing each finding. `--json` for CI; `--fix` runs the safe fixes after asking | Something feels off. Writes nothing unless you pass `--fix` |
-| `gsd-update` | Installs a newer release (release installs) | When a command says a newer release is out |
+| `gsd-update` | Installs a newer release, and the latest gsd-core | When a command says a newer release is out |
 
 **Rarely:**
 
@@ -170,7 +170,7 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 | `gsd-init` | Take a repo with no GSD to "ready for gsd-start": bootstrap one or more providers, then open the planning session (`/gsd-new-project` or `/gsd-ingest-docs`) and, when it closes, say whether the ROADMAP is ready (`gsd-start -p <first phase>` next). With `--no-launch` or no terminal it prints the command. |
 | `gsd-bootstrap-repo` | Fit a repo with shared workflow files and explicitly selected provider adapters. Marked blocks preserve unrelated instructions. |
 | `gsd-tracker` | Tickets, one layer for every tracker: `start` / `finish` / `comment` / `status` / `snapshot` / `create` / `update` / `tasks` / `extract` / `check`, plus a tracker's own commands (ClickUp: `lists` / `members` / `api`). Tracker from `tracker =` in `.gsd.conf`: `none` (default), `clickup`, or `custom` (your script). The `gsdw-tracker` skill teaches agents to use it. See [docs/trackers.md](docs/trackers.md). `gsd-clickup` is the same, fixed to ClickUp. |
-| `gsd-update` | Update a release install: `--check`, the latest, or `--version X.Y.Z`. Checksum-verified; keeps the previous release. |
+| `gsd-update` | Update a release install: `--check`, the latest, or `--version X.Y.Z`. Checksum-verified; keeps the previous release. Then gsd-core to its latest for each installed agent (`--no-core` skips it). |
 | `gsd-wt-new` / `gsd-wt-finish` | The worktree workers behind `gsd-start`/`gsd-finish` (create with config-copy + background install; merge back locked and conflict-safe). Callable standalone. |
 | `gsd-planning-repair` | Reconcile `.planning/ROADMAP.md` + `STATE.md` after a union merge and recompute their progress counters from the roadmap and the plan files on disk. `--check` is the CI guard (exit 1 on union-merge damage); `--commit` lands the repair. Run automatically by `gsd-finish` and the `post-merge` hook. |
 | `gsd-planning-merge` | The git merge driver behind `merge=gsd-planning`: union both sides, then collapse every single-value line back to one value so the contradiction never lands. Registered per clone by `gsd-bootstrap-repo`, re-asserted by `gsd-finish`. |
@@ -249,8 +249,7 @@ This downloads the latest GitHub release, checks its SHA256, and installs it to
 `~/.local/share/gsd-worktrees/releases/<version>/` with the commands linked in
 `~/.local/bin`. `--version X.Y.Z` installs a given release. It also installs
 gsd-core (`--profile=full`) for each chosen agent that has none; an agent that
-has it is left alone, and so is the old GSD (see the migration guide).
-`--no-core` skips this. Without Node.js (`npx`) it prints the command to run
+has it is left alone (`gsd-update` updates it). `--no-core` skips this. Without Node.js (`npx`) it prints the command to run
 later.
 
 **Windows: use WSL2.** The toolkit is bash and expects a Unix system
@@ -279,7 +278,8 @@ off). Then:
 
 ```sh
 gsd-update --check        # installed vs latest
-gsd-update                # install the latest
+gsd-update                # install the latest, then the latest gsd-core
+gsd-update --no-core      # the toolkit only
 gsd-update --version 0.2.0   # a given release (going back works too)
 ```
 

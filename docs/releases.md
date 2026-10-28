@@ -36,9 +36,8 @@ has none: `npx -y --package=@opengsd/gsd-core@latest -- gsd-core --<agent>
 --global --profile=full` (`--config-dir` added when `CLAUDE_CONFIG_DIR` /
 `CODEX_HOME` moves the agent's dir). It runs after our skills, which are
 `gsdw-*`, so gsd-core's installer keeps them. It is skipped when the agent
-already has gsd-core (updating it is your call), when the old GSD is there
-(see [migration.md](migration.md)), on an update (`--reuse-install-config`,
-which `gsd-update` uses), and with `--no-core`. A failed or
+already has gsd-core (`gsd-update` updates it), on an update
+(`--reuse-install-config`, which `gsd-update` uses), and with `--no-core`. A failed or
 impossible install (no `npx`) prints the command and never fails the
 toolkit install.
 
@@ -66,9 +65,16 @@ the update command is `npx @opengsd/gsd-core@latest --claude --global`).
 
 ```sh
 gsd-update --check            # installed vs latest, changes nothing
-gsd-update                    # install the latest (keeps your agent choice)
+gsd-update                    # install the latest (keeps your agent choice), then gsd-core
 gsd-update --version 0.2.0    # a given release — also how you go back
+gsd-update --no-core          # leave gsd-core as it is
 ```
+
+After the toolkit, `gsd-update` brings gsd-core to npm's latest for each
+agent the install chose (`lib/core.sh`, the same `--profile=full` installer
+run as a fresh install). An agent without gsd-core gets it; one on the latest
+is left alone. Offline, or without `npx`, it prints the command to run. The
+update notice and `gsd-doctor` name `gsd-update` for both.
 
 A git checkout is not an install: pull it with `git pull`; `gsd-update` run
 from it says so. Commands still linked into a checkout (how older versions of

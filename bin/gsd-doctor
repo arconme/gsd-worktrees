@@ -224,17 +224,12 @@ if command -v perl >/dev/null 2>&1; then
 else
   fail "perl not found — claims cannot add roadmap rows and the roadmap check is skipped" "install perl" "T006"
 fi
-# GSD itself: gsd-core's gsd_run (lib/common.sh gsd_cli). The old
-# get-shit-done-cc (gsd-sdk) is not enough any more.
+# GSD itself: gsd-core's gsd_run (lib/common.sh gsd_cli).
 case "$DOCTOR_PROVIDER" in codex) gsd_agent=codex ;; *) gsd_agent=claude ;; esac
 if gsd_run=$(gsd_cli); then
   pass "gsd-core $(gsd_gsd_installed) ($gsd_run)"
-  command -v gsd-sdk >/dev/null 2>&1 \
-    && note "the old GSD (get-shit-done-cc) is still installed too — remove it: npm rm -g get-shit-done-cc"
-elif command -v gsd-sdk >/dev/null 2>&1; then
-  fail "only the old GSD (get-shit-done-cc) is installed — gsd-worktrees now needs gsd-core; gsd-start cannot claim phases" "$GSD_CORE_INSTALL --$gsd_agent --global (see docs/migration.md)" "T005"
 else
-  fail "GSD (gsd-core) not found — gsd-start cannot claim phases" "$GSD_CORE_INSTALL --$gsd_agent --global" "T005"
+  fail "GSD (gsd-core) not found — gsd-start cannot claim phases" "$GSD_CORE_INSTALL --$gsd_agent --global --profile=full" "T005"
 fi
 # T009 — gsd-core's skill profile: core and standard leave out skills the
 # phase flow runs (validate-phase, secure-phase, ui-phase, sketch, …); only
@@ -302,7 +297,7 @@ if [ -z "${GSD_NO_UPDATE_CHECK:-}" ] && [ -n "$have" ] && command -v npm >/dev/n
   elif [ "$have" = "$want" ]; then
     pass "gsd-core $have is the latest on npm"
   elif gsd_version_gt "$want" "$have"; then
-    update gsd-core "$have" "$want" "$GSD_GSD_UPDATE_CMD --$gsd_agent --global (then re-check gsd-list/gsd-planning-repair)"
+    update gsd-core "$have" "$want" "$(gsd_core_update_how "$gsd_agent") (then re-check gsd-list/gsd-planning-repair)"
   else
     note "gsd-core $have installed, ahead of npm latest ($want)"
   fi

@@ -7,7 +7,7 @@ set -uo pipefail
 PKG=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d); WORK=$(cd "$WORK" && pwd -P); trap 'rm -rf "$WORK"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-export GSD_NO_CORE=1   # install.sh must not run the real gsd-core installer (npx)
+export GSD_NO_CORE=1   # install.sh and gsd-update must not run the real gsd-core installer (npx)
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 export XDG_CACHE_HOME="$WORK/cache" GSD_UPDATE_REPO=acme/gsd-worktrees
 export GSD_BIN_DIR="$WORK/bin" GSD_CLAUDE_SKILL_DIR="$WORK/skills"
@@ -129,17 +129,7 @@ rm -f "$(gsd_gsd_cache)"   # a real gsd-core on this machine may have filled it 
 GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2>&1
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$(gsd_gsd_cache)" ] && break; sleep 0.5; done
 GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2> "$WORK/err"
-has "a newer GSD on npm gets its own line" "GSD 1.2.0 is out (you have 1.0.0) — update: npx @opengsd/gsd-core@latest" "$WORK/err"
-hasnt "gsd-core found → no migrate line" "migrate" "$WORK/err"
-# only the old GSD (gsd-sdk) → a line that says to migrate. A bare PATH and an
-# empty HOME, so no gsd-core of this machine is found.
-printf '#!/usr/bin/env bash\necho "gsd-sdk v1.0.0"\n' > "$WORK/stub/gsd-sdk"; chmod +x "$WORK/stub/gsd-sdk"
-mkdir -p "$WORK/emptyhome"
-env -u GSD_CLI -u CLAUDE_CONFIG_DIR -u CODEX_HOME HOME="$WORK/emptyhome" PATH="$WORK/stub:/usr/bin:/bin" \
-  GSD_UPDATE_NOTICE=always "$BIN/gsd-list" --repo "$WORK/nope" > /dev/null 2> "$WORK/err"
-has "only gsd-sdk → migrate line" "GSD moved to gsd-core and gsd-worktrees needs it — migrate: see docs/migration.md" "$WORK/err"
-hasnt "…and no npm line for it" "GSD 1.2.0 is out" "$WORK/err"
-rm -f "$WORK/stub/gsd-sdk"
+has "a newer GSD on npm gets its own line" "GSD 1.2.0 is out (you have 1.0.0) — update: gsd-update" "$WORK/err"
 git init -qb main "$WORK/fresh"
 # gsd-init needs gsd-bootstrap-repo on PATH (the installed one, as a user has it)
 (cd "$WORK/fresh" && PATH="$BIN:$PATH" GSD_UPDATE_NOTICE=always "$BIN/gsd-init" --no-launch --no-commit) > /dev/null 2> "$WORK/err"
@@ -152,12 +142,39 @@ R="$WORK/proj"; mkdir -p "$R/.planning"; git -C "$R" init -qb main
 has "gsd-doctor shows the newer release" "gsd-worktrees 9.9.7 installed, 9.9.9 available — update: gsd-update" "$WORK/out"
 "$BIN/gsd-doctor" --repo "$R" --quiet > "$WORK/out" 2>&1
 has "…even with --quiet (gsd-worktrees)" "gsd-worktrees 9.9.7 installed, 9.9.9 available" "$WORK/out"
-has "…even with --quiet (GSD)"          "gsd-core 1.0.0 installed, 1.2.0 available — update: npx @opengsd/gsd-core@latest --claude --global" "$WORK/out"
+has "…even with --quiet (GSD)"          "gsd-core 1.0.0 installed, 1.2.0 available — update: gsd-update" "$WORK/out"
 "$BIN/gsd-doctor" --repo "$R" --json > "$WORK/out" 2>/dev/null
 if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); u={x["name"]:x["latest"] for x in d["updates"]}; sys.exit(0 if u=={"gsd-worktrees":"9.9.9","gsd-core":"1.2.0"} else 1)' "$WORK/out"; then
   ok "--json lists both under updates (valid JSON)"; else bad "--json lists both under updates (valid JSON)" "$(head -c 300 "$WORK/out")"; fi
 GSD_NO_UPDATE_CHECK=1 "$BIN/gsd-doctor" --repo "$R" --quiet > "$WORK/out" 2>&1
 hasnt "GSD_NO_UPDATE_CHECK=1 → no update lines" "available — update" "$WORK/out"
+
+section "gsd-update — gsd-core too"
+# A throwaway HOME with gsd-core 1.0.0 for claude; npm says 1.2.0; a stub
+# npx (the gsd-core installer) records its args and writes 1.2.0.
+CH="$WORK/corehome"; mkdir -p "$CH/.claude/gsd-core/bin" "$WORK/npx"
+printf '#!/bin/sh\n' > "$CH/.claude/gsd-core/bin/gsd_run"; chmod +x "$CH/.claude/gsd-core/bin/gsd_run"
+printf '1.0.0\n' > "$CH/.claude/gsd-core/VERSION"
+cat > "$WORK/npx/npx" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$WORK/npx.log"
+printf '1.2.0\n' > "$HOME/.claude/gsd-core/VERSION"
+SH
+chmod +x "$WORK/npx/npx"
+cup() { env -u GSD_NO_CORE -u CLAUDE_CONFIG_DIR HOME="$CH" PATH="$WORK/npx:$PATH" "$BIN/gsd-update" "$@" > "$WORK/out" 2>&1; }
+cup --check
+has "--check shows gsd-core per agent"  "gsd-core  : claude 1.0.0, latest 1.2.0" "$WORK/out"
+has "…and that an update is there"      "update available" "$WORK/out"
+if [ -e "$WORK/npx.log" ]; then bad "--check runs no installer"; else ok "--check runs no installer"; fi
+cup --no-core
+if [ -e "$WORK/npx.log" ]; then bad "--no-core leaves gsd-core alone"; else ok "--no-core leaves gsd-core alone"; fi
+cup
+is  "gsd-update updates gsd-core"       "$(cat "$CH/.claude/gsd-core/VERSION")" 1.2.0
+is  "…with the full profile"            "$(cat "$WORK/npx.log")" "-y --package=@opengsd/gsd-core@latest -- gsd-core --claude --global --profile=full"
+has "…saying so"                        "updating gsd-core for claude (1.0.0 → 1.2.0)" "$WORK/out"
+cup
+has "on the latest → left alone"        "claude gsd-core 1.2.0 is the latest" "$WORK/out"
+is  "…no second run"                    "$(wc -l < "$WORK/npx.log" | tr -d ' ')" 1
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

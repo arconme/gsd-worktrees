@@ -55,8 +55,8 @@ gsd_latest_stale() {  # true when the cache is missing or older than a day
 gsd_latest_cached() { head -1 "$(gsd_update_cache)" 2>/dev/null | tr -d '[:space:]' || true; }
 
 # ── GSD itself (npm) ─────────────────────────────────────────────────────────
-# latest-gsd-version held get-shit-done-cc's 1.42.x: a new name, so it is
-# never compared against gsd-core's own (restarted) numbers.
+# A new file name: an older cache file (latest-gsd-version) held another
+# package's numbers.
 gsd_gsd_cache() { printf '%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}/gsd-worktrees/latest-gsd-core-version"; }
 
 # The places gsd_cli (lib/common.sh) looks, for code that must not start node.
@@ -67,8 +67,7 @@ gsd_gsd_candidates() {
 
 gsd_gsd_installed() {  # → installed gsd-core X.Y.Z ('' when not found)
   # No node: an agent-dir install has gsd-core/VERSION beside bin/, the npm
-  # package its package.json two levels up. The old get-shit-done-cc
-  # (gsd-sdk) is not gsd-core and is never reported here.
+  # package its package.json two levels up.
   local c t v
   while IFS= read -r c; do
     [ -n "$c" ] && [ -e "$c" ] || continue
@@ -105,6 +104,11 @@ gsd_gsd_cached() { head -1 "$(gsd_gsd_cache)" 2>/dev/null | tr -d '[:space:]' ||
 
 GSD_GSD_UPDATE_CMD="npx @opengsd/gsd-core@latest"   # then the agent: --claude --global
 
+gsd_core_update_how() {  # [$1=agent] → the command that updates gsd-core here
+  if [ -e "$GSD_PKG/.git" ]; then echo "$GSD_GSD_UPDATE_CMD --${1:-claude} --global --profile=full"
+  else echo gsd-update; fi
+}
+
 gsd_update_how() {  # the command that updates THIS install
   if [ -e "$GSD_PKG/.git" ]; then echo "$GSD_PKG/install.sh"; else echo gsd-update; fi
 }
@@ -121,14 +125,11 @@ gsd_update_notice() {
   if [ -n "$new" ] && gsd_version_gt "$new" "$cur"; then
     printf '• gsd-worktrees %s is out (you have %s) — update: %s\n' "$new" "$cur" "$(gsd_update_how)" >&2
   fi
-  if [ -z "$(gsd_gsd_installed)" ] && command -v gsd-sdk >/dev/null 2>&1; then
-    printf '• GSD moved to gsd-core and gsd-worktrees needs it — migrate: see docs/migration.md\n' >&2
-  fi
   new=$(gsd_gsd_cached)
   if [ -n "$new" ]; then
     cur=$(gsd_gsd_installed)
     if [ -n "$cur" ] && gsd_version_gt "$new" "$cur"; then
-      printf '• GSD %s is out (you have %s) — update: %s\n' "$new" "$cur" "$GSD_GSD_UPDATE_CMD" >&2
+      printf '• GSD %s is out (you have %s) — update: %s\n' "$new" "$cur" "$(gsd_core_update_how)" >&2
     fi
   fi
   return 0

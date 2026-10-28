@@ -103,7 +103,7 @@ allowed "plan-phase 8 finds the 08-* dir"           gsd-plan-phase "8"
 mkrepo strict phase-09-legacy 09-legacy; : > "$PDIR/09-CONTEXT.md"
 allowed "phase from a phase-09-* branch pads correctly" gsd-plan-phase ""
 
-section "flow = strict — gsd-sdk decimal inserts are zero-padded (02.1)"
+section "flow = strict — gsd-core decimal inserts are zero-padded (02.1)"
 mkrepo strict phase-02.1-hotfix 02.1-hotfix
 blocked "02.1 plan-phase without CONTEXT is blocked"   gsd-plan-phase "02.1"
 : > "$PDIR/02.1-CONTEXT.md"

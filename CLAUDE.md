@@ -12,7 +12,7 @@ An extension to GSD, written as a bash toolkit (plus five Python modules, two Pe
 
 This repo is the **single source of truth**: target repos carry only `.gsd.conf`, the frozen shims, and generated instruction blocks. User docs: `README.md`, `docs/features.md` (full feature list), `docs/providers.md` (capability matrix + full `.gsd.conf` key reference), `docs/architecture.md`, `docs/migration.md`, `docs/copy-install.md`, and `docs/command-order.html` (phase order).
 
-GSD itself (gsd-core, `@opengsd/gsd-core`: the `/gsd-*` planning skills, including `gsd-review`, and the `gsd_run` CLI) is upstream and **not** in this repo; the old `gsd-sdk` is archived and unsupported. `gsd-start` claims phases with `gsd_run query phase.add` / `phase.insert` — no LLM call. Other outside tools: `git`, Python 3.7+, `perl`, `gh` (for `gsd-finish --pr`), `jq` (optional; doctor hook checks and the ClickUp tracker), and — only with `tracker = clickup` — the ClickUp API (token in `~/.config/gsd/clickup.env`).
+GSD itself (gsd-core, `@opengsd/gsd-core`: the `/gsd-*` planning skills, including `gsd-review`, and the `gsd_run` CLI) is upstream and **not** in this repo. The toolkit knows nothing of the old GSD (`get-shit-done-cc`, `gsd-sdk`): no fallback, no detection. `install.sh` installs gsd-core where an agent has none, and `gsd-update` updates it (`lib/core.sh`). `gsd-start` claims phases with `gsd_run query phase.add` / `phase.insert` — no LLM call. Other outside tools: `git`, Python 3.7+, `perl`, `gh` (for `gsd-finish --pr`), `jq` (optional; doctor hook checks and the ClickUp tracker), and — only with `tracker = clickup` — the ClickUp API (token in `~/.config/gsd/clickup.env`).
 
 ## Commands
 
