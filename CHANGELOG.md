@@ -4,7 +4,7 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
-## 0.6.1
+## 0.6.2
 
 - **`gsd-update` updates gsd-core too.** After the toolkit, it brings GSD
   itself to npm's latest for each agent you installed (full skill profile);

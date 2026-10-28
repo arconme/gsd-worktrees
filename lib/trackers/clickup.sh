@@ -336,9 +336,15 @@ clickup_login() {
   gsd_tracker_profile_ok "$p" \
     || die "'$p' is not a profile name (letters, digits, . _ -) — use gsd-tracker login <name>"
   if [ -t 0 ]; then
-    # read -p: echo goes off BEFORE the prompt shows; a printf first left a
-    # gap where a fast paste was echoed
-    IFS= read -rs -p "ClickUp API token for profile $p (ClickUp → Settings → Apps; typing is hidden): " token || true
+    # Echo goes off BEFORE the prompt shows: bash 3.2's read -s -p prints the
+    # prompt first, and a fast paste in that gap was echoed.
+    tty_was=$(stty -g 2>/dev/null) || tty_was=
+    stty -echo 2>/dev/null || true
+    trap '[ -z "$tty_was" ] || stty "$tty_was" 2>/dev/null; printf "\n" >&2; exit 130' INT TERM
+    printf 'ClickUp API token for profile %s (ClickUp → Settings → Apps; typing is hidden): ' "$p" >&2
+    IFS= read -rs token || true
+    [ -z "$tty_was" ] || stty "$tty_was" 2>/dev/null || true
+    trap - INT TERM
     printf '\n' >&2
     typed=1
   else
