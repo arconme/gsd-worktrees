@@ -4,6 +4,15 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## Unreleased
+
+- **`gsd-tracker login` runs in the main checkout only.** In a phase
+  worktree it refuses before asking for the token, and names the main
+  checkout: it edits and commits that checkout's `.gsd.conf`, not the folder
+  you are in. It now edits `.gsd.conf` under the checkout lock, so it waits
+  for a running `gsd-start` or `gsd-finish` instead of changing the file under
+  them. The commit question comes first, so they never wait on your answer.
+
 ## 0.6.0
 
 - **`gsd-tracker login`: a ClickUp token for one repo in one step.** It asks

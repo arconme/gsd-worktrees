@@ -306,9 +306,27 @@ clickup_raw() {  # <METHOD> </path> [json] → the response body
 # tracker_profile in .gsd.conf. The profile: the argument, else the current
 # one, else the repo folder's name. A token ClickUp refuses is never saved.
 # When the token was typed, it offers to commit .gsd.conf (that file only, no push).
+# Runs in the main checkout only, and edits .gsd.conf under the checkout lock.
+clickup_conf_clean() {  # → true when .gsd.conf is committed, unedited, on the base branch
+  git -C "$REPO" ls-files --error-unmatch .gsd.conf >/dev/null 2>&1 \
+    && git -C "$REPO" diff --quiet HEAD -- .gsd.conf 2>/dev/null \
+    && [ "$(git -C "$REPO" branch --show-current 2>/dev/null)" = "$(gsd_base "$REPO")" ]
+}
+
 clickup_login() {
-  local p="${1:-}" conf="$REPO/.gsd.conf" token file tmp cur ans verb=saved typed=0 can_commit=0
+  local p="${1:-}" conf="$REPO/.gsd.conf" token file tmp cur main d top
+  local ans="" verb=saved typed=0 want_commit=0 clean=0
   [ $# -le 1 ] || die "usage: gsd-tracker login [<profile>]"
+  # Main checkout only: login edits and commits ITS .gsd.conf, so running it
+  # from a phase worktree would change another folder. Checked before the
+  # token is read, so nothing is typed for nothing.
+  main=$(gsd_main "$REPO")
+  for d in "$REPO" "$PWD"; do
+    [ -n "$main" ] && [ "$(gsd_main "$d")" = "$main" ] || continue   # $PWD outside this repo
+    top=$(git -C "$d" rev-parse --show-toplevel 2>/dev/null) || continue
+    [ "$(cd "$top" && pwd -P)" = "$(cd "$main" && pwd -P)" ] \
+      || die "$top is a worktree — run login from the main checkout: cd $main && gsd-tracker login"
+  done
   [ -f "$conf" ] || die "no .gsd.conf in $REPO — run gsd-init first"
   [ -n "$p" ] || p=$PROFILE
   if [ -z "$p" ]; then
@@ -347,13 +365,17 @@ clickup_login() {
   if [ "$cur" = "$p" ]; then
     echo "✔ .gsd.conf already has tracker_profile = $p"
   else
-    # Offer the commit only when it holds nothing but this line: .gsd.conf was
-    # committed with no edits of its own, and the checkout is on the base branch.
-    if git -C "$REPO" ls-files --error-unmatch .gsd.conf >/dev/null 2>&1 \
-       && git -C "$REPO" diff --quiet HEAD -- .gsd.conf 2>/dev/null \
-       && [ "$(git -C "$REPO" branch --show-current 2>/dev/null)" = "$(gsd_base "$REPO")" ]; then
-      can_commit=1
+    # Offer the commit only when it holds nothing but this line (clickup_conf_clean).
+    # Asked before the lock is taken, so no other gsd command waits on an answer.
+    if [ "$typed" = 1 ] && clickup_conf_clean; then
+      printf 'Commit .gsd.conf after the change (this file only, not pushed)? [Y/n] ' >&2
+      IFS= read -r ans || ans=n
+      case "$ans" in ''|[Yy]*) want_commit=1 ;; esac
     fi
+    # The same lock as gsd-start/gsd-finish: they pull, merge and commit in
+    # this checkout, and .gsd.conf must not change under them.
+    gsd_acquire_lock "$REPO" || exit 1
+    if clickup_conf_clean; then clean=1; fi   # again: it may have changed while we asked
     if [ -n "$cur" ]; then
       tmp="$conf.tmp.$$"
       sed "s/^\([[:space:]]*tracker_profile[[:space:]]*=[[:space:]]*\).*/\1$p/" "$conf" > "$tmp"
@@ -363,21 +385,20 @@ clickup_login() {
       printf 'tracker_profile = %s\n' "$p" >> "$conf"
     fi
     echo "✔ .gsd.conf: tracker_profile = $p"
-    if [ "$can_commit" = 1 ] && [ "$typed" = 1 ]; then
-      printf 'Commit .gsd.conf now (this file only, not pushed)? [Y/n] ' >&2
-      IFS= read -r ans || ans=n
-      case "$ans" in
-        ''|[Yy]*)
-          if git -C "$REPO" commit -q -m "Set tracker_profile = $p" -- .gsd.conf; then
-            echo "✔ committed .gsd.conf — push it when ready: git -C $REPO push"
-          else
-            echo "• the commit failed — .gsd.conf is changed but not committed"
-          fi ;;
-        *) echo "• not committed — later: git -C $REPO commit -m 'Set tracker_profile = $p' -- .gsd.conf" ;;
-      esac
+    if [ "$want_commit" = 1 ] && [ "$clean" = 1 ]; then
+      if git -C "$REPO" commit -q -m "Set tracker_profile = $p" -- .gsd.conf; then
+        echo "✔ committed .gsd.conf — push it when ready: git -C $REPO push"
+      else
+        echo "• the commit failed — .gsd.conf is changed but not committed"
+      fi
+    elif [ "$want_commit" = 1 ]; then
+      echo "• .gsd.conf changed while you answered — not committed; check it, then: git -C $REPO commit -- .gsd.conf"
+    elif [ "$typed" = 1 ] && [ -n "$ans" ]; then
+      echo "• not committed — later: git -C $REPO commit -m 'Set tracker_profile = $p' -- .gsd.conf"
     else
       echo "• commit it: git -C $REPO commit -m 'Set tracker_profile = $p' -- .gsd.conf"
     fi
+    gsd_release_lock; GSD_LOCKDIR=""   # cleared: the EXIT trap must not remove a later owner's lock
   fi
   echo "✔ ClickUp token OK (profile $p)"
   [ "$(gsd_conf_get "$REPO" tracker)" = clickup ] || [ "${GSD_TRACKER:-}" = clickup ] \

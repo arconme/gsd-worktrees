@@ -358,6 +358,40 @@ else
   ok "SKIP typed-token commit tests (no expect)"
 fi
 
+section "gsd-tracker login — main checkout only, under the checkout lock"
+cuat() { local dir=$1; shift; (cd "$dir" && env -u CLICKUP_API_TOKEN -u GSD_CLICKUP_CONFIG -u GSD_TRACKER_PROFILE \
+           HOME="$H" CURL_AUTH_LOG="$WORK/auth.log" "$@"); }
+R="$WORK/wtmain"; mkdir -p "$R/sub"; git -C "$R" init -qb main
+printf 'tracker = clickup\n' > "$R/.gsd.conf"; commit "$R" init
+git -C "$R" worktree add -q -b phase-1-x "$WORK/wtmain-wt"
+mkdir -p "$WORK/wtmain-wt/deep"
+: > "$WORK/auth.log"; echo pk_wt | cuat "$WORK/wtmain-wt/deep" gsd-tracker login > "$WORK/out" 2>&1
+is  "from a worktree → refused (exit 1)"       "$?" 1
+has "…naming the main checkout"                'run login from the main checkout' "$WORK/out"
+is  "…before the token is read or sent"        "$(wc -l < "$WORK/auth.log" | tr -d ' ')" 0
+if [ -e "$H/.config/gsd/clickup-wtmain.env" ]; then bad "…and nothing is saved"; else ok "…and nothing is saved"; fi
+is  "…nor .gsd.conf changed"                   "$(git -C "$R" status --short)" ""
+echo pk_wt | cuat "$WORK" gsd-tracker --repo "$WORK/wtmain-wt" login > "$WORK/out" 2>&1
+is  "--repo <worktree> → refused"              "$?" 1
+echo pk_wt | cuat "$WORK/wtmain-wt" gsd-tracker --repo "$R" login > "$WORK/out" 2>&1
+is  "--repo <main> from inside a worktree → refused" "$?" 1
+echo pk_wt | cuat "$R/sub" gsd-tracker login > "$WORK/out" 2>&1
+is  "a subfolder of the main checkout works"   "$?" 0
+is  "…and edits its .gsd.conf"                 "$(gsd_conf_get "$R" tracker_profile)" "wtmain"
+git -C "$R" checkout -q -- .gsd.conf
+echo pk_wt | cuat "$WORK" gsd-tracker --repo "$R" login > "$WORK/out" 2>&1
+is  "--repo <main> from outside any repo works" "$?" 0
+git -C "$R" checkout -q -- .gsd.conf
+mkdir "$R/.git/gsd-cmd.lock"; echo $$ > "$R/.git/gsd-cmd.lock/pid"   # held by a live command
+echo pk_wt | cuat "$R" gsd-tracker login > "$WORK/lockout" 2>&1 & lpid=$!
+sleep 2
+has "a held checkout lock → login waits"      'another gsd command is using this checkout' "$WORK/lockout"
+is  "…without touching .gsd.conf"              "$(git -C "$R" status --short)" ""
+rm -rf "$R/.git/gsd-cmd.lock"; wait "$lpid"
+is  "…then finishes once it is free"           "$?" 0
+is  "…with the change made"                    "$(gsd_conf_get "$R" tracker_profile)" "wtmain"
+if [ -d "$R/.git/gsd-cmd.lock" ]; then bad "…and releases the lock"; else ok "…and releases the lock"; fi
+
 # ── through gsd-start / gsd-finish ───────────────────────────────────────────
 project() {  # $1=dir $2=extra .gsd.conf lines — repo on main + bare origin
   git init -q --bare -b main "$1.git"

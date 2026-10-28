@@ -19,7 +19,8 @@
 #   api     <GET|POST|PUT|DELETE> </path> [json]   any API v2 call; prints the body
 #   login   [<profile>]      a token for this repo: asks (hidden), tests it, saves
 #                            ~/.config/gsd/clickup-<profile>.env, sets tracker_profile
-#                            (default profile: the repo folder's name)
+#                            (default profile: the repo folder's name);
+#                            run it in the main checkout, not a worktree
 #
 # <who> is me, a user id, an email or a username. --desc - reads stdin.
 # Priority: 1 urgent · 2 high · 3 normal · 4 low. --match filters task names

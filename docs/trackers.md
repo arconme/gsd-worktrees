@@ -93,7 +93,7 @@ the token file. Check it: `gsd-tracker check`. Needs `jq`.
 
 The token file is `~/.config/gsd/clickup.env`, shared by every project. To use
 a different ClickUp user in one project (other workspace, split rate limits),
-run this in the repo:
+run this in the repo's main checkout (not a phase worktree):
 
 ```sh
 gsd-tracker login            # or: gsd-tracker login acme
@@ -109,6 +109,14 @@ to commit `.gsd.conf` (`[Y/n]`; that file only, never pushed) — only if the
 file had no edits of its own and the checkout is on the base branch; otherwise
 it prints the commit command. On another machine, run `gsd-tracker login` once
 more. `echo pk_… | gsd-tracker login` works too (no question then).
+
+In a phase worktree it refuses before asking for the token and names the main
+checkout: it would edit and commit that checkout's `.gsd.conf`, not the folder
+you are in. Existing worktrees need nothing: every gsd command reads
+`.gsd.conf` from the main checkout, and the token file is in your home folder.
+It edits `.gsd.conf` under the same lock as `gsd-start` and `gsd-finish`, so it
+waits for one that is running (the question is asked before, so they never
+wait on your answer).
 
 By hand, the same thing is:
 

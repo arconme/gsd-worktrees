@@ -43,7 +43,7 @@
 # wins). ClickUp then reads ~/.config/gsd/clickup-<name>.env instead of the
 # shared ~/.config/gsd/clickup.env (no fallback); custom gets GSD_TRACKER_PROFILE.
 # `gsd-tracker login [<profile>]` (ClickUp) asks for the token, tests it, saves
-# that file and sets tracker_profile — one step.
+# that file and sets tracker_profile — one step. Main checkout only.
 # Status names for start/finish: $GSD_TRACKER_STATUS_START / _FINISH >
 #   tracker_status_start / tracker_status_finish in .gsd.conf > the adapter's
 #   defaults. (Legacy GSD_CLICKUP_STATUS_START / _FINISH still work.)
