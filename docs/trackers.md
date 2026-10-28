@@ -93,7 +93,24 @@ the token file. Check it: `gsd-tracker check`. Needs `jq`.
 
 The token file is `~/.config/gsd/clickup.env`, shared by every project. To use
 a different ClickUp user in one project (other workspace, split rate limits),
-give it a profile:
+run this in the repo:
+
+```sh
+gsd-tracker login            # or: gsd-tracker login acme
+```
+
+It asks for the token (typing is hidden), tests it with ClickUp, saves it to
+`~/.config/gsd/clickup-<profile>.env` (only you can read it) and adds
+`tracker_profile = <profile>` to `.gsd.conf`. The profile is the name you
+give, else the one already set, else the repo folder's name. A token ClickUp
+refuses is never saved. Run it again to replace the token; other lines in the
+file (e.g. `CLICKUP_TEAM_ID`) are kept. When you typed the token, it then offers
+to commit `.gsd.conf` (`[Y/n]`; that file only, never pushed) — only if the
+file had no edits of its own and the checkout is on the base branch; otherwise
+it prints the commit command. On another machine, run `gsd-tracker login` once
+more. `echo pk_… | gsd-tracker login` works too (no question then).
+
+By hand, the same thing is:
 
 ```ini
 tracker_profile = acme     # in .gsd.conf — a name only, safe to commit

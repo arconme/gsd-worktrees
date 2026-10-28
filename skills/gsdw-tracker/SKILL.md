@@ -18,8 +18,10 @@ Run `gsd-tracker which` once per repo, before any ticket work.
   `comment`/`status` (with `none` they do nothing yet still succeed). The fix
   is `tracker = clickup` (or `custom`) in `.gsd.conf`.
 - anything else — go on. `gsd-tracker check` confirms the login. On a token
-  error, tell the user to fix the token file it names; never ask them to paste
-  a token into the chat.
+  error, tell the user to run `gsd-tracker login` themselves in a terminal (it
+  asks for the token hidden, tests it, and saves it for this repo) or to fix
+  the token file the error names; never ask them to paste a token into the
+  chat, and never run `login` for them.
 
 ## Shared commands (every tracker)
 

@@ -26,7 +26,7 @@
 #   <id> may be the bare id, tk-<id>, #<id>, or the ticket's URL.
 #   create/update/tasks options go to the tracker as written; what <where> is
 #   and which options work depend on it (ClickUp: gsd-clickup --help).
-#   A tracker may add its own commands (ClickUp: lists, members, api).
+#   A tracker may add its own commands (ClickUp: lists, members, api, login).
 #
 # Tracker: --tracker > $GSD_TRACKER > `tracker =` in .gsd.conf > none.
 #   none     start/finish/comment/status do nothing and succeed;
@@ -42,6 +42,8 @@
 # Per-project login: tracker_profile = <name> in .gsd.conf ($GSD_TRACKER_PROFILE
 # wins). ClickUp then reads ~/.config/gsd/clickup-<name>.env instead of the
 # shared ~/.config/gsd/clickup.env (no fallback); custom gets GSD_TRACKER_PROFILE.
+# `gsd-tracker login [<profile>]` (ClickUp) asks for the token, tests it, saves
+# that file and sets tracker_profile — one step.
 # Status names for start/finish: $GSD_TRACKER_STATUS_START / _FINISH >
 #   tracker_status_start / tracker_status_finish in .gsd.conf > the adapter's
 #   defaults. (Legacy GSD_CLICKUP_STATUS_START / _FINISH still work.)

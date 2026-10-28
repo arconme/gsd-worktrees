@@ -6,6 +6,14 @@ becomes its release notes.
 
 ## Unreleased
 
+- **`gsd-tracker login`: a ClickUp token for one repo in one step.** It asks
+  for the token (hidden), tests it, saves it to
+  `~/.config/gsd/clickup-<profile>.env` (mode 600, outside the repo) and sets
+  `tracker_profile` in `.gsd.conf`. The profile defaults to the repo folder's
+  name. A token ClickUp refuses is never saved. When the token was typed, it
+  offers to commit `.gsd.conf` (that file only, never pushed). `gsd-doctor`
+  T073 now names it.
+
 - **Phase sessions compact at 300k, not 200k.** `/gsd-plan-phase` reads a
   47k-token workflow and reached 140k before its planner returned, so a 200k
   window showed 84% and gsd-core warned "context critical" mid-plan. Set

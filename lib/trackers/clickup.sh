@@ -7,6 +7,7 @@
 #      $GSD_CLICKUP_CONFIG, else ~/.config/gsd/clickup-<profile>.env when
 #      .gsd.conf sets tracker_profile = <profile>, else ~/.config/gsd/clickup.env
 # Create one in ClickUp: avatar → Settings → Apps → API Token.
+# `gsd-tracker login` saves one for this repo in a single step (clickup_login).
 #
 # start/finish resolve the status against the task's own list: names match
 # ignoring case, spaces, hyphens and underscores ("in testing" finds
@@ -18,13 +19,13 @@
 # when a started task lives in another list (the API can't move it).
 #
 # Shared verbs create/update/tasks, plus this tracker's own commands
-# (TRACKER_EXTRA: lists, members, api), let an agent work tickets through this
+# (TRACKER_EXTRA: lists, members, api, login), let an agent work tickets through this
 # one connector. Commands that need the workspace use $CLICKUP_TEAM_ID (env or
 # the token file), else the only workspace the token sees.
 # Sourced by bin/gsd-tracker (die, tracker_status set there).
 
 # shellcheck disable=SC2034  # read by bin/gsd-tracker
-TRACKER_EXTRA="lists members api"  # this tracker's own commands, beyond the shared verbs
+TRACKER_EXTRA="lists members api login"  # this tracker's own commands, beyond the shared verbs
 PROFILE=$(gsd_tracker_profile "$REPO")
 CONFIG=$(gsd_clickup_env "$REPO")
 
@@ -299,6 +300,97 @@ clickup_raw() {  # <METHOD> </path> [json] → the response body
   api "$1" "$2" "${3:-}" || exit 2
 }
 
+# login [<profile>]: one step for a per-repo token. Reads the token (hidden on a
+# terminal, else one line of stdin), tests it, saves it to
+# ~/.config/gsd/clickup-<profile>.env (mode 600, other lines kept) and sets
+# tracker_profile in .gsd.conf. The profile: the argument, else the current
+# one, else the repo folder's name. A token ClickUp refuses is never saved.
+# When the token was typed, it offers to commit .gsd.conf (that file only, no push).
+clickup_login() {
+  local p="${1:-}" conf="$REPO/.gsd.conf" token file tmp cur ans verb=saved typed=0 can_commit=0
+  [ $# -le 1 ] || die "usage: gsd-tracker login [<profile>]"
+  [ -f "$conf" ] || die "no .gsd.conf in $REPO — run gsd-init first"
+  [ -n "$p" ] || p=$PROFILE
+  if [ -z "$p" ]; then
+    p=$(basename "$REPO" | tr '[:upper:]' '[:lower:]' \
+          | sed -e 's/[^a-z0-9._-]/-/g' -e 's/^[^a-z0-9]*//' | cut -c1-64)
+  fi
+  gsd_tracker_profile_ok "$p" \
+    || die "'$p' is not a profile name (letters, digits, . _ -) — use gsd-tracker login <name>"
+  if [ -t 0 ]; then
+    printf 'ClickUp API token for profile %s (ClickUp → Settings → Apps; typing is hidden): ' "$p" >&2
+    IFS= read -rs token || true
+    printf '\n' >&2
+    typed=1
+  else
+    IFS= read -r token || true
+  fi
+  token=$(printf '%s' "$token" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ -n "$token" ] || die "no token given — nothing saved"
+  # The file is sourced: only token characters may go in it.
+  printf '%s' "$token" | grep -qE '^[A-Za-z0-9_-]+$' \
+    || die "that does not look like a ClickUp token (pk_…) — nothing saved"
+  CLICKUP_API_TOKEN=$token api GET /user >/dev/null \
+    || { printf 'gsd-tracker: ClickUp did not accept that token — nothing saved\n' >&2; exit 2; }
+
+  file="$HOME/.config/gsd/clickup-$p.env"
+  [ ! -f "$file" ] || verb=replaced
+  tmp="$file.tmp.$$"
+  ( umask 077
+    mkdir -p "${file%/*}"
+    { [ ! -f "$file" ] || grep -vE '^[[:space:]]*(export[[:space:]]+)?CLICKUP_API_TOKEN=' "$file" || true
+      printf 'CLICKUP_API_TOKEN=%s\n' "$token"; } > "$tmp" )
+  chmod 600 "$tmp"; mv "$tmp" "$file"
+  echo "✔ token $verb → $file (only you can read it)"
+
+  cur=$(gsd_conf_get "$REPO" tracker_profile)
+  if [ "$cur" = "$p" ]; then
+    echo "✔ .gsd.conf already has tracker_profile = $p"
+  else
+    # Offer the commit only when it holds nothing but this line: .gsd.conf was
+    # committed with no edits of its own, and the checkout is on the base branch.
+    if git -C "$REPO" ls-files --error-unmatch .gsd.conf >/dev/null 2>&1 \
+       && git -C "$REPO" diff --quiet HEAD -- .gsd.conf 2>/dev/null \
+       && [ "$(git -C "$REPO" branch --show-current 2>/dev/null)" = "$(gsd_base "$REPO")" ]; then
+      can_commit=1
+    fi
+    if [ -n "$cur" ]; then
+      tmp="$conf.tmp.$$"
+      sed "s/^\([[:space:]]*tracker_profile[[:space:]]*=[[:space:]]*\).*/\1$p/" "$conf" > "$tmp"
+      cat "$tmp" > "$conf"; rm -f "$tmp"
+    else
+      [ -z "$(tail -c1 "$conf")" ] || printf '\n' >> "$conf"
+      printf 'tracker_profile = %s\n' "$p" >> "$conf"
+    fi
+    echo "✔ .gsd.conf: tracker_profile = $p"
+    if [ "$can_commit" = 1 ] && [ "$typed" = 1 ]; then
+      printf 'Commit .gsd.conf now (this file only, not pushed)? [Y/n] ' >&2
+      IFS= read -r ans || ans=n
+      case "$ans" in
+        ''|[Yy]*)
+          if git -C "$REPO" commit -q -m "Set tracker_profile = $p" -- .gsd.conf; then
+            echo "✔ committed .gsd.conf — push it when ready: git -C $REPO push"
+          else
+            echo "• the commit failed — .gsd.conf is changed but not committed"
+          fi ;;
+        *) echo "• not committed — later: git -C $REPO commit -m 'Set tracker_profile = $p' -- .gsd.conf" ;;
+      esac
+    else
+      echo "• commit it: git -C $REPO commit -m 'Set tracker_profile = $p' -- .gsd.conf"
+    fi
+  fi
+  echo "✔ ClickUp token OK (profile $p)"
+  [ "$(gsd_conf_get "$REPO" tracker)" = clickup ] || [ "${GSD_TRACKER:-}" = clickup ] \
+    || echo "• .gsd.conf does not say tracker = clickup yet — add it so start/finish use ClickUp"
+  [ -z "${GSD_TRACKER_PROFILE:-}" ] || [ "$GSD_TRACKER_PROFILE" = "$p" ] \
+    || echo "• GSD_TRACKER_PROFILE=$GSD_TRACKER_PROFILE is set in this shell and picks another profile"
+  [ -z "${GSD_CLICKUP_CONFIG:-}" ] \
+    || echo "• GSD_CLICKUP_CONFIG is set in this shell, so $GSD_CLICKUP_CONFIG is read instead — unset GSD_CLICKUP_CONFIG"
+  [ -z "${CLICKUP_API_TOKEN:-}" ] \
+    || echo "• CLICKUP_API_TOKEN is set in this shell and wins over the file — unset CLICKUP_API_TOKEN"
+  return 0
+}
+
 tracker_run() {  # $1=command, rest=args
   case "$1" in
     start|finish) clickup_move "$1" "$2" "$3" ;;
@@ -326,5 +418,6 @@ tracker_run() {  # $1=command, rest=args
     check)
       load_token
       api GET /user >/dev/null && echo "✔ ClickUp token OK${PROFILE:+ (profile $PROFILE)}" || exit 2 ;;
+    login) shift; clickup_login "$@" ;;
   esac
 }

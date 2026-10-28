@@ -556,7 +556,7 @@ elif [ "$TRACKER" = clickup ]; then
   elif grep -qE '^[[:space:]]*(export[[:space:]]+)?CLICKUP_API_TOKEN=.' "$cu_cfg" 2>/dev/null; then
     pass "tracker: clickup${cu_prof:+ (profile $cu_prof)}, token found (test it: gsd-tracker check)"
   else
-    fail "tracker = clickup but no ClickUp token${cu_prof:+ for profile '$cu_prof'} on this machine — tickets will not move" "put CLICKUP_API_TOKEN=pk_… in $cu_cfg (ClickUp → Settings → Apps)" "T073"
+    fail "tracker = clickup but no ClickUp token${cu_prof:+ for profile '$cu_prof'} on this machine — tickets will not move" "gsd-tracker login (or put CLICKUP_API_TOKEN=pk_… in $cu_cfg; ClickUp → Settings → Apps)" "T073"
   fi
   command -v jq >/dev/null 2>&1 || note "tracker = clickup needs jq for start/finish/snapshot — brew install jq"
 else

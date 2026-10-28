@@ -7,7 +7,7 @@
 # In a fitted repo with tracker = clickup, plain gsd-tracker does the same.
 # Shared verbs (start, finish, comment, status, snapshot, check): see
 # gsd-tracker --help. ClickUp's options for create/update/tasks, and its own
-# commands (lists, members, api):
+# commands (lists, members, api, login):
 #   create  <list-id> <name> [--desc <md>|-] [--assign <who>]… [--status <s>]
 #           [--priority 1-4] [--tag <t>]… [--parent <id>]   prints the new id + url
 #   update  <id> [--name <n>] [--desc <md>|-] [--assign <who>]… [--unassign <who>]…
@@ -17,6 +17,9 @@
 #   lists                    spaces, folders and lists, with ids
 #   members                  workspace members: id, username, email
 #   api     <GET|POST|PUT|DELETE> </path> [json]   any API v2 call; prints the body
+#   login   [<profile>]      a token for this repo: asks (hidden), tests it, saves
+#                            ~/.config/gsd/clickup-<profile>.env, sets tracker_profile
+#                            (default profile: the repo folder's name)
 #
 # <who> is me, a user id, an email or a username. --desc - reads stdin.
 # Priority: 1 urgent · 2 high · 3 normal · 4 low. --match filters task names

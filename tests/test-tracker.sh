@@ -49,12 +49,14 @@ m=GET; body=""; url=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -X) m=$2; shift ;; -d) body=$2; shift ;; -w|--max-time) shift ;; http*) url=$1 ;;
-    -H) case "$2" in Authorization:*) printf '%s\n' "$2" >> "${CURL_AUTH_LOG:-/dev/null}" ;; esac; shift ;;
+    -H) case "$2" in Authorization:*) auth=$2; printf '%s\n' "$2" >> "${CURL_AUTH_LOG:-/dev/null}" ;; esac; shift ;;
   esac
   shift
 done
 path=${url#https://api.clickup.com/api/v2}
 printf '%s %s %s\n' "$m" "$path" "$body" >> "$CURL_LOG"
+# pk_bad: a token ClickUp refuses
+[ "${auth:-}" != "Authorization: pk_bad" ] || { printf '{"err":"Token invalid"}\n401'; exit 0; }
 code=200
 case "$m $path" in
   "GET /task/abc123?include_subtasks=true")
@@ -282,6 +284,79 @@ printf 'tracker = clickup\ntracker_profile = ../acme\n' > "$R/.gsd.conf"
 : > "$WORK/auth.log"; cuenv gsd-tracker check > "$WORK/out" 2>&1
 is  "a profile with a slash is refused"        "$?" 1
 is  "…before any API call"                     "$(wc -l < "$WORK/auth.log" | tr -d ' ')" 0
+
+section "gsd-tracker login — save a token for this repo in one step"
+R="$WORK/MyShop"; mkdir -p "$R"; git -C "$R" init -qb main
+printf 'tracker = clickup' > "$R/.gsd.conf"   # no final newline
+F="$H/.config/gsd/clickup-myshop.env"
+echo pk_new | cuenv gsd-tracker login > "$WORK/out" 2>&1
+is  "login exits 0"                            "$?" 0
+is  "the profile is the folder's name"         "$(cat "$F" 2>/dev/null)" "CLICKUP_API_TOKEN=pk_new"
+is  "…and only you can read the file"          "$(find "$F" -perm 600)" "$F"
+is  ".gsd.conf gets tracker_profile"           "$(gsd_conf_get "$R" tracker_profile)" "myshop"
+is  "…on its own line"                         "$(gsd_conf_get "$R" tracker)" "clickup"
+has "…and says to commit it"                   'commit it' "$WORK/out"
+: > "$WORK/auth.log"; cuenv gsd-tracker check > "$WORK/out" 2>&1
+has "check now uses the saved token"           'Authorization: pk_new' "$WORK/auth.log"
+echo 'CLICKUP_TEAM_ID=T9' >> "$F"
+echo pk_new2 | cuenv gsd-tracker login > "$WORK/out" 2>&1
+has "a second login replaces the token"        'token replaced' "$WORK/out"
+is  "…once, keeping other lines"               "$(sort "$F" | tr '\n' ' ')" "CLICKUP_API_TOKEN=pk_new2 CLICKUP_TEAM_ID=T9 "
+is  "…and .gsd.conf is not touched twice"      "$(grep -c tracker_profile "$R/.gsd.conf")" 1
+echo pk_other | cuenv gsd-tracker login acme2 > "$WORK/out" 2>&1
+is  "a named profile replaces the old one"     "$(grep tracker_profile "$R/.gsd.conf")" "tracker_profile = acme2"
+is  "…in its own file"                         "$(cat "$H/.config/gsd/clickup-acme2.env")" "CLICKUP_API_TOKEN=pk_other"
+cp "$R/.gsd.conf" "$WORK/conf.before"
+echo pk_bad | cuenv gsd-tracker login bad1 > "$WORK/out" 2>&1
+is  "a refused token fails (exit 2)"           "$?" 2
+if [ -e "$H/.config/gsd/clickup-bad1.env" ]; then bad "…and is never saved"; else ok "…and is never saved"; fi
+if cmp -s "$R/.gsd.conf" "$WORK/conf.before"; then ok "…nor .gsd.conf changed"; else bad "…nor .gsd.conf changed"; fi
+: > "$WORK/auth.log"; echo 'pk_x$(touch pwned)' | cuenv gsd-tracker login > "$WORK/out" 2>&1
+is  "a token with shell characters is refused" "$?" 1
+is  "…before any API call"                     "$(wc -l < "$WORK/auth.log" | tr -d ' ')" 0
+cuenv gsd-tracker login < /dev/null > "$WORK/out" 2>&1
+is  "no token → exit 1"                        "$?" 1
+echo pk_new | cuenv gsd-tracker login ../x > "$WORK/out" 2>&1
+is  "a profile with a slash is refused"        "$?" 1
+rm "$R/.gsd.conf"; echo pk_new | cuenv gsd-tracker --tracker clickup login > "$WORK/out" 2>&1
+is  "no .gsd.conf → exit 1"                    "$?" 1
+has "…pointing at gsd-init"                    'gsd-init' "$WORK/out"
+
+section "gsd-tracker login — offers to commit .gsd.conf when the token was typed"
+R="$WORK/typed"; mkdir -p "$R"; git -C "$R" init -qb main
+printf 'tracker = clickup\n' > "$R/.gsd.conf"; echo a > "$R/other"; commit "$R" init
+echo b > "$R/other"; git -C "$R" add other          # staged, not login's
+echo pk_piped | cuenv gsd-tracker login piped > "$WORK/out" 2>&1
+hasnt "a piped token → no question"            '\[Y/n\]' "$WORK/out"
+is  "…and no commit"                           "$(git -C "$R" rev-list --count HEAD)" 1
+has "…only the hint"                           'commit it' "$WORK/out"
+git -C "$R" checkout -q -- .gsd.conf
+if command -v expect >/dev/null 2>&1; then
+  # Types pk_typed at the hidden prompt, then $ANS if asked [Y/n].
+  cat > "$WORK/login.exp" <<'EXP'
+spawn gsd-tracker login $env(PROF)
+expect -ex {hidden): }
+send "pk_typed\r"
+expect {
+  -ex {[Y/n] } { send "$env(ANS)\r"; exp_continue }
+  eof
+}
+EXP
+  typed() { cuenv env PROF="$1" ANS="$2" expect "$WORK/login.exp" > "$WORK/out" 2>&1; }
+  typed typed ''
+  is  "Enter commits .gsd.conf"                "$(git -C "$R" log -1 --format=%s)" "Set tracker_profile = typed"
+  is  "…that file only"                        "$(git -C "$R" show --name-only --format= HEAD)" ".gsd.conf"
+  is  "…other staged files stay staged"        "$(git -C "$R" diff --cached --name-only)" "other"
+  hasnt "…and the token is never shown"        'pk_typed' "$WORK/out"
+  typed p2 n
+  is  "n → no commit"                          "$(git -C "$R" log -1 --format=%s)" "Set tracker_profile = typed"
+  has "…with the command for later"            'not committed' "$WORK/out"
+  typed p3 ''
+  hasnt ".gsd.conf with edits of its own → no question" '\[Y/n\]' "$WORK/out"
+  is  "…and no commit"                         "$(git -C "$R" log -1 --format=%s)" "Set tracker_profile = typed"
+else
+  ok "SKIP typed-token commit tests (no expect)"
+fi
 
 # ── through gsd-start / gsd-finish ───────────────────────────────────────────
 project() {  # $1=dir $2=extra .gsd.conf lines — repo on main + bare origin
