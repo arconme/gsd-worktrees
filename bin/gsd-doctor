@@ -74,8 +74,7 @@
 # RELATED
 #   gsd-init             fixes repo-setup findings (re-run: it is idempotent)
 #   gsd-planning-repair  fixes planning-state findings
-#   gsd-update           fixes toolkit findings (release install)
-#   gsd-sync             fixes toolkit findings (git-checkout install)
+#   gsd-update           fixes toolkit findings
 set -uo pipefail
 
 die() { printf '✖ %s\n' "$@" >&2; exit 1; }
@@ -313,12 +312,17 @@ fi
 # asked about. Nothing here is broken — you would just lose local edits. Only
 # toolkit problems that actually stop things working (no commands on PATH, no
 # python3) count against the repo you are inspecting.
+# Commands run from a checkout (the old link install, or ./bin/… by hand)
+# run whatever is in it right now.
+if [ -e "$GSD_PKG/.git" ]; then
+  note "toolkit runs from a git checkout ($GSD_PKG), not a release — install the release: $GSD_PKG/install.sh --reuse-install-config"
+fi
 if [ -n "$(git -C "$GSD_PKG" status --porcelain 2>/dev/null)" ]; then
   note "toolkit has uncommitted changes ($GSD_PKG)"
 fi
 if git -C "$GSD_PKG" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
   ahead=$(git -C "$GSD_PKG" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
-  [ "$ahead" -gt 0 ] && note "toolkit has $ahead unpushed commit(s) — gsd-sync pushes them"
+  [ "$ahead" -gt 0 ] && note "toolkit has $ahead unpushed commit(s) — git push them"
 fi
 
 # ── is this even a GSD repo? ─────────────────────────────────────────────────

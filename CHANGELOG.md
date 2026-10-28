@@ -4,7 +4,7 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
-## Unreleased
+## 0.6.1
 
 - **`gsd-tracker login` runs in the main checkout only.** In a phase
   worktree it refuses before asking for the token, and names the main
@@ -12,6 +12,12 @@ becomes its release notes.
   you are in. It now edits `.gsd.conf` under the checkout lock, so it waits
   for a running `gsd-start` or `gsd-finish` instead of changing the file under
   them. The commit question comes first, so they never wait on your answer.
+
+- **`gsd-sync` is removed.** It had little left to do: pull the toolkit
+  checkout (use `git pull`) and check a repo's shims (`gsd-doctor` T010 does
+  that). What you do: nothing; the next `gsd-update` removes the command.
+  `gsd-doctor` now notes when your commands run from a git checkout, with
+  the line that moves them to a release.
 
 ## 0.6.0
 

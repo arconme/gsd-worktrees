@@ -28,7 +28,7 @@ tests/test-planning-reconcile.sh      # merge driver, planning repair, gsd-wt-fi
 tests/test-worktree-guard.sh          # the guard, incl. flow = strict
 tests/test-flow-next.sh               # the flow step engine
 tests/test-providers.sh               # provider adapters, bootstrap, doctor JSON
-tests/test-install-copy.sh            # lib/install.sh runtime, install.sh --copy compat, gsd-sync
+tests/test-install-copy.sh            # lib/install.sh runtime, install.sh --copy compat
 bash tests/test-review-fixes.sh       # regressions (finish push race, no-jq hooks, …)
 tests/test-list.sh                    # gsd-list PLANS/STAGE/WORKTREE derivation + layout
 tests/test-review-round2.sh           # regressions from the 2026-09-25 review (docs/fix-plan.md)
@@ -58,7 +58,7 @@ There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `sectio
 
 **Core vs adapters.** The core is `bin/`, `lib/common.sh`, the planning reconciler, the worktree rules, and `gsd-flow-next`. It may call `lib/provider.sh`, but adapters must never hold phase state, merge, claim, or safety policy. To add a provider, extend `lib/provider.sh` (identity, instruction file, skill root, argv renderer, review flag, hook metadata), the CLI allowlists/help, docs, and `tests/test-providers.sh` — see `docs/architecture.md`.
 
-- **`bin/`** — user-facing: `gsd-init`, `gsd-start`, `gsd-list`, `gsd-finish`, `gsd-doctor`, `gsd-sync`, `gsd-bootstrap-repo`, `gsd-planning-repair`, `gsd-tracker` (`gsd-clickup` = it fixed to ClickUp), `gsd-ui`, `gsd-codex-wait`. Internal: `gsd-wt-new` / `gsd-wt-finish` (worker halves of start/finish), `gsd-worktree-guard`, `gsd-flow-next`, `gsd-planning-merge` (git merge driver), `gsd-derive-port`. Each script finds its package via `GSD_PKG` (from its own resolved path) and sources `lib/`.
+- **`bin/`** — user-facing: `gsd-init`, `gsd-start`, `gsd-list`, `gsd-finish`, `gsd-doctor`, `gsd-update`, `gsd-bootstrap-repo`, `gsd-planning-repair`, `gsd-tracker` (`gsd-clickup` = it fixed to ClickUp), `gsd-ui`, `gsd-codex-wait`. Internal: `gsd-wt-new` / `gsd-wt-finish` (worker halves of start/finish), `gsd-worktree-guard`, `gsd-flow-next`, `gsd-planning-merge` (git merge driver), `gsd-derive-port`. Each script finds its package via `GSD_PKG` (from its own resolved path) and sources `lib/`.
 - **`lib/common.sh`** — config (`gsd_conf_get` reads `.gsd.conf`; keys fall back to detection), `gsd_main`, base branch, worktree dir, the checkout lock (`.git/gsd-cmd.lock`, dead-PID reclaim), merge-driver registration, and `gsd_planning_status`/`gsd_planning_apply` — the one definition of "installed" shared by doctor and bootstrap.
 - **`lib/provider.sh`** — the provider adapters. No workflow logic. Resolves provider, executable, model and start mode (precedence tables in `docs/providers.md`); renders argv safely (never `eval`); owns the marked-block helpers for generated instruction files.
 - **`lib/gsd_hook_payload.py`** — the guard's fallback when jq is missing: turns Claude's hook JSON into the guard's NUL-delimited input (plugin form `gsd-core:gsd-x` → `gsd-x`, `gsdw-flow` → `gsd-flow`).

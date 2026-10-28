@@ -101,7 +101,7 @@ is  "…commands unchanged"               "$(points gsd-list)" 9.9.7
 if "$BIN/gsd-update" --version 1.2.3 > "$WORK/out" 2>&1; then bad "a missing release is refused"; else ok "a missing release is refused"; fi
 if bash "$PKG/install.sh" --version latest > "$WORK/out" 2>&1; then bad "a non-version is refused"; else ok "a non-version is refused"; fi
 "$PKG/bin/gsd-update" > "$WORK/out" 2>&1
-has "a git checkout updates nothing, and names install.sh" "not a release — pull it with: gsd-sync; install the release with: $PKG/install.sh" "$WORK/out"
+has "a git checkout updates nothing, and names install.sh" "not a release — pull it with git; install the release with: $PKG/install.sh" "$WORK/out"
 
 section "the newer-release notice"
 rm -rf "$XDG_CACHE_HOME"

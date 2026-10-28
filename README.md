@@ -133,7 +133,6 @@ are marked and repeated bootstrap updates only those blocks. See
 | `gsd-finish` | Merges the phase back to base, pushes, deletes worktree + branch. `--pr` pushes and opens a GitHub PR instead (branch protection) | Phase is done. No argument needed from inside the worktree |
 | `gsd-doctor` | Health check that names the command fixing each finding. `--json` for CI; `--fix` runs the safe fixes after asking | Something feels off. Writes nothing unless you pass `--fix` |
 | `gsd-update` | Installs a newer release (release installs) | When a command says a newer release is out |
-| `gsd-sync` | Pulls the toolkit's git checkout, checks this repo's shims | Occasionally, or after a toolkit change |
 
 **Rarely:**
 
@@ -172,7 +171,6 @@ The one-line version: `gsd-init` once → `gsd-start` → work → `gsd-finish`.
 | `gsd-bootstrap-repo` | Fit a repo with shared workflow files and explicitly selected provider adapters. Marked blocks preserve unrelated instructions. |
 | `gsd-tracker` | Tickets, one layer for every tracker: `start` / `finish` / `comment` / `status` / `snapshot` / `create` / `update` / `tasks` / `extract` / `check`, plus a tracker's own commands (ClickUp: `lists` / `members` / `api`). Tracker from `tracker =` in `.gsd.conf`: `none` (default), `clickup`, or `custom` (your script). The `gsdw-tracker` skill teaches agents to use it. See [docs/trackers.md](docs/trackers.md). `gsd-clickup` is the same, fixed to ClickUp. |
 | `gsd-update` | Update a release install: `--check`, the latest, or `--version X.Y.Z`. Checksum-verified; keeps the previous release. |
-| `gsd-sync` | Toolkit maintenance in one command: pull + push this repo, and verify the shims of the repo you run it from are current. `--check` for a dry run. |
 | `gsd-wt-new` / `gsd-wt-finish` | The worktree workers behind `gsd-start`/`gsd-finish` (create with config-copy + background install; merge back locked and conflict-safe). Callable standalone. |
 | `gsd-planning-repair` | Reconcile `.planning/ROADMAP.md` + `STATE.md` after a union merge and recompute their progress counters from the roadmap and the plan files on disk. `--check` is the CI guard (exit 1 on union-merge damage); `--commit` lands the repair. Run automatically by `gsd-finish` and the `post-merge` hook. |
 | `gsd-planning-merge` | The git merge driver behind `merge=gsd-planning`: union both sides, then collapse every single-value line back to one value so the contradiction never lands. Registered per clone by `gsd-bootstrap-repo`, re-asserted by `gsd-finish`. |
@@ -313,11 +311,9 @@ not set up — run `gsd-init` instead. In other repos it checks nothing else;
 in a set-up repo it also applies the toolkit's guard to slash commands you type.
 `./install.sh --no-user-hook` leaves it out and removes it.
 
-**The checkout and `gsd-sync`:** run `gsd-sync` — it pulls this repo, pushes your local
-commits, and verifies the reference repo's shims are current. `gsd-sync --check`
-previews without changing anything. It uses last-fetched remote refs; it does
-not fetch. Commands still linked into the checkout (how older versions of
-`./install.sh` installed) are named, with the move to a release.
+**The checkout:** keep it current with `git pull`. Commands still linked into
+a checkout (how older versions of `./install.sh` installed) are noted by
+`gsd-doctor`; `./install.sh --reuse-install-config` moves them to a release.
 Installation records the selected providers and skill destinations in
 `GSD_BIN_DIR/.gsd-install-manifest` (data, never sourced as shell);
 `gsd-update` reuses that selection instead of defaulting to Claude. Repeat

@@ -20,8 +20,7 @@ By default, `GSD_BIN_DIR` is `~/.local/bin` and the runtime directory is
 
 Installing again into the same runtime directory preserves unrelated paths. If a package path has local changes, its old version
 is moved to `.bak`, `.bak.1`, and so on before replacement. An unchanged
-installation is idempotent. `gsd-sync` can still check project shims from a
-runtime; its Git self-update step is skipped. `install.sh --copy` runs this
+installation is idempotent. `install.sh --copy` runs this
 file too: releases before the split ran their downloaded package that way.
 
 Use `--reuse-install-config` when updating to reuse providers and skill roots

@@ -101,20 +101,6 @@ FIXTURE="$WORK/source"
 mkdir -p "$FIXTURE"
 cp -R "$PKG/bin" "$PKG/lib" "$PKG/shims" "$PKG/skills" "$FIXTURE/"
 cp "$PKG/install.sh" "$FIXTURE/install.sh"
-# The old install linked the commands into a checkout: gsd-sync names the
-# move to a release. This isolated source has no remote, so sync performs no
-# network writes.
-git -C "$FIXTURE" init -qb main
-mkdir -p "$WORK/sync-bin"; ln -s "$FIXTURE/bin/gsd-sync" "$WORK/sync-bin/gsd-sync"
-"$WORK/sync-bin/gsd-sync" > "$WORK/sync-output"
-grep -q 'link into this checkout' "$WORK/sync-output"
-grep -q "Move to the release:  $FIXTURE/install.sh --reuse-install-config" "$WORK/sync-output"
-[ ! -e "$WORK/sync-bin/.gsd-install-manifest" ]   # it installs nothing
-git -C "$FIXTURE" remote add origin "$WORK/missing-origin"
-GIT_TRACE="$WORK/sync-trace" "$WORK/sync-bin/gsd-sync" --check >/dev/null
-if grep -Eq 'git (fetch|pull|push)' "$WORK/sync-trace"; then
-  echo 'sync --check attempted a mutating remote operation' >&2; exit 1
-fi
 printf '#!/bin/sh\nexit 0\n' > "$FIXTURE/bin/gsd-obsolete"
 chmod +x "$FIXTURE/bin/gsd-obsolete"
 GSD_BIN_DIR="$WORK/upgrade-bin" GSD_COPY_DIR="$WORK/upgrade-runtime" \
@@ -134,8 +120,6 @@ GSD_BIN_DIR="$WORK/isolated-bin" GSD_COPY_DIR="$WORK/isolated-runtime" \
 [ -d "$WORK/isolated-skills/gsdw-flow" ]
 [ ! -L "$WORK/isolated-skills/gsdw-flow" ]
 rm -rf "$FIXTURE"
-"$WORK/isolated-bin/gsd-sync" --check > "$WORK/sync-output"
-grep -q 'standalone copy' "$WORK/sync-output"
 "$WORK/isolated-bin/gsd-planning-repair" --help >/dev/null
 
 if GSD_BIN_DIR="$PKG/bin" GSD_COPY_DIR="$WORK/unsafe" \

@@ -70,10 +70,10 @@ gsd-update                    # install the latest (keeps your agent choice)
 gsd-update --version 0.2.0    # a given release — also how you go back
 ```
 
-A git checkout is not an install: pull it with `gsd-sync` (or `git pull`);
-`gsd-update` run from it says so. Commands still linked into a checkout (how
-older versions of `./install.sh` installed) move to a release with
-`./install.sh --reuse-install-config`; `gsd-sync` tells you when you have them.
+A git checkout is not an install: pull it with `git pull`; `gsd-update` run
+from it says so. Commands still linked into a checkout (how older versions of
+`./install.sh` installed) move to a release with
+`./install.sh --reuse-install-config`; `gsd-doctor` notes when you have them.
 
 Projects keep only `.gsd.conf`, the frozen shims and instruction blocks. After
 an update, `gsd-doctor` in a project tells you if its shims need

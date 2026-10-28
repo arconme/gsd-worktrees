@@ -25,7 +25,7 @@ same command resumes a half-finished phase after a crash or a `/clear`.
 1. You are inside the phase worktree: `git branch --show-current` is
    `phase-<N>-*`. If not, stop and relay `gsd-start -p <N>` to the user —
    never do phase work from the main checkout.
-2. `command -v gsd-flow-next` exists (toolkit installed). If not: `gsd-sync`.
+2. `command -v gsd-flow-next` exists (toolkit installed). If not, relay the install line from the toolkit README to the user.
 
 ## The loop
 

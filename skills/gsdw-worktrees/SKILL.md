@@ -1,6 +1,6 @@
 ---
 name: gsdw-worktrees
-description: "The gsd-* shell commands that run GSD phases in parallel git worktrees — gsd-start, gsd-finish, gsd-list, gsd-doctor, gsd-init, gsd-bootstrap-repo, gsd-sync, gsd-planning-repair. Use when asked to start/begin/pick up a feature or phase, to finish/land/ship a phase, to see what phases exist or what is in flight, to set GSD up in a repo or start a new project (gsd-init, never a bare /gsd-new-project or /gsd-ingest-docs), or to diagnose a broken .planning/ or worktree. These are shell commands run via Bash, distinct from the /gsd-* planning skills."
+description: "The gsd-* shell commands that run GSD phases in parallel git worktrees — gsd-start, gsd-finish, gsd-list, gsd-doctor, gsd-init, gsd-bootstrap-repo, gsd-planning-repair, gsd-update. Use when asked to start/begin/pick up a feature or phase, to finish/land/ship a phase, to see what phases exist or what is in flight, to set GSD up in a repo or start a new project (gsd-init, never a bare /gsd-new-project or /gsd-ingest-docs), or to diagnose a broken .planning/ or worktree. These are shell commands run via Bash, distinct from the /gsd-* planning skills."
 ---
 
 # gsd-worktrees — the shell commands around GSD
@@ -90,7 +90,7 @@ user says no ticket covers the work.
 | `gsd-init` | Repo with no GSD → ready for `gsd-start`. Use `--providers claude,codex` for a provider set and `--provider codex` to choose the planning session. In a terminal it opens that session (`/gsd-new-project` / `/gsd-ingest-docs`); from your shell (no terminal) it prints the command — have the user run it, or run the printed skill in this session. |
 | `gsd-bootstrap-repo` | Just the file installation `gsd-init` wraps. Idempotent. |
 | `gsd-planning-repair` | Reconcile `ROADMAP.md` + `STATE.md` after a union merge, recompute counters. `--check` = CI guard, `--commit` = land the repair. Runs automatically from `gsd-finish` and the `post-merge` hook. |
-| `gsd-sync` | Toolkit maintenance: pull + push the toolkit's git checkout, check this repo's shims. `--check` is read-only and uses last-fetched refs. Updating the installed commands is `gsd-update`. |
+| `gsd-update` | Install the newest toolkit release (keeps the chosen agents). `--check` only compares versions. |
 
 Every command self-documents: `gsd-start --help`, `gsd-finish --help`, ….
 Prefer them over chaining the manual steps — they carry parallel-session race

@@ -106,7 +106,7 @@ gsd_gsd_cached() { head -1 "$(gsd_gsd_cache)" 2>/dev/null | tr -d '[:space:]' ||
 GSD_GSD_UPDATE_CMD="npx @opengsd/gsd-core@latest"   # then the agent: --claude --global
 
 gsd_update_how() {  # the command that updates THIS install
-  if [ -e "$GSD_PKG/.git" ]; then echo gsd-sync; else echo gsd-update; fi
+  if [ -e "$GSD_PKG/.git" ]; then echo "$GSD_PKG/install.sh"; else echo gsd-update; fi
 }
 
 # One stderr line per newer release known (this toolkit, GSD itself). Only for a person at a

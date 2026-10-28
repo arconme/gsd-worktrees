@@ -150,7 +150,6 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | One installer: `install.sh` downloads a release and runs its `lib/install.sh`, which copies it into its own runtime (`GSD_COPY_DIR`); `./install.sh` in a checkout installs the release too, never the checkout; `install.sh --copy` (older releases' get.sh) runs `lib/install.sh` | `install.sh`, `lib/install.sh` |
 | Backups before overwrite; prunes links to deleted commands; refuses overlapping destinations | `lib/install.sh` |
 | Install manifest + `--reuse-install-config` | `lib/install.sh` |
-| One-command upkeep: pull/push this repo, check the calling repo's shims, name commands still linked into the checkout (the old install); `--check` dry run | `gsd-sync` |
 | One-line install of a GitHub release, SHA256-checked, one folder per release (`--version`, `--agent`) | `install.sh` |
 | Install adds gsd-core (`--profile=full`) for each chosen agent that has none, after our skills; never on an update, never over the old GSD; `--no-core` / `GSD_NO_CORE=1` skip it; a failure only prints the command | `lib/install.sh`, `install.sh` |
 | Update / go back: `gsd-update [--check \| --version X.Y.Z]`; keeps the previous release, prunes older ones | `gsd-update` |
