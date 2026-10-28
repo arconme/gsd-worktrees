@@ -234,7 +234,9 @@ gis "non-GSD commands → allowed"                                    "$(gg "$(u
 gis "an unreadable payload → allowed (fails open)"                  "$(gg 'not json')" 0
 # a hook an older release left in ~/.gemini: its payload is not read any more
 gis "an old Gemini activate_skill payload → allowed (Gemini is gone)" "$(gg '{"tool_name":"activate_skill","tool_input":{"name":"gsd-new-project"}}')" 0
-gis "GSD_SKIP_GUARD=1 escapes"                     "$(printf '%s' "$(upe gsd-new-project "$BARE")" | GSD_SKIP_GUARD=1 "$GUARD" --global 2>/dev/null; echo $?)" 0
+# <<< not a pipe: the guard exits before reading, and a late write into the
+# closed pipe failed the test under pipefail (macOS CI)
+gis "GSD_SKIP_GUARD=1 escapes"                     "$(GSD_SKIP_GUARD=1 "$GUARD" --global 2>/dev/null <<<"$(upe gsd-new-project "$BARE")"; echo $?)" 0
 printf 'install = none\n' > "$BARE/.gsd.conf"
 gis "after gsd-init (.gsd.conf) → allowed"                          "$(gg "$(upe gsd-new-project "$BARE")")" 0
 mkrepo "" phase-7-thing 07-thing
