@@ -336,8 +336,9 @@ clickup_login() {
   gsd_tracker_profile_ok "$p" \
     || die "'$p' is not a profile name (letters, digits, . _ -) — use gsd-tracker login <name>"
   if [ -t 0 ]; then
-    printf 'ClickUp API token for profile %s (ClickUp → Settings → Apps; typing is hidden): ' "$p" >&2
-    IFS= read -rs token || true
+    # read -p: echo goes off BEFORE the prompt shows; a printf first left a
+    # gap where a fast paste was echoed
+    IFS= read -rs -p "ClickUp API token for profile $p (ClickUp → Settings → Apps; typing is hidden): " token || true
     printf '\n' >&2
     typed=1
   else

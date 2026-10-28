@@ -13,6 +13,10 @@ becomes its release notes.
   for a running `gsd-start` or `gsd-finish` instead of changing the file under
   them. The commit question comes first, so they never wait on your answer.
 
+- **`gsd-tracker login` hides the token from the first key.** The prompt
+  showed before typing was hidden, so a token pasted at once could be
+  echoed on screen. Now typing is hidden before the prompt shows.
+
 - **`gsd-sync` is removed.** It had little left to do: pull the toolkit
   checkout (use `git pull`) and check a repo's shims (`gsd-doctor` T010 does
   that). What you do: nothing; the next `gsd-update` removes the command.
