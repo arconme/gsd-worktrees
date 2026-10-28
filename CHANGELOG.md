@@ -34,8 +34,6 @@ becomes its release notes.
   `gsd-doctor` now notes when your commands run from a git checkout, with
   the line that moves them to a release.
 
-## 0.6.0
-
 - **`gsd-tracker login`: a ClickUp token for one repo in one step.** It asks
   for the token (hidden), tests it, saves it to
   `~/.config/gsd/clickup-<profile>.env` (mode 600, outside the repo) and sets
@@ -50,7 +48,7 @@ becomes its release notes.
   checkout's own files, so your repos run a release while you work on the
   toolkit. The old link install (commands linked into a checkout, live with
   every edit) is gone. What you do: if your commands link into a checkout
-  (`gsd-sync` tells you), run `./install.sh --reuse-install-config` there
+  (`gsd-doctor` notes it), run `./install.sh --reuse-install-config` there
   once. Installed releases update as before with `gsd-update`. The copying
   step moved to `lib/install.sh`, which only the downloaded release runs.
 - **Install also installs gsd-core.** `install.sh` now adds GSD itself
@@ -70,7 +68,7 @@ becomes its release notes.
   user, so the flow stopped and asked for `/clear` and a rerun long before
   the session would compact. The skill now ignores the warning and keeps
   looping; after a compact it re-reads the step from `gsd-flow-next`. Run
-  `gsd-sync` (or `gsd-update`) to get the new skill.
+  `gsd-update` to get the new skill.
 
 ## 0.5.2
 
