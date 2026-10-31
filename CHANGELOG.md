@@ -4,6 +4,19 @@ Each release is a GitHub release `vX.Y.Z` with `gsd-worktrees-X.Y.Z.tar.gz`
 and `SHA256SUMS`. Install or update: see the README. The section for a version
 becomes its release notes.
 
+## 0.6.3
+
+- **A real review is no longer rejected as empty.** A review counted as empty
+  when the reviewer wrote its own `##` sections (such as the `## <plan-id>`
+  ones the gsd-core template asks for) or a `---` line inside its output. Empty
+  and failed reviews are still rejected.
+- **Open a rejected review before deleting it.** A rerun costs a full review, so
+  `gsd-flow-next` now says to open a rejected file of more than 40 lines first,
+  and the guard says to open it.
+- **For maintainers: a push to `main` that changes `VERSION` is a release.** It
+  checks, tests, tags and publishes; no tag to push by hand. See
+  `docs/releases.md`.
+
 ## 0.6.2
 
 - **`gsd-update` updates gsd-core too.** After the toolkit, it brings GSD
