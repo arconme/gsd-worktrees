@@ -51,6 +51,12 @@ printf '## Codex Review\n\nYou\342\200\231ve hit your usage limit. Try again at 
 is "REVIEWS whose Codex hit the limit → review again" "$(step)" review
 is "…and the note says why" "$("$NEXT" 7 --repo "$REPO" | grep -c 'not a usable review (Codex Review — usage limit hit)')" 1
 is "…also with --all (no replan after it)" "$("$NEXT" 7 --repo "$REPO" --all | grep -c '^step=replan')" 0
+is "…a short failed file: delete it" "$("$NEXT" 7 --repo "$REPO" | grep -c 'delete it and run the review again')" 1
+{ printf '## Codex Review\n\n## Consensus Summary\n\n'; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40; do echo "line $i"; done; } > "$PD/07-REVIEWS.md"
+is "a large rejected file → open it before any rerun" "$("$NEXT" 7 --repo "$REPO" | grep -c 'open it and check before you delete it')" 1
+is "…and no plain delete advice" "$("$NEXT" 7 --repo "$REPO" | grep -c 'delete it and run the review again')" 0
+printf '## Codex Review\n\n## 07-01\nfinding\n\n---\n\n## 07-02\nfinding\n\n---\n\n## Consensus Summary\n\nok\n' > "$PD/07-REVIEWS.md"
+is "## plan sections in the review → not the review step" "$("$NEXT" 7 --repo "$REPO" | grep -c '^step=review$')" 0
 : > "$PD/07-REVIEWS.md";    is "REVIEWS uncommitted → replan"  "$(step)" replan
 gcommit 2026-01-01T10:00:00 "plans"          # plans + REVIEWS in one commit → counts as replanned
 is "REVIEWS + plans same commit → execute"  "$(step)" execute

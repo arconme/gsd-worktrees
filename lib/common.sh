@@ -60,6 +60,12 @@ gsd_reviews_problem() {  # $1=<P>-REVIEWS.md  $2=review_provider → why it is n
   # message — a long one is a real review that quotes it. A file without
   # such sections (hand-recorded review) is not judged. Prints the reason
   # and returns 0 when unusable; returns 1 when fine.
+  # A body runs on past the reviewer's own "##" headings: gsd-core asks for one
+  # "## <plan id>" per plan, and some write "## Summary". It ends at the next
+  # review heading, at "## Consensus…", at the end of the file, or at a "---"
+  # right before a "##" that is no plan id (gsd-core writes "---" after each
+  # section; a person's "## Verification" may follow). Headings and "---" are
+  # not body lines, so a section with only those is empty.
   [ -f "$1" ] || return 1
   awk -v want="$(printf '%s review' "${2:-}" | tr '[:upper:]' '[:lower:]')" '
     function done_sec(   bad, what) {
@@ -75,12 +81,16 @@ gsd_reviews_problem() {  # $1=<P>-REVIEWS.md  $2=review_provider → why it is n
     }
     NR == 1 && /^---[[:space:]]*$/ { fm = 1; next }
     fm { if (/^---[[:space:]]*$/) fm = 0; next }
-    /^## / || /^---[[:space:]]*$/ { done_sec() }
+    /^---[[:space:]]*$/ { rule = 1; next }
     /^## / {
-      h = substr($0, 4); sub(/[[:space:]]+$/, "", h)
-      if (tolower(h) ~ /review( \([^)]*\))?$/) { sec = h; base = h; sub(/ \([^)]*\)$/, "", base); lines = 0; mark = "" }
-      next
+      h = substr($0, 4); sub(/[[:space:]]+$/, "", h); lh = tolower(h)
+      plan = (lh ~ /^(plan )?[0-9]/)
+      if (!plan && lh ~ /review( \([^)]*\))?$/) { done_sec(); sec = h; base = h; sub(/ \([^)]*\)$/, "", base); lines = 0; mark = "" }
+      else if (lh ~ /^consensus/ || (rule && !plan)) done_sec()
+      rule = 0; next
     }
+    /[^[:space:]]/ { rule = 0 }
+    /^#+ / { next }
     sec != "" && /[^[:space:]]/ {
       lines++; l = tolower($0)
       if (l ~ /hit your usage limit/) mark = "usage limit hit"

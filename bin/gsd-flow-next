@@ -203,7 +203,16 @@ if ! has REVIEWS.md || [ -n "$rev_bad" ]; then
     review_run="request an independent custom-provider review of $pd and save verified findings to $P-REVIEWS.md"
   fi
   review_note="independent reviewer: $REVIEW_PROVIDER; external gsd-review capability required for automatic delegation. If unavailable, hand off the plans to a separate reviewer session and record $P-REVIEWS.md; never skip the gate."
-  [ -z "$rev_bad" ] || review_note="$P-REVIEWS.md is not a usable review ($rev_bad): delete it and run the review again. $review_note"
+  # A rerun costs a full review, and a large file may be a real one this check
+  # misread: have it looked at first.
+  if [ -n "$rev_bad" ]; then
+    rev_lines=$(wc -l < "$pd/$P-REVIEWS.md" | tr -d ' ')
+    if [ "$rev_lines" -gt 40 ]; then
+      review_note="$P-REVIEWS.md is not a usable review ($rev_bad), but it has $rev_lines lines: open it and check before you delete it, because a rerun costs a full review. If it holds a real review, show the user and do not rerun. If the reviewer really failed, delete it and run again. $review_note"
+    else
+      review_note="$P-REVIEWS.md is not a usable review ($rev_bad): delete it and run the review again. $review_note"
+    fi
+  fi
   [ "$REVIEW_PROVIDER" != codex ] || review_note="$review_note On a Codex usage limit: run gsd-codex-wait --wait-only as a background job (it waits for the reset Codex gave, without calling Codex), delete $P-REVIEWS.md if one was written, then run this step again."
   emit review "$review_run" "/gsd-plan-phase $N --reviews" "show the user the independent findings before the replan; verify each against the plans, never accept on trust" "$review_note"
 fi

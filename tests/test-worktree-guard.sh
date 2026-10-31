@@ -65,6 +65,8 @@ printf '## Codex Review\n\nCodex review failed or returned empty output.\n' > "$
 blocked "execute with a failed Codex review is blocked" gsd-execute-phase "7"
 printf '## Codex Review\n\n' > "$PDIR/07-REVIEWS.md"
 blocked "execute with an empty Codex section is blocked" gsd-execute-phase "7"
+printf '## Codex Review\n\n## 07-01\nfinding\n\n---\n\n## Consensus Summary\n\nok\n' > "$PDIR/07-REVIEWS.md"
+allowed "execute with ## plan sections in the review passes" gsd-execute-phase "7"
 : > "$PDIR/07-REVIEWS.md"
 allowed "execute with REVIEWS passes"            gsd-execute-phase "7"
 

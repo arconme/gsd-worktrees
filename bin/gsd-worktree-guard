@@ -287,7 +287,7 @@ case "$cmd" in
       rp=$(gsd_conf_get "$(gsd_main "$dir" 2>/dev/null || echo "$dir")" review_provider)
       if why=$(gsd_reviews_problem "$pdir/$P-REVIEWS.md" "${rp:-codex}"); then
         block "BLOCKED (flow = strict): /$cmd $N needs a usable $P-REVIEWS.md — $why." \
-              "Delete it and run: /gsd-review --phase $N  then  /gsd-plan-phase $N --reviews   (Codex usage limit: gsd-codex-wait --wait-only first, as a background job; or GSD_SKIP_GUARD=1 if the user asked to skip it)"
+              "Open it first: a rerun costs a full review. If the reviewer really failed, delete it and run: /gsd-review --phase $N  then  /gsd-plan-phase $N --reviews   (Codex usage limit: gsd-codex-wait --wait-only first, as a background job; or GSD_SKIP_GUARD=1 if the user asked to skip it)"
       fi ;;
     esac ;;
   gsd-secure-phase)

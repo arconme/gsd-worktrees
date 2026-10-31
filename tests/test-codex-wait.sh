@@ -152,5 +152,42 @@ gsd_reviews_problem "$RV" codex > /dev/null; is "…a real instance review is us
 : > "$RV"; gsd_reviews_problem "$RV" codex > /dev/null; is "a hand-recorded file without sections is not judged" "$?" 1
 gsd_reviews_problem "$WORK/none.md" codex > /dev/null; is "a missing file is not judged here" "$?" 1
 
+section "a review body runs on past its own ## headings and ---"
+usable() { gsd_reviews_problem "$RV" codex > /dev/null; is "$1" "$?" 1; }
+rejected() { is "$1" "$(gsd_reviews_problem "$RV" codex)" "$2"; }
+LONG=$(printf 'a\nb\nc\nd\ne\nf\ng')
+# the layout gsd-core's template asks for: one ## section per plan id
+printf '## Codex Review\n\n## 30-01\nx\ny\n\n---\n\n## 30-02\nz\n\n---\n\n## Consensus Summary\n\nok\n' > "$RV"
+usable "## plan sections under the review are usable"
+printf '## Codex Review\n\n### 30-01\nx\n\n### 30-02\nz\n\n---\n\n## Consensus Summary\n\nok\n' > "$RV"
+usable "### plan sections are usable"
+printf '## Codex Review (fast)\n\n## 30-01\nx\n\n## 30-02\ny\n' > "$RV"
+usable "an instance heading with ## plan sections is usable"
+printf '## Codex Review\n\n## Summary\nx\n\n## Concerns\ny\n' > "$RV"
+usable "a reviewer's own ## Summary first is usable"
+printf '## Codex Review\n\n## 30-01 Code Review\nx\ny\n\n## Plan 30-02 Review\nz\n' > "$RV"
+usable "a plan heading ending in Review stays in the body"
+printf '## Codex Review\n\n---\n\n## 30-01\nx\ny\n' > "$RV"
+usable "a --- before the first plan section is usable"
+printf '## Codex Review\n\nAn earlier run hit your usage limit.\n\n---\n\n%s\n' "$LONG" > "$RV"
+usable "a --- does not cut a long body that quotes the limit"
+printf '## Codex Review\n\n---\n\n## Consensus Summary\n\nok\n' > "$RV"
+rejected "nothing but the template's --- is empty" "Codex Review is empty"
+printf '## Codex Review\n\n## Consensus Summary (one reviewer)\n\n%s\n' "$LONG" > "$RV"
+rejected "the consensus text is not the review's body" "Codex Review is empty"
+printf '## Codex Review\n\n## 30-01\n## 30-02\n## 30-03\n## 30-04\n## 30-05\n## 30-06\n\n---\n' > "$RV"
+rejected "## headings with no findings are empty" "Codex Review is empty"
+printf '## Codex Review\n\n### 30-01\n### 30-02\n\n---\n' > "$RV"
+rejected "### headings with no findings are empty" "Codex Review is empty"
+printf '## Codex Review\n\n## 30-01\nYou hit your usage limit.\n\n---\n\n## Consensus Summary\n\nok\n' > "$RV"
+rejected "a limit message under a plan heading is the limit" "Codex Review — usage limit hit"
+printf '## Claude Review\n\n## 30-01\ngood\n\n---\n\n## Codex Review\n\nCodex review failed or returned empty output.\n\n---\n' > "$RV"
+rejected "two reviewers, the configured one failed" "Codex Review — reviewer failed"
+# notes people add after a review section must not count as its body
+printf '## Codex Review\n\n---\n\n## Verification\n\n%s\n' "$LONG" > "$RV"
+rejected "an empty review followed by --- and notes is empty" "Codex Review is empty"
+printf '## Codex Review\n\nCodex review failed or returned empty output.\n\n---\n\n## Verification\n\n%s\n' "$LONG" > "$RV"
+rejected "a failed review followed by --- and notes failed" "Codex Review — reviewer failed"
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
