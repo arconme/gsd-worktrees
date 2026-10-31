@@ -28,6 +28,20 @@ if gsd_version_gt 1.2.3 1.3.0; then bad "older is not newer"; else ok "older is 
 if gsd_version_gt garbage 1.0.0; then bad "garbage is never newer"; else ok "garbage is never newer"; fi
 if gsd_version_gt 1.0.08 1.0.7; then ok "zero-padded parts are not octal"; else bad "zero-padded parts are not octal"; fi
 
+section "release-check — is this a new version?"
+RC="$WORK/rc"; mkdir -p "$RC"
+rc() { (cd "$RC" && printf '%s\n' "$1" > VERSION && printf '%b' "$2" | "$PKG/tools/release-check.sh") > "$WORK/out" 2>&1; }
+printf '# Changelog\n\n## 0.7.0\n\n- new thing\n\n## 0.6.30\n\n- other thing\n\n## 0.6.29\n\n## 0.6.2\n\n- old thing\n' > "$RC/CHANGELOG.md"
+TAGS='abc\trefs/tags/v0.6.2\nabc\trefs/tags/v0.6.2^{}\n'
+if rc 0.7.0 "$TAGS"; then is "a new version with notes is released" "$(cat "$WORK/out")" 0.7.0; else bad "a new version with notes is released" "$(cat "$WORK/out")"; fi
+if rc 0.6.2 "$TAGS"; then is "a version with its tag: nothing to do" "$(cat "$WORK/out")" ""; else bad "a version with its tag: nothing to do" "$(cat "$WORK/out")"; fi
+if rc 0.7.0 ""; then is "no tags at all: released" "$(cat "$WORK/out")" 0.7.0; else bad "no tags at all: released" "$(cat "$WORK/out")"; fi
+if rc 0.6.1 "$TAGS"; then bad "older than the newest tag is refused"; else has "older than the newest tag is refused" "older than the tag v0.6.2" "$WORK/out"; fi
+if rc 0.8.0 "$TAGS"; then bad "no CHANGELOG section is refused"; else has "no CHANGELOG section is refused" "no notes under" "$WORK/out"; fi
+if rc 0.6.29 "$TAGS"; then bad "an empty CHANGELOG section is refused"; else has "an empty CHANGELOG section is refused" "no notes under" "$WORK/out"; fi
+if rc 0.6.3 "$TAGS"; then bad "0.6.3 does not read the notes of 0.6.30"; else has "0.6.3 does not read the notes of 0.6.30" "no notes under" "$WORK/out"; fi
+if rc garbage "$TAGS"; then bad "a bad VERSION is refused"; else has "a bad VERSION is refused" "not X.Y.Z" "$WORK/out"; fi
+
 # ── fake GitHub ──────────────────────────────────────────────────────────────
 REL="$WORK/releases-served"
 release() {  # $1=version [$2=bad] — build a release tarball + SHA256SUMS from this checkout

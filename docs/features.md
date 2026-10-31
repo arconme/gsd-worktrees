@@ -155,7 +155,7 @@ Flags and config keys are complete as of 2026-09-25; `<cmd> --help` is authorita
 | Update / go back: `gsd-update [--check \| --version X.Y.Z \| --no-core]`; keeps the previous release, prunes older ones; then gsd-core to its latest (`--profile=full`) for each installed agent | `gsd-update`, `lib/core.sh` |
 | "Newer version" notice for gsd-worktrees and gsd-core (npm) in `gsd-start` / `gsd-list` / `gsd-init` (terminal only) and `gsd-doctor` (also `--quiet`, `updates` in `--json`); day-long cache, background refresh; `GSD_NO_UPDATE_CHECK=1` | `lib/version.sh`, `gsd-doctor` |
 | Reinstall replaces the toolkit's own links and skills in place (no `.bak` on PATH or in skill dirs) | `lib/install.sh` |
-| Tag-driven releases: tests → tarball + `SHA256SUMS` → GitHub release; `tools/release.sh X.Y.Z --push` | `.github/workflows/release.yml`, `tools/release.sh` |
+| Releases from `main`: a push that changes `VERSION` → check → tests → tag + tarball + `SHA256SUMS` → GitHub release; `tools/release.sh X.Y.Z --push` is a helper | `.github/workflows/release.yml`, `tools/release-check.sh`, `tools/release.sh` |
 
 ## 10. Tickets and trackers ([trackers.md](trackers.md))
 

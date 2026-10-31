@@ -2,7 +2,7 @@ name: tests
 
 on:
   push:
-    branches: ['**']     # tags run these through release.yml instead
+    branches: ['**']     # a push that changes VERSION also runs them through release.yml
   pull_request:
   workflow_call:         # release.yml gates a release on this suite
 

@@ -87,20 +87,29 @@ an update, `gsd-doctor` in a project tells you if its shims need
 
 ## For maintainers: cutting a release
 
+A push to `main` that changes `VERSION` is a release. Any other push only runs
+the tests.
+
 1. Add a `## X.Y.Z` section at the top of `CHANGELOG.md` (it becomes the
    release notes) and commit it on `main`.
-2. Run:
+2. Change `VERSION` and push, by hand or with:
 
    ```sh
    tools/release.sh X.Y.Z --push
    ```
 
    It checks that `main` is clean and level with origin, writes `VERSION`,
-   commits `release vX.Y.Z`, tags `vX.Y.Z`, and pushes both.
-3. `.github/workflows/release.yml` runs the whole test suite (Ubuntu + macOS),
-   checks the tag matches `VERSION`, builds the tarball with `git archive`,
-   and publishes the GitHub release with the tarball and `SHA256SUMS`.
+   commits `release vX.Y.Z`, and pushes.
+3. `.github/workflows/release.yml` runs `tools/release-check.sh`: it stops with an
+   error if `VERSION` is older than the newest tag or `CHANGELOG.md` has no notes
+   for it, and does nothing if that version already has its tag. Then it runs the
+   whole test suite (Ubuntu + macOS), builds the tarball with `git archive`, tags
+   the commit `vX.Y.Z` and publishes the GitHub release with the tarball and
+   `SHA256SUMS`.
 4. Within a day, every install sees the new version.
+
+A failed run tags nothing. Fix it on `main`, then `gh workflow run release.yml`
+releases `main` at the same `VERSION`.
 
 Versions are `X.Y.Z`: bump Z for fixes, Y for new features, X for changes that
 need users to do something (say so in the changelog).

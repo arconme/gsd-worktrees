@@ -48,8 +48,8 @@ for f in bin/* lib/*.sh lib/trackers/*.sh install.sh shims/scripts/*.sh shims/sc
 node --check lib/ui-check.mjs
 shellcheck -x bin/* lib/*.sh lib/trackers/*.sh tools/*.sh shims/scripts/*.sh shims/scripts/hooks/*.sh install.sh tests/*.sh
 
-# Release (maintainer): add "## X.Y.Z" to CHANGELOG.md, commit, then
-tools/release.sh X.Y.Z --push   # VERSION + tag → .github/workflows/release.yml tests, builds, publishes
+# Release (maintainer): add "## X.Y.Z" to CHANGELOG.md, commit, then change VERSION and push to main, or
+tools/release.sh X.Y.Z --push   # a push changing VERSION → .github/workflows/release.yml tests, tags, builds, publishes
 ```
 
 There is no per-test runner: each suite uses `ok`/`bad`/`is` helpers and `section` headers, and builds throwaway repos in `mktemp -d`. To focus, run one suite. Every command has `--help`. New suites must also be added to `.github/workflows/tests.yml` and the README test list.
